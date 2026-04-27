@@ -7,11 +7,19 @@
 	objects = {
 
 /* Begin PBXFileReference section */
-		7CFD08DD2F9F672200685F75 /* haccp-software.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; name = "haccp-software.app"; path = "/Users/frasanf004/Desktop/haccp-software/build/Debug-iphoneos/haccp-software.app"; sourceTree = "<absolute>"; };
+		7CB6B65E2F9F6DB800F52708 /* haccp-software.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "haccp-software.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		7CB6B6602F9F6DB800F52708 /* haccp-software */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = "haccp-software";
+			sourceTree = "<group>";
+		};
+/* End PBXFileSystemSynchronizedRootGroup section */
+
 /* Begin PBXFrameworksBuildPhase section */
-		7CFD08DA2F9F672200685F75 /* Frameworks */ = {
+		7CB6B65B2F9F6DB800F52708 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -21,68 +29,81 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
-		7CFD08D42F9F672200685F75 = {
+		7CB6B6552F9F6DB800F52708 = {
 			isa = PBXGroup;
 			children = (
+				7CB6B6602F9F6DB800F52708 /* haccp-software */,
+				7CB6B65F2F9F6DB800F52708 /* Products */,
 			);
+			sourceTree = "<group>";
+		};
+		7CB6B65F2F9F6DB800F52708 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				7CB6B65E2F9F6DB800F52708 /* haccp-software.app */,
+			);
+			name = Products;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		7CFD08DC2F9F672200685F75 /* haccp-software */ = {
+		7CB6B65D2F9F6DB800F52708 /* haccp-software */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 7CFD08E82F9F672300685F75 /* Build configuration list for PBXNativeTarget "haccp-software" */;
+			buildConfigurationList = 7CB6B6692F9F6DB900F52708 /* Build configuration list for PBXNativeTarget "haccp-software" */;
 			buildPhases = (
-				7CFD08D92F9F672200685F75 /* Sources */,
-				7CFD08DA2F9F672200685F75 /* Frameworks */,
-				7CFD08DB2F9F672200685F75 /* Resources */,
+				7CB6B65A2F9F6DB800F52708 /* Sources */,
+				7CB6B65B2F9F6DB800F52708 /* Frameworks */,
+				7CB6B65C2F9F6DB800F52708 /* Resources */,
 			);
 			buildRules = (
 			);
 			dependencies = (
 			);
+			fileSystemSynchronizedGroups = (
+				7CB6B6602F9F6DB800F52708 /* haccp-software */,
+			);
 			name = "haccp-software";
 			productName = "haccp-software";
-			productReference = 7CFD08DD2F9F672200685F75 /* haccp-software.app */;
+			productReference = 7CB6B65E2F9F6DB800F52708 /* haccp-software.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
-		7CFD08D52F9F672200685F75 /* Project object */ = {
+		7CB6B6562F9F6DB800F52708 /* Project object */ = {
 			isa = PBXProject;
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
 				LastSwiftUpdateCheck = 2640;
 				LastUpgradeCheck = 2640;
 				TargetAttributes = {
-					7CFD08DC2F9F672200685F75 = {
+					7CB6B65D2F9F6DB800F52708 = {
 						CreatedOnToolsVersion = 26.4.1;
 					};
 				};
 			};
-			buildConfigurationList = 7CFD08D82F9F672200685F75 /* Build configuration list for PBXProject "haccp-software" */;
+			buildConfigurationList = 7CB6B6592F9F6DB800F52708 /* Build configuration list for PBXProject "haccp-software" */;
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
 			knownRegions = (
 				en,
 				Base,
 			);
-			mainGroup = 7CFD08D42F9F672200685F75;
+			mainGroup = 7CB6B6552F9F6DB800F52708;
 			minimizedProjectReferenceProxies = 1;
 			preferredProjectObjectVersion = 77;
-			productRefGroup = 7CFD08D42F9F672200685F75;
+			productRefGroup = 7CB6B65F2F9F6DB800F52708 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				7CFD08DC2F9F672200685F75 /* haccp-software */,
+				7CB6B65D2F9F6DB800F52708 /* haccp-software */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
-		7CFD08DB2F9F672200685F75 /* Resources */ = {
+		7CB6B65C2F9F6DB800F52708 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -92,7 +113,7 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
-		7CFD08D92F9F672200685F75 /* Sources */ = {
+		7CB6B65A2F9F6DB800F52708 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -102,7 +123,7 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin XCBuildConfiguration section */
-		7CFD08E62F9F672300685F75 /* Debug */ = {
+		7CB6B6672F9F6DB900F52708 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
@@ -165,7 +186,7 @@
 			};
 			name = Debug;
 		};
-		7CFD08E72F9F672300685F75 /* Release */ = {
+		7CB6B6682F9F6DB900F52708 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
@@ -221,7 +242,7 @@
 			};
 			name = Release;
 		};
-		7CFD08E92F9F672300685F75 /* Debug */ = {
+		7CB6B66A2F9F6DB900F52708 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
@@ -254,7 +275,7 @@
 			};
 			name = Debug;
 		};
-		7CFD08EA2F9F672300685F75 /* Release */ = {
+		7CB6B66B2F9F6DB900F52708 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
@@ -290,25 +311,25 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		7CFD08D82F9F672200685F75 /* Build configuration list for PBXProject "haccp-software" */ = {
+		7CB6B6592F9F6DB800F52708 /* Build configuration list for PBXProject "haccp-software" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				7CFD08E62F9F672300685F75 /* Debug */,
-				7CFD08E72F9F672300685F75 /* Release */,
+				7CB6B6672F9F6DB900F52708 /* Debug */,
+				7CB6B6682F9F6DB900F52708 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		7CFD08E82F9F672300685F75 /* Build configuration list for PBXNativeTarget "haccp-software" */ = {
+		7CB6B6692F9F6DB900F52708 /* Build configuration list for PBXNativeTarget "haccp-software" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				7CFD08E92F9F672300685F75 /* Debug */,
-				7CFD08EA2F9F672300685F75 /* Release */,
+				7CB6B66A2F9F6DB900F52708 /* Debug */,
+				7CB6B66B2F9F6DB900F52708 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
 	};
-	rootObject = 7CFD08D52F9F672200685F75 /* Project object */;
+	rootObject = 7CB6B6562F9F6DB800F52708 /* Project object */;
 }
