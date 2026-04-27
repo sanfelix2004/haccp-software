@@ -141,7 +141,7 @@ struct DashboardRootView: View {
                 .background(ThemeManager.shared.surface)
             }
             .background(ThemeManager.shared.surface)
-            .navigationTitle(activeRestaurant?.name ?? "HACCP Manager")
+            .navigationTitle(activeRestaurant?.name ?? AppVersionService.appName)
         } detail: {
             ZStack {
                 ThemeManager.shared.background.ignoresSafeArea()

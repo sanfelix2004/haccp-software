@@ -17,15 +17,15 @@ struct IntroSplashView: View {
             
             VStack(spacing: 24) {
                 // Main Logo / Title
-                Text("Romanazzi")
-                    .font(.system(size: 84, weight: .bold, design: .serif))
+                Text(AppVersionService.appName)
+                    .font(.system(size: 72, weight: .bold, design: .rounded))
                     .foregroundColor(Color(hex: "#E63946"))
                     .shadow(color: Color(hex: "#E63946").opacity(isActive ? 0.6 : 0.0), radius: 30, x: 0, y: 0)
                     .offset(y: isActive ? 0 : 20)
                 
                 // Subtitle
-                Text("HACCP MANAGER")
-                    .font(.system(size: 16, weight: .black, design: .rounded))
+                Text("DIGITAL FOOD SAFETY CONTROL")
+                    .font(.system(size: 14, weight: .black, design: .rounded))
                     .foregroundColor(.gray)
                     .tracking(8)
                     .padding(.top, 40)

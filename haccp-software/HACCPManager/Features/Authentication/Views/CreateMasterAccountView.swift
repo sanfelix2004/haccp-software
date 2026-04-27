@@ -21,7 +21,7 @@ struct CreateMasterAccountView: View {
                 VStack(spacing: 40) {
                         
                         VStack(spacing: 12) {
-                            Text("HACCP Manager")
+                            Text(AppVersionService.appName)
                                 .font(.system(size: 32, weight: .bold, design: .rounded))
                                 .foregroundColor(.white)
                             

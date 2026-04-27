@@ -12,10 +12,10 @@ struct AppInfoSettingsView: View {
                     .cornerRadius(18)
                 
                 VStack(spacing: 4) {
-                    Text("HACCP Manager")
+                    Text(AppVersionService.appName)
                         .font(.title2)
                         .fontWeight(.black)
-                    Text("Versione 1.0.0 (Build 2026.04.27)")
+                    Text(AppVersionService.currentVersion)
                         .font(.caption)
                         .foregroundColor(.gray)
                 }
