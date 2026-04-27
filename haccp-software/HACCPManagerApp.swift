@@ -1,13 +1,13 @@
 //
-//  haccp_softwareApp.swift
-//  haccp-software
+//  HACCPManagerApp.swift
+//  HACCP Manager
 //
 
 import SwiftUI
 import SwiftData
 
 @main
-struct haccp_softwareApp: App {
+struct HACCPManagerApp: App {
     @StateObject private var appState = AppState()
     
     // Explicitly configure model container to ensure persistence
