@@ -1,4 +1,5 @@
 import Foundation
+import Combine
 
 final class MasterAuthorizationService {
     static let shared = MasterAuthorizationService()
@@ -13,6 +14,7 @@ final class MasterAuthorizationService {
         case privilegedAction
         case accessSettings
         case editRestaurantInfo
+        case manageTemperatureDevices
 
         var localizedReason: String {
             switch self {
@@ -34,6 +36,8 @@ final class MasterAuthorizationService {
                 return "Autorizza l'accesso alle impostazioni riservate"
             case .editRestaurantInfo:
                 return "Autorizza la modifica dei dati del ristorante"
+            case .manageTemperatureDevices:
+                return "Autorizza la gestione dei dispositivi temperatura"
             }
         }
     }
