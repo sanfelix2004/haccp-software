@@ -15,7 +15,15 @@ struct HACCPManagerApp: App {
     
     init() {
         do {
-            container = try ModelContainer(for: LocalUser.self, AppDataStore.self, Restaurant.self)
+            container = try ModelContainer(
+                for: LocalUser.self,
+                AppDataStore.self,
+                Restaurant.self,
+                TemperatureDevice.self,
+                TemperatureRecord.self,
+                TemperatureAlert.self,
+                TemperatureAuditLog.self
+            )
         } catch {
             fatalError("Failed to initialize SwiftData model container: \(error)")
         }

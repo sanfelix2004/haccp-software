@@ -3,6 +3,7 @@ import SwiftData
 
 enum SidebarItem: String, CaseIterable, Identifiable {
     case dashboard = "Dashboard"
+    case temperature = "Temperature"
     case haccpModules = "Moduli HACCP"
     case checklist = "Checklist"
     case analytics = "Grafici"
@@ -16,6 +17,7 @@ enum SidebarItem: String, CaseIterable, Identifiable {
     var icon: String {
         switch self {
         case .dashboard: return "square.grid.2x2.fill"
+        case .temperature: return "thermometer.medium"
         case .haccpModules: return "square.grid.3x2.fill"
         case .checklist: return "checklist"
         case .analytics: return "chart.xyaxis.line"
@@ -190,6 +192,8 @@ struct DashboardRootView: View {
         switch item {
         case .dashboard:
             DashboardView()
+        case .temperature:
+            TemperatureRootView()
         case .haccpModules:
             HACCPModulesView()
         case .checklist:

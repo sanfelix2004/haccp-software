@@ -22,6 +22,15 @@ struct HACCPSettingsView: View {
                     TempConfigBox(title: "Abbattitore", value: $storage.haccp.blastChillerTemp, unit: "°C")
                     TempConfigBox(title: "Frequenza", value: Binding(get: { Double(storage.haccp.tempCheckFrequency) }, set: { storage.haccp.tempCheckFrequency = Int($0) }), unit: "h")
                 }
+
+                TempConfigBox(
+                    title: "Warning Threshold",
+                    value: Binding(
+                        get: { storage.haccp.warningThreshold ?? 0.8 },
+                        set: { storage.haccp.warningThreshold = $0 }
+                    ),
+                    unit: "°C"
+                )
             }
             .padding()
             .background(Color.white.opacity(0.05))
