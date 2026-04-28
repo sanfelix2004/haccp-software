@@ -11,6 +11,7 @@ public final class Restaurant {
     public var phone: String
     public var email: String
     public var notes: String
+    public var restaurantPinHash: String = ""
     public var logoData: Data?
     public var creationDate: Date
     
@@ -22,6 +23,7 @@ public final class Restaurant {
          phone: String = "",
          email: String = "",
          notes: String = "",
+         restaurantPinHash: String = "",
          logoData: Data? = nil) {
         self.id = id
         self.name = name
@@ -31,6 +33,7 @@ public final class Restaurant {
         self.phone = phone
         self.email = email
         self.notes = notes
+        self.restaurantPinHash = restaurantPinHash
         self.logoData = logoData
         self.creationDate = Date()
     }

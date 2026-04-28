@@ -40,7 +40,7 @@ struct RestaurantSettingsView: View {
                 
                 Spacer()
                 
-                if currentUser?.role == .master {
+                if currentUser?.role == .master && restaurants.isEmpty {
                     Button(action: { showingAddSheet = true }) {
                         Label("Aggiungi Locale", systemImage: "plus.circle.fill")
                             .fontWeight(.bold)
@@ -63,6 +63,10 @@ struct RestaurantSettingsView: View {
                 }
                 .frame(maxWidth: .infinity, minHeight: 200)
             } else {
+                Text("Modalita singolo ristorante attiva: e consentita una sola scheda ristorante su questo iPad.")
+                    .font(.caption)
+                    .foregroundColor(.gray)
+
                 LazyVStack(spacing: 16) {
                     ForEach(restaurants) { restaurant in
                         restaurantRow(restaurant)
@@ -196,6 +200,8 @@ struct RestaurantEditSheet: View {
     @State private var phone: String = ""
     @State private var email: String = ""
     @State private var notes: String = ""
+    @State private var newRestaurantPin: String = ""
+    @State private var confirmRestaurantPin: String = ""
     @State private var logoItem: PhotosPickerItem?
     @State private var logoData: Data?
     
@@ -255,6 +261,24 @@ struct RestaurantEditSheet: View {
                         TextField("Note", text: $notes, axis: .vertical)
                             .lineLimit(3...10)
                     }
+
+                    Section("Sicurezza Ristorante") {
+                        SecureField("Nuovo PIN Ristorante (4 cifre)", text: $newRestaurantPin)
+                            .keyboardType(.numberPad)
+                            .onChange(of: newRestaurantPin) { _, newValue in
+                                let digits = newValue.filter(\.isNumber)
+                                newRestaurantPin = String(digits.prefix(4))
+                            }
+                        SecureField("Conferma Nuovo PIN", text: $confirmRestaurantPin)
+                            .keyboardType(.numberPad)
+                            .onChange(of: confirmRestaurantPin) { _, newValue in
+                                let digits = newValue.filter(\.isNumber)
+                                confirmRestaurantPin = String(digits.prefix(4))
+                            }
+                        Text("Il PIN ristorante viene salvato in forma hashata.")
+                            .font(.caption)
+                            .foregroundColor(.gray)
+                    }
                 }
                 .scrollContentBackground(.hidden)
                 .navigationTitle(restaurant == nil ? "Nuovo Ristorante" : "Modifica Ristorante")
@@ -265,7 +289,7 @@ struct RestaurantEditSheet: View {
                     }
                     ToolbarItem(placement: .confirmationAction) {
                         Button("Salva") { save() }
-                            .disabled(name.isEmpty || manager.isEmpty)
+                            .disabled(name.isEmpty || manager.isEmpty || !isPinSectionValid)
                     }
                 }
             }
@@ -294,8 +318,25 @@ struct RestaurantEditSheet: View {
             r.email = email
             r.notes = notes
             r.logoData = logoData
+            if !newRestaurantPin.isEmpty {
+                r.restaurantPinHash = PinHasher.hash(pin: newRestaurantPin)
+            }
         } else {
-            let new = Restaurant(name: name, address: address, city: city, haccpManager: manager, phone: phone, email: email, notes: notes, logoData: logoData)
+            guard !hasExistingRestaurant else {
+                dismiss()
+                return
+            }
+            let new = Restaurant(
+                name: name,
+                address: address,
+                city: city,
+                haccpManager: manager,
+                phone: phone,
+                email: email,
+                notes: notes,
+                restaurantPinHash: PinHasher.hash(pin: newRestaurantPin),
+                logoData: logoData
+            )
             modelContext.insert(new)
             
             // If it's the first one, make it active
@@ -311,5 +352,21 @@ struct RestaurantEditSheet: View {
     
     private var store: AppDataStore? {
         stores.first
+    }
+
+    private var isPinSectionValid: Bool {
+        if restaurant == nil {
+            return newRestaurantPin.count == 4 && confirmRestaurantPin == newRestaurantPin
+        }
+        if newRestaurantPin.isEmpty && confirmRestaurantPin.isEmpty {
+            return true
+        }
+        return newRestaurantPin.count == 4 && confirmRestaurantPin == newRestaurantPin
+    }
+
+    private var hasExistingRestaurant: Bool {
+        let descriptor = FetchDescriptor<Restaurant>()
+        let existing = (try? modelContext.fetch(descriptor)) ?? []
+        return !existing.isEmpty
     }
 }

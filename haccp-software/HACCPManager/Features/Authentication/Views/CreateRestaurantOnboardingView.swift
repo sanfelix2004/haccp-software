@@ -17,6 +17,8 @@ public struct CreateRestaurantOnboardingView: View {
     @State private var phone: String = ""
     @State private var email: String = ""
     @State private var notes: String = ""
+    @State private var pin: String = ""
+    @State private var confirmPin: String = ""
     
     @State private var showError = false
     
@@ -59,6 +61,8 @@ public struct CreateRestaurantOnboardingView: View {
                             }
                             
                             onboardingTextField(label: "Note", text: $notes, icon: "note.text")
+                            securePinField(label: "PIN Ristorante (4 cifre)*", text: $pin, icon: "lock.fill")
+                            securePinField(label: "Conferma PIN Ristorante*", text: $confirmPin, icon: "lock.shield.fill")
                         }
                         .padding(32)
                         .background(ThemeManager.shared.surface)
@@ -69,7 +73,7 @@ public struct CreateRestaurantOnboardingView: View {
                     .transition(.scale.combined(with: .opacity))
                     
                     if showError {
-                        Text("Nome e Responsabile sono obbligatori.")
+                        Text("Nome, Responsabile e PIN ristorante (4 cifre) sono obbligatori.")
                             .foregroundColor(.red)
                             .fontWeight(.bold)
                             .transition(.opacity)
@@ -82,11 +86,11 @@ public struct CreateRestaurantOnboardingView: View {
                             .foregroundColor(.white)
                             .frame(maxWidth: 300)
                             .padding(.vertical, 20)
-                            .background(name.isEmpty || manager.isEmpty ? Color.gray : Color.red)
+                            .background(formInvalid ? Color.gray : Color.red)
                             .cornerRadius(20)
                             .shadow(color: (name.isEmpty || manager.isEmpty ? Color.clear : Color.red.opacity(0.3)), radius: 20, y: 10)
                     }
-                    .disabled(name.isEmpty || manager.isEmpty)
+                    .disabled(formInvalid)
                     .padding(.bottom, 60)
                 }
                 .padding(.horizontal, 40)
@@ -114,9 +118,37 @@ public struct CreateRestaurantOnboardingView: View {
             .cornerRadius(12)
         }
     }
+
+    private func securePinField(label: String, text: Binding<String>, icon: String) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(label)
+                .font(.caption)
+                .fontWeight(.bold)
+                .foregroundColor(.gray)
+
+            HStack(spacing: 12) {
+                Image(systemName: icon)
+                    .foregroundColor(.red)
+                SecureField("0000", text: text)
+                    .keyboardType(.numberPad)
+                    .foregroundColor(ThemeManager.shared.text)
+                    .onChange(of: text.wrappedValue) { _, newValue in
+                        let digits = newValue.filter(\.isNumber)
+                        text.wrappedValue = String(digits.prefix(4))
+                    }
+            }
+            .padding()
+            .background(Color.black.opacity(0.1))
+            .cornerRadius(12)
+        }
+    }
+
+    private var formInvalid: Bool {
+        name.isEmpty || manager.isEmpty || pin.count != 4 || pin != confirmPin
+    }
     
     private func createRestaurant() {
-        guard !name.isEmpty && !manager.isEmpty else {
+        guard !name.isEmpty && !manager.isEmpty && pin.count == 4 && pin == confirmPin else {
             showError = true
             return
         }
@@ -128,7 +160,8 @@ public struct CreateRestaurantOnboardingView: View {
             haccpManager: manager,
             phone: phone,
             email: email,
-            notes: notes
+            notes: notes,
+            restaurantPinHash: PinHasher.hash(pin: pin)
         )
         
         modelContext.insert(newRestaurant)
