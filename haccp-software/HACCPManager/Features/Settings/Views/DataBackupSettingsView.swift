@@ -9,6 +9,14 @@ struct DataBackupSettingsView: View {
     @State private var showResetConfirm = false
     @State private var showAuthForReset = false
     
+    private var currentUser: LocalUser? {
+        users.first { $0.id == appState.currentUserId }
+    }
+    
+    private var isMaster: Bool {
+        currentUser?.role == .master
+    }
+    
     var body: some View {
         VStack(spacing: 32) {
             
@@ -49,18 +57,20 @@ struct DataBackupSettingsView: View {
                 SettingsActionButton(title: "Esporta Dati (CSV/PDF)", icon: "square.and.arrow.up", isFuture: true)
                 SettingsActionButton(title: "Configura Backup iCloud", icon: "icloud.and.arrow.up", isFuture: true)
                 
-                Divider().background(Color.white.opacity(0.1))
-                
-                Button(action: { showResetConfirm = true }) {
-                    HStack {
-                        Image(systemName: "trash.fill")
-                        Text("Reset Completo Sistema")
-                        Spacer()
+                if isMaster {
+                    Divider().background(Color.white.opacity(0.1))
+                    
+                    Button(action: { showResetConfirm = true }) {
+                        HStack {
+                            Image(systemName: "trash.fill")
+                            Text("Reset completo app")
+                            Spacer()
+                        }
+                        .foregroundColor(.red)
+                        .padding()
+                        .background(Color.red.opacity(0.1))
+                        .cornerRadius(12)
                     }
-                    .foregroundColor(.red)
-                    .padding()
-                    .background(Color.red.opacity(0.1))
-                    .cornerRadius(12)
                 }
             }
         }
@@ -70,7 +80,7 @@ struct DataBackupSettingsView: View {
             }
             Button("Annulla", role: .cancel) {}
         } message: {
-            Text("Questa azione cancellerà definitivamente tutti gli utenti, le impostazioni e i dati caricati. La procedura richiede l'autorizzazione MASTER.")
+            Text("Questa azione cancellerà tutti gli utenti, ristoranti, impostazioni e dati locali. Non può essere annullata.")
         }
         .fullScreenCover(isPresented: $showAuthForReset) {
             if let master = users.first(where: { $0.role == .master }) {

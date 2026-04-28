@@ -1,6 +1,7 @@
 import SwiftUI
 import Combine
 import SwiftData
+import UserNotifications
 
 class AppState: ObservableObject {
     @Published var isAuthenticated: Bool = false
@@ -96,7 +97,12 @@ class AppState: ObservableObject {
         UserDefaults.standard.removeObject(forKey: "active_restaurant_id")
         UserDefaults.standard.removeObject(forKey: "current_user_id")
         
-        // 8. Force UI refresh
+        // 8. Clear notifications and URL cache
+        UNUserNotificationCenter.current().removeAllPendingNotificationRequests()
+        UNUserNotificationCenter.current().removeAllDeliveredNotifications()
+        URLCache.shared.removeAllCachedResponses()
+        
+        // 9. Force UI refresh
         self.objectWillChange.send()
     }
 
