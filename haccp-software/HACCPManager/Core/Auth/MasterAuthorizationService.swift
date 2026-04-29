@@ -15,6 +15,7 @@ final class MasterAuthorizationService {
         case accessSettings
         case editRestaurantInfo
         case manageTemperatureDevices
+        case manageChecklistTemplates
 
         var localizedReason: String {
             switch self {
@@ -38,6 +39,8 @@ final class MasterAuthorizationService {
                 return "Autorizza la modifica dei dati del ristorante"
             case .manageTemperatureDevices:
                 return "Autorizza la gestione dei dispositivi temperatura"
+            case .manageChecklistTemplates:
+                return "Autorizza la gestione critica delle checklist"
             }
         }
     }
