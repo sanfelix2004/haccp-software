@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import Combine
 
 struct ChecklistView: View {
     @Environment(\.modelContext) private var modelContext
