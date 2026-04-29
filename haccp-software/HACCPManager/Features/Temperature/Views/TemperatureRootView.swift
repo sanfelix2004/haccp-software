@@ -644,79 +644,114 @@ struct AddTemperatureRecordView: View {
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 0) {
-                ScrollView {
-                    VStack(spacing: 16) {
-                        Picker("Dispositivo", selection: $selectedDeviceId) {
-                            ForEach(devices) { device in
-                                Text(device.name).tag(device.id)
+            GeometryReader { geo in
+                let keypadButtonHeight = min(max((geo.size.height - 420) / 4, 48), 58)
+                let correctiveEditorHeight = min(max(geo.size.height * 0.16, 92), 120)
+                VStack(spacing: 10) {
+                    Picker("Dispositivo", selection: $selectedDeviceId) {
+                        ForEach(devices) { device in
+                            Text(device.name).tag(device.id)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 8)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.white.opacity(0.08))
+                    .cornerRadius(12)
+                    .tint(.white)
+
+                    Text(selectedDevice?.name ?? "Dispositivo")
+                        .font(.title3.bold())
+                        .foregroundColor(.white)
+                    Text(selectedDevice?.type.label ?? "-")
+                        .foregroundColor(.gray)
+                        .font(.caption)
+
+                    Text(valueText.isEmpty ? "--.-" : valueText)
+                        .font(.system(size: 52, weight: .black, design: .rounded))
+                        .foregroundColor(.white)
+
+                    Text(validationMessage)
+                        .foregroundColor(validationColor)
+                        .font(.subheadline.weight(.semibold))
+                        .frame(maxWidth: .infinity)
+
+                    HStack(alignment: .top, spacing: 12) {
+                        VStack(spacing: 8) {
+                            HStack(spacing: 10) {
+                                Button("+/-") { toggleSign() }
+                                    .buttonStyle(.bordered)
+                                    .tint(.white)
+                                Button("C") { clearAll() }
+                                    .buttonStyle(.bordered)
+                                    .tint(.white)
+                                Spacer()
                             }
-                        }
-                        .pickerStyle(.menu)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 10)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(Color.white.opacity(0.08))
-                        .cornerRadius(12)
-                        .tint(.white)
 
-                        Text(selectedDevice?.name ?? "Dispositivo")
-                            .font(.title.bold())
-                            .foregroundColor(.white)
-                        Text(selectedDevice?.type.label ?? "-")
-                            .foregroundColor(.gray)
-
-                        Text(valueText.isEmpty ? "--.-" : valueText)
-                            .font(.system(size: 76, weight: .black, design: .rounded))
-                            .foregroundColor(.white)
-
-                        Text(validationMessage)
-                            .foregroundColor(validationColor)
-                            .font(.headline)
-                            .frame(maxWidth: .infinity)
-
-                        HStack(spacing: 10) {
-                            Button("+/-") { toggleSign() }
-                                .buttonStyle(.bordered)
-                                .tint(.white)
-                            Button("C") { clearAll() }
-                                .buttonStyle(.bordered)
-                                .tint(.white)
-                            Spacer()
-                        }
-
-                        VStack(spacing: 10) {
-                            ForEach(keypad, id: \.self) { row in
-                                HStack(spacing: 10) {
-                                    ForEach(row, id: \.self) { key in
-                                        Button {
-                                            keyTap(key)
-                                        } label: {
-                                            Text(key)
-                                                .font(.title2.bold())
-                                                .foregroundColor(.white)
-                                                .frame(maxWidth: .infinity, minHeight: 62)
-                                                .background(Color.white.opacity(0.08))
-                                                .cornerRadius(12)
+                            VStack(spacing: 8) {
+                                ForEach(keypad, id: \.self) { row in
+                                    HStack(spacing: 8) {
+                                        ForEach(row, id: \.self) { key in
+                                            Button {
+                                                keyTap(key)
+                                            } label: {
+                                                Text(key)
+                                                    .font(.title3.bold())
+                                                    .foregroundColor(.white)
+                                                    .frame(maxWidth: .infinity, minHeight: keypadButtonHeight)
+                                                    .background(Color.white.opacity(0.08))
+                                                    .cornerRadius(10)
+                                            }
                                         }
                                     }
                                 }
                             }
                         }
+                        .frame(maxWidth: .infinity)
 
-                        TextField("Note (opzionale)", text: $notes)
-                            .textFieldStyle(.roundedBorder)
-                        TextField("Azione correttiva", text: $correctiveAction)
-                            .textFieldStyle(.roundedBorder)
-                        if requiresCorrectiveAction {
-                            Text("Azione correttiva obbligatoria per valori fuori range.")
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text("Dettagli controllo")
+                                .font(.caption.bold())
+                                .foregroundColor(.gray)
+                            TextField("Note (opzionale)", text: $notes)
+                                .textFieldStyle(.roundedBorder)
+                            Text("Azione correttiva")
                                 .font(.caption)
-                                .foregroundColor(.orange)
-                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .foregroundColor(.gray)
+                            TextEditor(text: $correctiveAction)
+                                .frame(minHeight: correctiveEditorHeight, maxHeight: correctiveEditorHeight)
+                                .scrollContentBackground(.hidden)
+                                .padding(8)
+                                .background(Color.white.opacity(0.06))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 10)
+                                        .stroke(requiresCorrectiveAction ? Color.orange : Color.white.opacity(0.12), lineWidth: 1)
+                                )
+                                .cornerRadius(10)
+                            Text(requiresCorrectiveAction ? "Obbligatoria: inserisci azione per valori fuori range." : "Opzionale: utile per tracciabilita.")
+                                .font(.caption)
+                                .foregroundColor(requiresCorrectiveAction ? .orange : .gray)
+                                .fixedSize(horizontal: false, vertical: true)
                         }
+                        .frame(width: min(geo.size.width * 0.35, 260), alignment: .top)
                     }
-                    .padding(20)
+
+                    HStack(spacing: 12) {
+                        Button("Annulla") { dismiss() }
+                            .buttonStyle(.bordered)
+                            .tint(.white)
+                        Button("Conferma misurazione") {
+                            save()
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(.red)
+                        .disabled(!canSubmit)
+                    }
                 }
+                .padding(14)
+                .frame(maxWidth: 760)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             }
             .background(Color(hex: "#0A0A0A").ignoresSafeArea())
             .navigationTitle("Nuova misurazione")
@@ -725,22 +760,6 @@ struct AddTemperatureRecordView: View {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Chiudi") { dismiss() }
                 }
-            }
-            .safeAreaInset(edge: .bottom) {
-                HStack(spacing: 12) {
-                    Button("Annulla") { dismiss() }
-                        .buttonStyle(.bordered)
-                        .tint(.white)
-                    Button("Conferma misurazione") {
-                        save()
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(.red)
-                    .disabled(!canSubmit)
-                }
-                .padding(.horizontal, 20)
-                .padding(.vertical, 12)
-                .background(.ultraThinMaterial)
             }
             .alert("Errore", isPresented: $showError) {
                 Button("OK", role: .cancel) {}
