@@ -25,12 +25,12 @@ struct ChecklistAnalyticsCard: View {
                     .frame(height: 220)
                     .chartYScale(domain: 0...100)
                     .chartYAxis {
-                        AxisMarks(position: .leading, values: [0, 25, 50, 75, 100]) {
+                        AxisMarks(position: .leading, values: [0, 25, 50, 75, 100]) { value in
                             AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5))
                                 .foregroundStyle(Color.gray.opacity(0.3))
                             AxisValueLabel {
-                                if let value = $0.as(Int.self) {
-                                    Text("\(value)%").foregroundColor(.gray)
+                                if let intValue = value.as(Int.self) {
+                                    Text("\(intValue)%").foregroundColor(.gray)
                                 }
                             }
                         }
