@@ -37,6 +37,13 @@ struct HACCPModulesView: View {
                 cardBody(module)
             }
             .buttonStyle(.plain)
+        } else if module.name == "Checklist" {
+            NavigationLink {
+                ChecklistView()
+            } label: {
+                cardBody(module)
+            }
+            .buttonStyle(.plain)
         } else {
             cardBody(module)
         }

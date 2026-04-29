@@ -3,7 +3,9 @@ import SwiftData
 
 public struct CreateRestaurantOnboardingView: View {
     @Environment(\.modelContext) private var modelContext
+    @EnvironmentObject var appState: AppState
     @Query private var stores: [AppDataStore]
+    @Query private var users: [LocalUser]
     public var onComplete: () -> Void
     
     public init(onComplete: @escaping () -> Void) {
@@ -169,6 +171,14 @@ public struct CreateRestaurantOnboardingView: View {
         // Set as active in AppDataStore
         if let store = stores.first {
             store.activeRestaurantId = newRestaurant.id
+        }
+
+        if let seededUser = users.first(where: { $0.id == appState.currentUserId }) ?? users.first(where: { $0.role == .master }) {
+            try? ChecklistService().seedDefaultTemplatesIfNeeded(
+                restaurantId: newRestaurant.id,
+                createdBy: seededUser,
+                modelContext: modelContext
+            )
         }
         
         try? modelContext.save()

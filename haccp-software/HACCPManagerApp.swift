@@ -22,7 +22,13 @@ struct HACCPManagerApp: App {
                 TemperatureDevice.self,
                 TemperatureRecord.self,
                 TemperatureAlert.self,
-                TemperatureAuditLog.self
+                TemperatureAuditLog.self,
+                ChecklistTemplate.self,
+                ChecklistItemTemplate.self,
+                ChecklistRun.self,
+                ChecklistItemResult.self,
+                ChecklistAlert.self,
+                ChecklistAuditLog.self
             )
         } catch {
             fatalError("Failed to initialize SwiftData model container: \(error)")
