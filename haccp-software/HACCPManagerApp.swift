@@ -8,7 +8,9 @@ import SwiftData
 
 @main
 struct HACCPManagerApp: App {
+    @Environment(\.scenePhase) private var scenePhase
     @StateObject private var appState = AppState()
+    private let expiryService = TraceabilityExpiryService()
     
     // Explicitly configure model container to ensure persistence
     private var container: ModelContainer
@@ -38,6 +40,13 @@ struct HACCPManagerApp: App {
                 OilControlRecord.self,
                 ProductionLabelRecord.self,
                 GoodsReceivingRecord.self,
+                Supplier.self,
+                ProductTemplate.self,
+                ProductionCategory.self,
+                Production.self,
+                TraceabilityLink.self,
+                TraceabilityLog.self,
+                ProductImage.self,
                 DocumentFolder.self,
                 DocumentItem.self
             )
@@ -52,5 +61,12 @@ struct HACCPManagerApp: App {
                 .environmentObject(appState)
         }
         .modelContainer(container)
+        .onChange(of: scenePhase) { _, newPhase in
+            guard newPhase == .active || newPhase == .background else { return }
+            let context = container.mainContext
+            if let all = try? context.fetch(FetchDescriptor<TraceabilityRecord>()) {
+                _ = expiryService.refreshStatuses(records: all, modelContext: context)
+            }
+        }
     }
 }

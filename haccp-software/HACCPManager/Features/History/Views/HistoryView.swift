@@ -9,7 +9,7 @@ struct HistoryView: View {
     @Query private var defrostRecords: [DefrostRecord]
     @Query private var blastRecords: [BlastChillingRecord]
     @Query private var labelRecords: [ProductionLabelRecord]
-    @Query private var goodsRecords: [GoodsReceivingRecord]
+    @Query private var goodsRecords: [GoodsReceipt]
 
     @StateObject private var vm = HistoryViewModel()
 

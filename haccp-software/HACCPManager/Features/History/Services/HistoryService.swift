@@ -19,7 +19,7 @@ struct HistoryService {
         defrostRecords: [DefrostRecord],
         blastRecords: [BlastChillingRecord],
         labelRecords: [ProductionLabelRecord],
-        goodsRecords: [GoodsReceivingRecord]
+        goodsRecords: [GoodsReceipt]
     ) -> [HistoryEntry] {
         let temperature = temperatureRecords
             .filter { $0.restaurantId == restaurantId }
@@ -98,10 +98,10 @@ struct HistoryService {
             .map {
                 HistoryEntry(
                     module: "Ricezione merci",
-                    title: $0.productName,
-                    category: $0.compliant ? "Conforme" : "Non conforme",
+                    title: $0.productNameSnapshot,
+                    category: $0.status.label,
                     operatorName: $0.createdByNameSnapshot,
-                    productOrDevice: $0.productName,
+                    productOrDevice: $0.productNameSnapshot,
                     date: $0.createdAt
                 )
             }
