@@ -28,7 +28,18 @@ struct HACCPManagerApp: App {
                 ChecklistRun.self,
                 ChecklistItemResult.self,
                 ChecklistAlert.self,
-                ChecklistAuditLog.self
+                ChecklistAuditLog.self,
+                FridgeCheckRecord.self,
+                ScheduledTask.self,
+                TraceabilityRecord.self,
+                CleaningRecord.self,
+                BlastChillingRecord.self,
+                DefrostRecord.self,
+                OilControlRecord.self,
+                ProductionLabelRecord.self,
+                GoodsReceivingRecord.self,
+                DocumentFolder.self,
+                DocumentItem.self
             )
         } catch {
             fatalError("Failed to initialize SwiftData model container: \(error)")

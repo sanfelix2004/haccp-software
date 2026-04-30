@@ -3,12 +3,19 @@ import SwiftData
 
 enum SidebarItem: String, CaseIterable, Identifiable {
     case dashboard = "Dashboard"
-    case temperature = "Temperature"
-    case haccpModules = "Moduli HACCP"
-    case checklist = "Checklist"
+    case scheduling = "Programmazione"
+    case traceability = "Tracciabilita"
+    case fridges = "Frigoriferi"
+    case cleaningControl = "Controllo pulizia"
+    case blastChilling = "Abbattimento"
+    case defrost = "Decongelamento"
+    case oilControl = "Controllo olio"
+    case productionLabels = "Etichette"
+    case goodsReceiving = "Ricezione merci"
+    case documents = "Documenti"
+    case history = "Storia"
     case analytics = "Grafici"
     case alerts = "Alert"
-    case recentActivities = "Attivita recenti"
     case users = "Utenti"
     case settings = "Impostazioni"
     
@@ -17,12 +24,19 @@ enum SidebarItem: String, CaseIterable, Identifiable {
     var icon: String {
         switch self {
         case .dashboard: return "square.grid.2x2.fill"
-        case .temperature: return "thermometer.medium"
-        case .haccpModules: return "square.grid.3x2.fill"
-        case .checklist: return "checklist"
+        case .scheduling: return "calendar.badge.clock"
+        case .traceability: return "archivebox.fill"
+        case .fridges: return "thermometer.medium"
+        case .cleaningControl: return "sparkles"
+        case .blastChilling: return "wind.snow"
+        case .defrost: return "snowflake"
+        case .oilControl: return "drop.fill"
+        case .productionLabels: return "tag.fill"
+        case .goodsReceiving: return "shippingbox.fill"
+        case .documents: return "folder.fill"
+        case .history: return "clock.arrow.circlepath"
         case .analytics: return "chart.xyaxis.line"
         case .alerts: return "bell.badge.fill"
-        case .recentActivities: return "clock.arrow.circlepath"
         case .users: return "person.2.fill"
         case .settings: return "gearshape.fill"
         }
@@ -192,18 +206,32 @@ struct DashboardRootView: View {
         switch item {
         case .dashboard:
             DashboardView()
-        case .temperature:
-            TemperatureRootView()
-        case .haccpModules:
-            HACCPModulesView()
-        case .checklist:
-            ChecklistView()
+        case .scheduling:
+            SchedulingView()
+        case .traceability:
+            TraceabilityView()
+        case .fridges:
+            FridgesView()
+        case .cleaningControl:
+            CleaningControlView()
+        case .blastChilling:
+            BlastChillingView()
+        case .defrost:
+            DefrostView()
+        case .oilControl:
+            OilControlView()
+        case .productionLabels:
+            ProductionLabelsView()
+        case .goodsReceiving:
+            GoodsReceivingView()
+        case .documents:
+            DocumentsView()
+        case .history:
+            HistoryView()
         case .analytics:
             AnalyticsView()
         case .alerts:
             AlertsView()
-        case .recentActivities:
-            RecentActivityView()
         case .users:
             if currentUser?.role == .master {
                 UsersManagementView()

@@ -3,14 +3,17 @@ import SwiftUI
 struct HACCPModulesView: View {
     private let columns = [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())]
     private let modules: [DashboardModule] = [
-        .init(name: "Temperature", description: "Monitoraggio e registrazioni termiche", icon: "thermometer.medium", state: .open, isEnabled: true),
-        .init(name: "Checklist", description: "Procedure operative giornaliere", icon: "checklist", state: .open, isEnabled: true),
-        .init(name: "Pulizie", description: "Piani e conferme di sanificazione", icon: "sparkles", state: .configure, isEnabled: false),
-        .init(name: "Prodotti", description: "Lotti, scadenze e tracciabilita", icon: "archivebox.fill", state: .configure, isEnabled: false),
-        .init(name: "Etichette", description: "Gestione etichette di preparazione", icon: "tag.fill", state: .configure, isEnabled: false),
-        .init(name: "Scongelamento", description: "Controllo procedure di scongelamento", icon: "snowflake", state: .configure, isEnabled: false),
-        .init(name: "Abbattimento", description: "Flussi e registrazioni abbattitore", icon: "wind.snow", state: .configure, isEnabled: false),
-        .init(name: "Report", description: "Esportazioni e storico conformita", icon: "doc.text.fill", state: .open, isEnabled: true)
+        .init(name: "Programmazione", description: "Attivita periodiche e promemoria", icon: "calendar.badge.clock", state: .open, isEnabled: true),
+        .init(name: "Tracciabilita", description: "Prodotti, lotti e fornitori", icon: "archivebox.fill", state: .open, isEnabled: true),
+        .init(name: "Frigoriferi", description: "Controllo temperature frigo/freezer", icon: "thermometer.medium", state: .open, isEnabled: true),
+        .init(name: "Controllo pulizia", description: "Piani pulizia e firme operatore", icon: "sparkles", state: .open, isEnabled: true),
+        .init(name: "Abbattimento", description: "Abbattimento in negativo", icon: "wind.snow", state: .open, isEnabled: true),
+        .init(name: "Decongelamento", description: "Procedure di decongelamento", icon: "snowflake", state: .open, isEnabled: true),
+        .init(name: "Controllo olio", description: "Stato olio frittura e azioni", icon: "drop.fill", state: .open, isEnabled: true),
+        .init(name: "Etichette", description: "Etichette di produzione", icon: "tag.fill", state: .open, isEnabled: true),
+        .init(name: "Ricezione merci", description: "Controllo conformita in ingresso", icon: "shippingbox.fill", state: .open, isEnabled: true),
+        .init(name: "Documenti", description: "Cartelle e documenti HACCP", icon: "folder.fill", state: .open, isEnabled: true),
+        .init(name: "Storia", description: "Archivio registrazioni centralizzato", icon: "clock.arrow.circlepath", state: .open, isEnabled: true)
     ]
 
     var body: some View {
@@ -30,16 +33,79 @@ struct HACCPModulesView: View {
 
     @ViewBuilder
     private func moduleCard(_ module: DashboardModule) -> some View {
-        if module.name == "Temperature" {
+        if module.name == "Programmazione" {
             NavigationLink {
-                TemperatureRootView()
+                SchedulingView()
             } label: {
                 cardBody(module)
             }
             .buttonStyle(.plain)
-        } else if module.name == "Checklist" {
+        } else if module.name == "Tracciabilita" {
             NavigationLink {
-                ChecklistView()
+                TraceabilityView()
+            } label: {
+                cardBody(module)
+            }
+            .buttonStyle(.plain)
+        } else if module.name == "Frigoriferi" {
+            NavigationLink {
+                FridgesView()
+            } label: {
+                cardBody(module)
+            }
+            .buttonStyle(.plain)
+        } else if module.name == "Controllo pulizia" {
+            NavigationLink {
+                CleaningControlView()
+            } label: {
+                cardBody(module)
+            }
+            .buttonStyle(.plain)
+        } else if module.name == "Abbattimento" {
+            NavigationLink {
+                BlastChillingView()
+            } label: {
+                cardBody(module)
+            }
+            .buttonStyle(.plain)
+        } else if module.name == "Decongelamento" {
+            NavigationLink {
+                DefrostView()
+            } label: {
+                cardBody(module)
+            }
+            .buttonStyle(.plain)
+        } else if module.name == "Controllo olio" {
+            NavigationLink {
+                OilControlView()
+            } label: {
+                cardBody(module)
+            }
+            .buttonStyle(.plain)
+        } else if module.name == "Etichette" {
+            NavigationLink {
+                ProductionLabelsView()
+            } label: {
+                cardBody(module)
+            }
+            .buttonStyle(.plain)
+        } else if module.name == "Ricezione merci" {
+            NavigationLink {
+                GoodsReceivingView()
+            } label: {
+                cardBody(module)
+            }
+            .buttonStyle(.plain)
+        } else if module.name == "Documenti" {
+            NavigationLink {
+                DocumentsView()
+            } label: {
+                cardBody(module)
+            }
+            .buttonStyle(.plain)
+        } else if module.name == "Storia" {
+            NavigationLink {
+                HistoryView()
             } label: {
                 cardBody(module)
             }
