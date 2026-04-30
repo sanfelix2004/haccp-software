@@ -37,6 +37,26 @@ struct TraceabilityView: View {
                         VStack(spacing: 10) {
                             ForEach(scopedRecords.prefix(30)) { record in
                                 HStack {
+                                    if let data = record.photoData, let image = UIImage(data: data) {
+                                        Image(uiImage: image)
+                                            .resizable()
+                                            .scaledToFill()
+                                            .frame(width: 56, height: 56)
+                                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                                            .overlay(
+                                                RoundedRectangle(cornerRadius: 8)
+                                                    .stroke(Color.white.opacity(0.15), lineWidth: 1)
+                                            )
+                                    } else {
+                                        RoundedRectangle(cornerRadius: 8)
+                                            .fill(Color.white.opacity(0.04))
+                                            .frame(width: 56, height: 56)
+                                            .overlay(
+                                                Image(systemName: "photo")
+                                                    .foregroundColor(.gray)
+                                            )
+                                    }
+
                                     VStack(alignment: .leading, spacing: 2) {
                                         Text(record.productName).foregroundColor(.white)
                                         Text("Lotto: \(record.lotCode.isEmpty ? "-" : record.lotCode) · Fornitore: \(record.supplier.isEmpty ? "-" : record.supplier)")
