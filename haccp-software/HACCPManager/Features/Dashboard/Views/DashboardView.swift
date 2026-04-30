@@ -14,7 +14,7 @@ struct DashboardView: View {
     @Query private var defrostRecords: [DefrostRecord]
     @Query private var oilRecords: [OilControlRecord]
     @Query private var labelRecords: [ProductionLabelRecord]
-    @Query private var goodsRecords: [GoodsReceivingRecord]
+    @Query private var goodsRecords: [GoodsReceipt]
     @Query private var documentFolders: [DocumentFolder]
 
     @StateObject private var viewModel: DashboardViewModel
