@@ -10,6 +10,8 @@ final class TraceabilityRecord {
     var supplier: String
     var receivedAt: Date
     var expiryDate: Date?
+    var productionReference: String?
+    var photoData: Data?
     var createdAt: Date
     var createdByUserId: UUID
     var createdByNameSnapshot: String
@@ -24,6 +26,8 @@ final class TraceabilityRecord {
         supplier: String,
         receivedAt: Date,
         expiryDate: Date? = nil,
+        productionReference: String? = nil,
+        photoData: Data? = nil,
         createdAt: Date = Date(),
         createdByUserId: UUID,
         createdByNameSnapshot: String,
@@ -37,6 +41,8 @@ final class TraceabilityRecord {
         self.supplier = supplier
         self.receivedAt = receivedAt
         self.expiryDate = expiryDate
+        self.productionReference = productionReference
+        self.photoData = photoData
         self.createdAt = createdAt
         self.createdByUserId = createdByUserId
         self.createdByNameSnapshot = createdByNameSnapshot
