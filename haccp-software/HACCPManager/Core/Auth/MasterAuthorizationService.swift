@@ -16,6 +16,7 @@ final class MasterAuthorizationService {
         case editRestaurantInfo
         case manageTemperatureDevices
         case manageChecklistTemplates
+        case deleteTraceabilityEntry
 
         var localizedReason: String {
             switch self {
@@ -41,6 +42,8 @@ final class MasterAuthorizationService {
                 return "Autorizza la gestione dei dispositivi temperatura"
             case .manageChecklistTemplates:
                 return "Autorizza la gestione critica delle checklist"
+            case .deleteTraceabilityEntry:
+                return "Autorizza l'eliminazione della voce di tracciabilità e della ricezione collegata"
             }
         }
     }

@@ -1,72 +1,233 @@
 import SwiftUI
 import SwiftData
-import PhotosUI
 import AVFoundation
 import Combine
 
 struct TraceabilityView: View {
+    enum DateFilter: String, CaseIterable, Identifiable {
+        case all = "Tutte le date"
+        case today = "Oggi"
+        case month = "Ultimo mese"
+        var id: String { rawValue }
+    }
+
     @Environment(\.modelContext) private var modelContext
     @EnvironmentObject var appState: AppState
     @Query private var users: [LocalUser]
     @Query private var records: [TraceabilityRecord]
-    @StateObject private var vm = TraceabilityViewModel()
-    @StateObject private var camera = TraceabilityCameraViewModel()
-    @State private var selectedPhotoItem: PhotosPickerItem?
+    @Query private var productions: [Production]
+    @Query private var links: [TraceabilityLink]
+    @Query private var logs: [TraceabilityLog]
+    @Query private var images: [ProductImage]
+    @Query private var goodsReceipts: [GoodsReceipt]
+
+    @State private var selectedTraceabilityForProduction: TraceabilityRecord?
+    @State private var showProductionSelection = false
+    @State private var pendingProductionIds: Set<UUID> = []
+    @State private var searchText = ""
+    @State private var selectedStatus: ProductStatus?
+    @State private var selectedDateFilter: DateFilter = .all
+    @State private var nonComplianceRecord: TraceabilityRecord?
+    @State private var nonComplianceNote = ""
+    @State private var nonComplianceCorrectiveAction = ""
+    @State private var nonCompliancePhotoData: Data?
+    @State private var ncAwaitingCapture = false
+    @StateObject private var ncCamera = FinalizeReceiptCameraViewModel()
+    @State private var showMasterAuthDelete = false
+    @State private var recordPendingDelete: TraceabilityRecord?
+    @State private var exportURL: URL?
+    @State private var errorMessage: String?
+
+    private let productionLibraryService = ProductionLibraryService()
+    private let expiryService = TraceabilityExpiryService()
+    private let service = TraceabilityService()
 
     private var scopedRecords: [TraceabilityRecord] {
         guard let rid = appState.activeRestaurantId else { return [] }
         return records.filter { $0.restaurantId == rid }.sorted(by: { $0.createdAt > $1.createdAt })
     }
+
+    private var filteredRecords: [TraceabilityRecord] {
+        scopedRecords.filter { record in
+            let searchOk = searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+                displayProductName(for: record).localizedCaseInsensitiveContains(searchText)
+            let statusOk = selectedStatus == nil || record.productStatus == selectedStatus
+            let dateOk: Bool = {
+                switch selectedDateFilter {
+                case .all: return true
+                case .today: return Calendar.current.isDateInToday(record.createdAt)
+                case .month: return record.createdAt >= Calendar.current.date(byAdding: .day, value: -30, to: Date()) ?? .distantPast
+                }
+            }()
+            return searchOk && statusOk && dateOk
+        }
+    }
+
     private var currentUser: LocalUser? {
         users.first(where: { $0.id == appState.currentUserId })
+    }
+
+    private var isMaster: Bool { currentUser?.role == .master }
+
+    private var scopedGoodsReceipts: [GoodsReceipt] {
+        guard let rid = appState.activeRestaurantId else { return [] }
+        return goodsReceipts.filter { $0.restaurantId == rid }
     }
 
     var body: some View {
         ScrollView {
             VStack(spacing: 16) {
-                captureWorkspace
+                DashboardCardView(title: "Tracciabilita") {
+                    VStack(spacing: 10) {
+                        Text("Le modifiche al prodotto si effettuano da Ricezione merci.")
+                            .font(.caption)
+                            .foregroundColor(.gray)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        Button {
+                            appState.navigateToGoodsReceiving = true
+                        } label: {
+                            Label("Aggiungi da Ricezione merci", systemImage: "shippingbox.fill")
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(.red)
+                        HStack(spacing: 8) {
+                            TextField("Cerca prodotto", text: $searchText)
+                                .textFieldStyle(.roundedBorder)
+                            Picker("Stato", selection: Binding(
+                                get: { selectedStatus?.rawValue ?? "ALL" },
+                                set: { selectedStatus = ProductStatus(rawValue: $0) }
+                            )) {
+                                Text("Tutti").tag("ALL")
+                                ForEach(ProductStatus.allCases, id: \.rawValue) { status in
+                                    Text(status.label).tag(status.rawValue)
+                                }
+                            }
+                            .pickerStyle(.menu)
+                            Picker("Data", selection: $selectedDateFilter) {
+                                ForEach(DateFilter.allCases) { filter in
+                                    Text(filter.rawValue).tag(filter)
+                                }
+                            }
+                            .pickerStyle(.menu)
+                            Button("Esporta CSV") { exportURL = buildExportFile() }
+                                .buttonStyle(.bordered)
+                                .tint(.white)
+                        }
+                        if let exportURL {
+                            HStack {
+                                Spacer()
+                                ShareLink(item: exportURL) {
+                                    Label("Condividi export", systemImage: "square.and.arrow.up")
+                                }
+                                .foregroundColor(.white)
+                            }
+                        }
+                    }
 
-                DashboardCardView(title: "Storico tracciabilita") {
-                    if scopedRecords.isEmpty {
+                    if filteredRecords.isEmpty {
                         DashboardEmptyStateView(state: .init(
-                            title: "Nessuna registrazione disponibile",
-                            message: "Registra prodotti e lotti ricevuti per attivare la tracciabilita.",
+                            title: "Nessun prodotto in tracciabilita",
+                            message: "Ricevi merci per popolare lo storico e gestire stato/produzioni.",
                             actionTitle: nil
                         ))
                     } else {
                         VStack(spacing: 10) {
-                            ForEach(scopedRecords.prefix(30)) { record in
-                                HStack {
-                                    if let data = record.photoData, let image = UIImage(data: data) {
-                                        Image(uiImage: image)
-                                            .resizable()
-                                            .scaledToFill()
-                                            .frame(width: 56, height: 56)
-                                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                            ForEach(filteredRecords.prefix(80)) { record in
+                                VStack(alignment: .leading, spacing: 8) {
+                                    HStack {
+                                        recordImagePreview(for: record)
+                                        VStack(alignment: .leading, spacing: 3) {
+                                            Text(displayProductName(for: record)).foregroundColor(.white)
+                                            Text("Lotto: \(displayLot(for: record))")
+                                                .font(.caption).foregroundColor(.gray)
+                                            Text("Fornitore: \(displaySupplier(for: record))")
+                                                .font(.caption).foregroundColor(.gray)
+                                            Text("Ricezione: \(displayReceivedAt(for: record).formatted(date: .abbreviated, time: .shortened))")
+                                                .font(.caption2).foregroundColor(.gray)
+                                            if let cat = displayCategoryLabel(for: record) {
+                                                Text("Categoria: \(cat)")
+                                                    .font(.caption2)
+                                                    .foregroundColor(.gray)
+                                            }
+                                            if let st = displayReceiptStatusLabel(for: record) {
+                                                Text("Stato ricezione: \(st)")
+                                                    .font(.caption2)
+                                                    .foregroundColor(.orange.opacity(0.95))
+                                            }
+                                            Text("Scadenza: \(displayExpiry(for: record))")
+                                                .font(.caption2)
+                                                .foregroundColor(.gray)
+                                            statusBadge(for: record)
+                                            let associated = associatedProductions(for: record)
+                                            VStack(alignment: .leading, spacing: 4) {
+                                                Text("PRODUZIONI ASSOCIATE")
+                                                    .font(.caption2.weight(.bold))
+                                                    .foregroundColor(.white.opacity(0.95))
+                                                Text(associated.isEmpty ? "Nessuna produzione" : associated.map(\.name).joined(separator: " • "))
+                                                    .font(.caption.weight(.semibold))
+                                                    .foregroundColor(associated.isEmpty ? .gray : .green)
+                                                    .lineLimit(2)
+                                            }
+                                            .padding(.horizontal, 8)
+                                            .padding(.vertical, 6)
+                                            .background(
+                                                RoundedRectangle(cornerRadius: 8)
+                                                    .fill(associated.isEmpty ? Color.white.opacity(0.05) : Color.green.opacity(0.14))
+                                            )
                                             .overlay(
                                                 RoundedRectangle(cornerRadius: 8)
-                                                    .stroke(Color.white.opacity(0.15), lineWidth: 1)
+                                                    .stroke(associated.isEmpty ? Color.white.opacity(0.12) : Color.green.opacity(0.5), lineWidth: 1)
                                             )
-                                    } else {
-                                        RoundedRectangle(cornerRadius: 8)
-                                            .fill(Color.white.opacity(0.04))
-                                            .frame(width: 56, height: 56)
-                                            .overlay(
-                                                Image(systemName: "photo")
-                                                    .foregroundColor(.gray)
-                                            )
+                                            if record.isNonCompliant {
+                                                if let reason = record.nonComplianceNote, !reason.isEmpty {
+                                                    Text("Criticità: \(reason)")
+                                                        .font(.caption2)
+                                                        .foregroundColor(.orange)
+                                                }
+                                                if let cap = record.nonComplianceCorrectiveAction, !cap.isEmpty {
+                                                    Text("Azione: \(cap)")
+                                                        .font(.caption2)
+                                                        .foregroundColor(.yellow.opacity(0.9))
+                                                }
+                                            }
+                                        }
+                                        Spacer()
                                     }
 
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text(record.productName).foregroundColor(.white)
-                                        Text("Lotto: \(record.lotCode.isEmpty ? "-" : record.lotCode) · Fornitore: \(record.supplier.isEmpty ? "-" : record.supplier)")
-                                            .font(.caption)
-                                            .foregroundColor(.gray)
+                                    HStack {
+                                        Button("Associa a una produzione") {
+                                            selectedTraceabilityForProduction = record
+                                            pendingProductionIds = Set(links.filter { $0.receivedItemId == record.id }.map(\.productionId))
+                                            showProductionSelection = true
+                                        }
+                                        .buttonStyle(.bordered)
+                                        .tint(.white)
+                                        .disabled(record.productStatus == .expired || record.productStatus == .rejected)
+
+                                        Button("Segna non conforme") {
+                                            nonComplianceRecord = record
+                                            nonComplianceNote = ""
+                                            nonComplianceCorrectiveAction = ""
+                                            nonCompliancePhotoData = nil
+                                            ncCamera.resetCaptureBuffer()
+                                        }
+                                        .buttonStyle(.bordered)
+                                        .tint(.orange)
+                                        .disabled(record.productStatus == .rejected)
+
+                                        if isMaster {
+                                            Button("Elimina", role: .destructive) {
+                                                recordPendingDelete = record
+                                                showMasterAuthDelete = true
+                                            }
+                                            .buttonStyle(.bordered)
+                                        }
                                     }
-                                    Spacer()
-                                    Text(record.createdAt.formatted(date: .abbreviated, time: .shortened))
-                                        .font(.caption2)
-                                        .foregroundColor(.gray)
+                                    if record.productStatus == .expired || record.productStatus == .rejected {
+                                        Text("Prodotto non associabile a produzioni (scaduto o non conforme).")
+                                            .font(.caption2)
+                                            .foregroundColor(.yellow)
+                                    }
                                 }
                                 .padding(10)
                                 .background(Color.white.opacity(0.05))
@@ -80,381 +241,304 @@ struct TraceabilityView: View {
         }
         .background(Color(hex: "#0A0A0A").ignoresSafeArea())
         .navigationTitle("Tracciabilita")
-        .onChange(of: selectedPhotoItem) { _, newItem in
-            guard let newItem else { return }
-            Task {
-                if let data = try? await newItem.loadTransferable(type: Data.self) {
-                    await MainActor.run {
-                        vm.photoData = data
-                    }
-                }
+        .onAppear {
+            let expired = expiryService.refreshStatuses(records: scopedRecords, modelContext: modelContext)
+            if expired > 0 {
+                errorMessage = "Sono stati marcati \(expired) prodotti come scaduti."
             }
         }
-        .alert("Tracciabilita", isPresented: Binding(get: { vm.errorMessage != nil }, set: { _ in vm.errorMessage = nil })) {
+        .alert("Tracciabilita", isPresented: Binding(get: { errorMessage != nil }, set: { _ in errorMessage = nil })) {
             Button("OK", role: .cancel) {}
         } message: {
-            Text(vm.errorMessage ?? "")
+            Text(errorMessage ?? "")
         }
-        .onAppear {
-            camera.start()
-        }
-        .onDisappear {
-            camera.stop()
-        }
-        .onReceive(camera.$capturedPhotoData) { data in
-            guard let data else { return }
-            vm.photoData = data
-            if vm.selectedTab == .photo {
-                vm.selectedTab = .date
-            }
-        }
-    }
-
-    private var captureWorkspace: some View {
-        DashboardCardView(title: "Nuova registrazione") {
-            GeometryReader { geo in
-                HStack(spacing: 12) {
-                    cameraPanel(width: geo.size.width * 0.55)
-                    formPanel(width: geo.size.width * 0.45)
+        .sheet(isPresented: $showProductionSelection) {
+            ProductionSelectionView(
+                initialSelectedIds: pendingProductionIds,
+                onCancel: { showProductionSelection = false },
+                onConfirm: { selectedProductions in
+                    guard let record = selectedTraceabilityForProduction else { return }
+                    do {
+                        try productionLibraryService.syncAssociations(
+                            record: record,
+                            selectedProductions: selectedProductions,
+                            operatorName: currentUser?.name ?? "Operatore",
+                            links: links,
+                            modelContext: modelContext
+                        )
+                        showProductionSelection = false
+                    } catch {
+                        errorMessage = "Associazione produzione non riuscita."
+                    }
                 }
-                .frame(width: geo.size.width, height: geo.size.height)
-            }
-            .frame(height: 520)
+            )
+            .environmentObject(appState)
         }
-    }
-
-    private func cameraPanel(width: CGFloat) -> some View {
-        VStack(spacing: 10) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 14)
-                    .fill(Color.black)
-                    .overlay(
-                        Group {
-                            if camera.authorizationDenied {
-                                VStack(spacing: 8) {
-                                    Image(systemName: "camera.fill")
-                                        .font(.system(size: 26))
-                                        .foregroundColor(.gray)
-                                    Text("Accesso fotocamera negato")
-                                        .foregroundColor(.gray)
-                                    Text("Abilita la fotocamera nelle impostazioni")
-                                        .font(.caption)
-                                        .foregroundColor(.gray.opacity(0.8))
-                                }
-                            } else {
-                                CameraSessionPreview(session: camera.session)
-                                    .clipShape(RoundedRectangle(cornerRadius: 14))
+        .sheet(isPresented: Binding(get: { nonComplianceRecord != nil }, set: { if !$0 { nonComplianceRecord = nil } })) {
+            nonComplianceSheet
+        }
+        .onReceive(ncCamera.$capturedPhotoData) { data in
+            guard ncAwaitingCapture, let data, data.isEmpty == false else { return }
+            ncAwaitingCapture = false
+            nonCompliancePhotoData = data
+        }
+        .fullScreenCover(isPresented: $showMasterAuthDelete) {
+            if let master = users.first(where: { $0.role == .master }) {
+                MasterAuthOverlay(
+                    master: master,
+                    operation: .deleteTraceabilityEntry,
+                    onAuthorized: {
+                        showMasterAuthDelete = false
+                        if let record = recordPendingDelete {
+                            do {
+                                try service.deleteTraceabilityEntry(
+                                    record: record,
+                                    goodsReceipts: scopedGoodsReceipts,
+                                    links: links,
+                                    logs: logs,
+                                    images: images,
+                                    modelContext: modelContext
+                                )
+                            } catch {
+                                errorMessage = "Eliminazione non riuscita."
                             }
+                            recordPendingDelete = nil
                         }
-                    )
-                    .overlay(alignment: .bottomTrailing) {
-                        if let data = vm.photoData, let image = UIImage(data: data) {
-                            Image(uiImage: image)
-                                .resizable()
-                                .scaledToFill()
-                                .frame(width: 130, height: 100)
-                                .clipShape(RoundedRectangle(cornerRadius: 10))
-                                .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.white.opacity(0.5), lineWidth: 1))
-                                .padding(10)
-                        } else {
-                            Text("Nessuna foto acquisita")
-                                .font(.caption2)
-                                .foregroundColor(.gray)
-                                .padding(10)
-                                .background(Color.black.opacity(0.45))
-                                .cornerRadius(8)
-                                .padding(10)
-                        }
+                    },
+                    onCancel: {
+                        showMasterAuthDelete = false
+                        recordPendingDelete = nil
                     }
-                    .overlay {
-                        if camera.isRunning == false && camera.authorizationDenied == false {
-                            ProgressView()
-                                .tint(.white)
-                                .scaleEffect(1.1)
-                                .background(Color.black.opacity(0.4))
-                                .cornerRadius(8)
-                        }
-                    }
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 14)
-                            .stroke(Color.white.opacity(0.08), lineWidth: 1)
-                    )
-
-                VStack {
-                    HStack {
-                        Spacer()
-                        controlCircle(systemName: "scope")
-                        controlCircle(systemName: "bolt.slash")
-                        PhotosPicker(selection: $selectedPhotoItem, matching: .images) {
-                            controlCircle(systemName: "photo")
-                        }
-                        controlCircle(systemName: "magnifyingglass")
-                    }
-                    .padding(12)
-                    Spacer()
-                }
+                ) { EmptyView() }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-
-            HStack {
-                Button {
-                    camera.capturePhoto()
-                } label: {
-                    Circle()
-                        .fill(Color.white)
-                        .frame(width: 52, height: 52)
-                        .overlay(Circle().stroke(Color.gray.opacity(0.5), lineWidth: 2))
-                }
-                .buttonStyle(.plain)
-                Spacer()
-            }
-            .padding(.horizontal, 8)
         }
-        .frame(width: width)
     }
 
-    private func formPanel(width: CGFloat) -> some View {
-        VStack(spacing: 12) {
-            HStack(spacing: 0) {
-                ForEach(TraceabilityViewModel.Tab.allCases) { tab in
-                    Button {
-                        guard vm.photoData != nil || tab == .photo else { return }
-                        vm.selectedTab = tab
-                    } label: {
-                        Text(tab.rawValue)
-                            .font(.caption.bold())
-                            .foregroundColor(tabIsEnabled(tab) ? (vm.selectedTab == tab ? .red : .gray) : .gray.opacity(0.4))
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 10)
-                    }
-                    .disabled(!tabIsEnabled(tab))
-                    .background(
-                        VStack {
-                            Spacer()
-                            Rectangle()
-                                .fill(vm.selectedTab == tab ? Color.red : Color.clear)
-                                .frame(height: 2)
-                        }
-                    )
-                }
-            }
-            .background(Color.white.opacity(0.03))
-            .cornerRadius(10)
+    private func receiptForTrace(_ record: TraceabilityRecord) -> GoodsReceipt? {
+        guard let gid = record.goodsReceiptId else { return nil }
+        return scopedGoodsReceipts.first { $0.id == gid }
+    }
 
-            if vm.photoData == nil {
-                Text("Prima scatta una foto, poi compila data, lotto e appunti.")
-                    .font(.caption)
-                    .foregroundColor(.yellow)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
+    private func displayProductName(for record: TraceabilityRecord) -> String {
+        receiptForTrace(record)?.productNameSnapshot ?? record.productName
+    }
 
-            tabContent
-                .frame(maxHeight: .infinity, alignment: .top)
+    private func displaySupplier(for record: TraceabilityRecord) -> String {
+        let s = receiptForTrace(record)?.supplierNameSnapshot ?? record.supplier
+        return s.isEmpty ? "-" : s
+    }
 
-            HStack(spacing: 10) {
-                Button("Associare ad una produzione") {}
-                    .buttonStyle(.bordered)
-                    .tint(.white)
-                Button("Ho finito") {
-                    saveRecord()
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(vm.canSave ? .green : .gray)
-                .disabled(!vm.canSave)
-            }
+    private func displayLot(for record: TraceabilityRecord) -> String {
+        let lot = receiptForTrace(record)?.lotNumber ?? (record.lotCode.isEmpty ? nil : record.lotCode)
+        guard let lot, !lot.isEmpty else { return "-" }
+        return lot
+    }
+
+    private func displayReceivedAt(for record: TraceabilityRecord) -> Date {
+        receiptForTrace(record)?.receivedAt ?? record.receivedAt
+    }
+
+    private func displayCategoryLabel(for record: TraceabilityRecord) -> String? {
+        if let r = receiptForTrace(record) {
+            return r.category.rawValue
         }
-        .frame(width: width)
+        if let raw = record.categoryRaw {
+            return GoodsCategory(rawValue: raw)?.rawValue ?? raw
+        }
+        return nil
+    }
+
+    private func displayExpiry(for record: TraceabilityRecord) -> String {
+        if let d = receiptForTrace(record)?.expiryDate ?? record.expiryDate {
+            return d.formatted(date: .abbreviated, time: .omitted)
+        }
+        return "-"
+    }
+
+    private func displayReceiptStatusLabel(for record: TraceabilityRecord) -> String? {
+        guard let receipt = receiptForTrace(record) else { return nil }
+        return receipt.status.label
     }
 
     @ViewBuilder
-    private var tabContent: some View {
-        switch vm.selectedTab {
-        case .photo:
-            VStack(alignment: .leading, spacing: 10) {
-                TextField("Prodotto", text: $vm.productName)
-                    .textFieldStyle(.roundedBorder)
-                TextField("Fornitore", text: $vm.supplier)
-                    .textFieldStyle(.roundedBorder)
-                PhotosPicker(selection: $selectedPhotoItem, matching: .images) {
-                    Label(vm.photoData == nil ? "Scatta una foto" : "Sostituisci foto", systemImage: "camera")
+    private var nonComplianceSheet: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    Text("Motivo, azione correttiva e foto sono obbligatori per registrare una criticità.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
-                .buttonStyle(.bordered)
-                .tint(.green)
+                Section("Motivo (non conformità)") {
+                    TextField("Es. confezione danneggiata, temperatura errata…", text: $nonComplianceNote, axis: .vertical)
+                        .lineLimit(2...5)
+                }
+                Section("Azione correttiva") {
+                    TextField("Cosa fate per gestire la criticità", text: $nonComplianceCorrectiveAction, axis: .vertical)
+                        .lineLimit(2...5)
+                }
+                Section("Foto obbligatoria") {
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(Color.black.opacity(0.85))
+                        .frame(height: 160)
+                        .overlay(
+                            Group {
+                                if ncCamera.authorizationDenied {
+                                    Text("Accesso fotocamera negato")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                } else {
+                                    FinalizeCameraSessionPreview(session: ncCamera.session)
+                                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                                }
+                            }
+                        )
+                    Button("Scatta foto") {
+                        ncAwaitingCapture = true
+                        ncCamera.capturePhoto()
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(ncCamera.authorizationDenied)
+                    if nonCompliancePhotoData != nil {
+                        Label("Foto acquisita", systemImage: "checkmark.circle.fill")
+                            .font(.caption)
+                            .foregroundStyle(.green)
+                    }
+                }
             }
-        case .date:
-            VStack(alignment: .leading, spacing: 10) {
-                Text("Modificare la data").font(.headline).foregroundColor(.white)
-                DatePicker("Data", selection: $vm.receivedAt, displayedComponents: .date)
-                DatePicker("Ora", selection: $vm.receivedAt, displayedComponents: .hourAndMinute)
+            .navigationTitle("Non conformità")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Annulla") {
+                        ncAwaitingCapture = false
+                        ncCamera.stop()
+                        nonComplianceRecord = nil
+                    }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Conferma") {
+                        guard let record = nonComplianceRecord else { return }
+                        guard let user = currentUser else {
+                            errorMessage = "Effettua l'accesso per registrare la non conformità."
+                            return
+                        }
+                        let note = nonComplianceNote.trimmingCharacters(in: .whitespacesAndNewlines)
+                        let action = nonComplianceCorrectiveAction.trimmingCharacters(in: .whitespacesAndNewlines)
+                        guard !note.isEmpty, !action.isEmpty, let photo = nonCompliancePhotoData, photo.isEmpty == false else {
+                            errorMessage = "Per una non conformità è obbligatorio allegare una foto."
+                            return
+                        }
+                        do {
+                            try service.markNonCompliant(
+                                record: record,
+                                note: note,
+                                correctiveAction: action,
+                                imageData: photo,
+                                user: user,
+                                modelContext: modelContext
+                            )
+                            ncAwaitingCapture = false
+                            ncCamera.stop()
+                            nonComplianceRecord = nil
+                            nonCompliancePhotoData = nil
+                        } catch {
+                            errorMessage = (error as NSError).localizedDescription
+                        }
+                    }
+                }
             }
+            .onAppear {
+                ncCamera.resetCaptureBuffer()
+                ncCamera.start()
+            }
+            .onDisappear {
+                ncAwaitingCapture = false
+                ncCamera.stop()
+            }
+        }
+    }
+
+    private func associatedProductions(for record: TraceabilityRecord) -> [Production] {
+        let productionIds = Set(links.filter { $0.receivedItemId == record.id }.map(\.productionId))
+        return productions.filter { productionIds.contains($0.id) }.sorted { $0.name < $1.name }
+    }
+
+    @ViewBuilder
+    private func statusBadge(for record: TraceabilityRecord) -> some View {
+        let label = record.isNonCompliant ? "Non conforme" : record.productStatus.label
+        Text(label)
+            .font(.caption2.bold())
             .foregroundColor(.white)
-        case .lot:
-            VStack(alignment: .leading, spacing: 10) {
-                TextField("N lotto", text: $vm.lotCode)
-                    .textFieldStyle(.roundedBorder)
-                Toggle("Scadenza", isOn: $vm.includeExpiryDate)
-                    .tint(.red)
-                    .foregroundColor(.white)
-                if vm.includeExpiryDate {
-                    DatePicker("Data scadenza", selection: $vm.expiryDate, displayedComponents: .date)
-                        .foregroundColor(.white)
-                }
-                TextField("Riferimento produzione", text: $vm.productionReference)
-                    .textFieldStyle(.roundedBorder)
-            }
-        case .notes:
-            VStack(alignment: .leading, spacing: 10) {
-                Text("Inserire la nota").font(.headline).foregroundColor(.white)
-                TextEditor(text: $vm.notes)
-                    .frame(height: 140)
-                    .padding(8)
-                    .background(Color.white.opacity(0.06))
-                    .cornerRadius(10)
-                    .foregroundColor(.white)
-            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background(statusColor(record.productStatus))
+            .cornerRadius(8)
+    }
+
+    private func statusColor(_ status: ProductStatus) -> Color {
+        switch status {
+        case .available: return .blue.opacity(0.7)
+        case .partiallyUsed: return .orange.opacity(0.8)
+        case .used: return .green.opacity(0.8)
+        case .expired: return .red.opacity(0.9)
+        case .rejected: return .red
         }
     }
 
-    private func controlCircle(systemName: String) -> some View {
-        Circle()
-            .fill(Color.white.opacity(0.9))
-            .frame(width: 34, height: 34)
-            .overlay(Image(systemName: systemName).foregroundColor(.black).font(.caption.bold()))
-    }
-
-    private func saveRecord() {
-        guard let rid = appState.activeRestaurantId, let currentUser else { return }
+    private func buildExportFile() -> URL? {
+        let csv = service.exportTraceabilityReport(records: scopedRecords, links: links, productions: productions)
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("traceability_report.csv")
         do {
-            try vm.service.addRecord(
-                restaurantId: rid,
-                productName: vm.productName,
-                lotCode: vm.lotCode,
-                supplier: vm.supplier,
-                receivedAt: vm.receivedAt,
-                expiryDate: vm.includeExpiryDate ? vm.expiryDate : nil,
-                productionReference: vm.productionReference,
-                photoData: vm.photoData,
-                user: currentUser,
-                notes: vm.notes,
-                modelContext: modelContext
-            )
-            vm.resetForNext()
-            selectedPhotoItem = nil
+            try csv.write(to: url, atomically: true, encoding: .utf8)
+            return url
         } catch {
-            vm.errorMessage = "Salvataggio tracciabilita non riuscito."
+            errorMessage = "Export non riuscito."
+            return nil
         }
     }
 
-    private func tabIsEnabled(_ tab: TraceabilityViewModel.Tab) -> Bool {
-        tab == .photo || vm.photoData != nil
-    }
-}
-
-@MainActor
-final class TraceabilityCameraViewModel: ObservableObject {
-    let session = AVCaptureSession()
-    @Published var authorizationDenied = false
-    @Published var isRunning = false
-    @Published var capturedPhotoData: Data?
-
-    private var configured = false
-    private let photoOutput = AVCapturePhotoOutput()
-    private var photoDelegate: TraceabilityPhotoCaptureDelegate?
-
-    func start() {
-        AVCaptureDevice.requestAccess(for: .video) { granted in
-            DispatchQueue.main.async {
-                self.authorizationDenied = !granted
-                guard granted else { return }
-                self.configureIfNeeded()
-                DispatchQueue.global(qos: .userInitiated).async {
-                    if self.session.isRunning == false {
-                        self.session.startRunning()
-                    }
-                    DispatchQueue.main.async {
-                        self.isRunning = self.session.isRunning
-                    }
-                }
-            }
+    @ViewBuilder
+    private func recordImagePreview(for record: TraceabilityRecord) -> some View {
+        let recordImages = images.filter { $0.receivedItemId == record.id }.sorted { $0.createdAt > $1.createdAt }
+        let preferred = recordImages.first { $0.type == .nonComplianceRequired }
+            ?? recordImages.first { $0.type == .receiptOptional }
+            ?? recordImages.first
+        if let imgModel = preferred,
+           let bytes = imgModel.imageData, bytes.isEmpty == false,
+           let image = UIImage(data: bytes) {
+            Image(uiImage: image)
+                .resizable()
+                .scaledToFill()
+                .frame(width: 56, height: 56)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.white.opacity(0.15), lineWidth: 1))
+        } else if let path = preferred?.localPath, let image = UIImage(contentsOfFile: path) {
+            Image(uiImage: image)
+                .resizable()
+                .scaledToFill()
+                .frame(width: 56, height: 56)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.white.opacity(0.15), lineWidth: 1))
+        } else if let data = receiptForTrace(record)?.photoData, let image = UIImage(data: data) {
+            Image(uiImage: image)
+                .resizable()
+                .scaledToFill()
+                .frame(width: 56, height: 56)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.white.opacity(0.15), lineWidth: 1))
+        } else if let data = record.photoData, let image = UIImage(data: data) {
+            Image(uiImage: image)
+                .resizable()
+                .scaledToFill()
+                .frame(width: 56, height: 56)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.white.opacity(0.15), lineWidth: 1))
+        } else {
+            RoundedRectangle(cornerRadius: 8)
+                .fill(Color.white.opacity(0.04))
+                .frame(width: 56, height: 56)
+                .overlay(Text("Nessuna foto").font(.caption2).foregroundColor(.gray))
         }
     }
-
-    func stop() {
-        DispatchQueue.global(qos: .userInitiated).async {
-            if self.session.isRunning {
-                self.session.stopRunning()
-            }
-            DispatchQueue.main.async {
-                self.isRunning = false
-            }
-        }
-    }
-
-    private func configureIfNeeded() {
-        guard !configured else { return }
-        session.beginConfiguration()
-        session.sessionPreset = .high
-        defer {
-            session.commitConfiguration()
-            configured = true
-        }
-        guard let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back),
-              let input = try? AVCaptureDeviceInput(device: device),
-              session.canAddInput(input) else { return }
-        session.addInput(input)
-        if session.canAddOutput(photoOutput) {
-            session.addOutput(photoOutput)
-        }
-    }
-
-    func capturePhoto() {
-        guard isRunning else { return }
-        let settings = AVCapturePhotoSettings()
-        if photoOutput.availablePhotoCodecTypes.contains(.jpeg) {
-            settings.flashMode = .off
-        }
-        let delegate = TraceabilityPhotoCaptureDelegate { [weak self] data in
-            DispatchQueue.main.async {
-                self?.capturedPhotoData = data
-            }
-        }
-        photoDelegate = delegate
-        photoOutput.capturePhoto(with: settings, delegate: delegate)
-    }
-}
-
-final class TraceabilityPhotoCaptureDelegate: NSObject, AVCapturePhotoCaptureDelegate {
-    private let completion: (Data?) -> Void
-
-    init(completion: @escaping (Data?) -> Void) {
-        self.completion = completion
-    }
-
-    func photoOutput(_ output: AVCapturePhotoOutput, didFinishProcessingPhoto photo: AVCapturePhoto, error: Error?) {
-        guard error == nil else {
-            completion(nil)
-            return
-        }
-        completion(photo.fileDataRepresentation())
-    }
-}
-
-struct CameraSessionPreview: UIViewRepresentable {
-    let session: AVCaptureSession
-
-    func makeUIView(context: Context) -> PreviewView {
-        let view = PreviewView()
-        view.videoPreviewLayer.session = session
-        view.videoPreviewLayer.videoGravity = .resizeAspectFill
-        return view
-    }
-
-    func updateUIView(_ uiView: PreviewView, context: Context) {
-        uiView.videoPreviewLayer.session = session
-    }
-}
-
-final class PreviewView: UIView {
-    override class var layerClass: AnyClass { AVCaptureVideoPreviewLayer.self }
-    var videoPreviewLayer: AVCaptureVideoPreviewLayer { layer as! AVCaptureVideoPreviewLayer }
 }
