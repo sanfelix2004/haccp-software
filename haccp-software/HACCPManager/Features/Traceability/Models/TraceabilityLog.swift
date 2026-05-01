@@ -6,6 +6,8 @@ enum TraceabilityActionType: String, Codable {
     case linkedToProduction = "LINKED_TO_PRODUCTION"
     case expired = "EXPIRED"
     case rejected = "REJECTED"
+    /// Non conformità segnalata con motivo, azione correttiva e foto obbligatoria.
+    case nonCompliance = "NON_COMPLIANCE"
 }
 
 @Model

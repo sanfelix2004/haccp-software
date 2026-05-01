@@ -54,14 +54,21 @@ struct GoodsReceivingService {
             lotNumber: lotCode ?? "",
             hasExpiryDate: expiryDate != nil,
             notes: notes ?? "",
-            correctiveAction: correctiveAction ?? ""
+            correctiveAction: correctiveAction ?? "",
+            photoData: photoData,
+            enforcePhotoIfNonCompliant: true
         )
         guard validation.canSubmit else {
             throw NSError(domain: "GoodsReceivingService", code: 1001, userInfo: [NSLocalizedDescriptionKey: validation.message ?? "Compilazione incompleta"])
         }
 
-        let hasNonOk = checklistResults.contains { $0.value == .notOk } || validation.temperatureOutOfRange
-        let status: GoodsReceiptStatus = hasNonOk ? ((notes ?? "").isEmpty && (correctiveAction ?? "").isEmpty ? .nonConforme : .acceptedWithNotes) : .conforme
+        let hasNonOk = validation.hasNonCompliance
+        let hasChecklistNotOk = checklistResults.contains { $0.value == .notOk }
+        let status: GoodsReceiptStatus = {
+            guard hasNonOk else { return .conforme }
+            if hasChecklistNotOk { return .nonConforme }
+            return .acceptedWithNotes
+        }()
         let tempStatus: GoodsReceiptStatus = validation.temperatureOutOfRange ? .acceptedWithNotes : .conforme
 
         let receipt = GoodsReceipt(
@@ -90,7 +97,19 @@ struct GoodsReceivingService {
             createdByNameSnapshot: user.name
         )
         modelContext.insert(receipt)
-        traceabilityService.createTraceabilityItem(receipt: receipt, modelContext: modelContext)
+        let trace = traceabilityService.createTraceabilityItem(receipt: receipt, modelContext: modelContext)
+        if let photoData, photoData.isEmpty == false {
+            modelContext.insert(
+                ProductImage(
+                    receivedItemId: trace.id,
+                    imageData: photoData,
+                    localPath: nil,
+                    type: hasNonOk ? .nonComplianceRequired : .receiptOptional,
+                    createdByUserId: user.id,
+                    createdByNameSnapshot: user.name
+                )
+            )
+        }
         try modelContext.save()
     }
 }

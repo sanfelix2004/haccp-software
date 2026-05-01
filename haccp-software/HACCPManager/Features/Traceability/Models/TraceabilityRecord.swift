@@ -24,8 +24,14 @@ enum ProductStatus: String, Codable, CaseIterable {
     }
 }
 
-enum ProductImageType: String, Codable, CaseIterable {
+enum ProductImageType: String, Codable {
+    /// Foto allegata a ricezione conforme o accettata senza criticità obbligatoria.
+    case receiptOptional = "RECEIPT_OPTIONAL"
+    /// Prova fotografica obbligatoria per non conformità (ricezione o tracciabilità).
+    case nonComplianceRequired = "NON_COMPLIANCE_REQUIRED"
+    @available(*, deprecated, message: "Usare receiptOptional")
     case generic = "GENERIC"
+    @available(*, deprecated, message: "Usare nonComplianceRequired")
     case nonCompliance = "NON_COMPLIANCE"
 }
 
@@ -38,11 +44,15 @@ final class TraceabilityRecord {
     var supplier: String
     var sourceRaw: String = TraceabilitySource.manual.rawValue
     var goodsReceiptId: UUID?
+    /// Stato conformità della ricezione collegata (allineato da Ricezione merci).
+    var goodsReceiptStatusRaw: String?
     var categoryRaw: String?
     var currentStatusRaw: String?
     var productStatusRaw: String = ProductStatus.available.rawValue
     var isNonCompliant: Bool = false
     var nonComplianceNote: String?
+    /// Azione correttiva registrata con la segnalazione di non conformità in tracciabilità.
+    var nonComplianceCorrectiveAction: String?
     var receivedAt: Date
     var expiryDate: Date?
     var productionReference: String?
@@ -104,26 +114,60 @@ final class TraceabilityRecord {
 final class ProductImage {
     @Attribute(.unique) var id: UUID
     var receivedItemId: UUID
-    var imageData: Data
+    /// Dati immagine inline (preferito). Alternativa: `localPath`.
+    var imageData: Data?
+    /// Percorso file locale se l’immagine non è salvata in `imageData`.
+    var localPath: String?
     var typeRaw: String
     var createdAt: Date
+    var createdByUserId: UUID = UUID()
+    var createdByNameSnapshot: String = ""
 
     init(
         id: UUID = UUID(),
         receivedItemId: UUID,
-        imageData: Data,
+        imageData: Data? = nil,
+        localPath: String? = nil,
         type: ProductImageType,
-        createdAt: Date = Date()
+        createdAt: Date = Date(),
+        createdByUserId: UUID,
+        createdByNameSnapshot: String
     ) {
         self.id = id
         self.receivedItemId = receivedItemId
         self.imageData = imageData
-        self.typeRaw = type.rawValue
+        self.localPath = localPath
+        self.typeRaw = type.storageRawValue
         self.createdAt = createdAt
+        self.createdByUserId = createdByUserId
+        self.createdByNameSnapshot = createdByNameSnapshot
     }
 
     var type: ProductImageType {
-        get { ProductImageType(rawValue: typeRaw) ?? .generic }
-        set { typeRaw = newValue.rawValue }
+        get { ProductImageType.fromStored(typeRaw) }
+        set { typeRaw = newValue.storageRawValue }
+    }
+}
+
+extension ProductImageType {
+    /// Valore persistito (senza alias deprecati).
+    var storageRawValue: String {
+        switch self {
+        case .receiptOptional: return ProductImageType.receiptOptional.rawValue
+        case .nonComplianceRequired: return ProductImageType.nonComplianceRequired.rawValue
+        case .generic: return "RECEIPT_OPTIONAL"
+        case .nonCompliance: return "NON_COMPLIANCE_REQUIRED"
+        }
+    }
+
+    static func fromStored(_ raw: String) -> ProductImageType {
+        switch raw {
+        case ProductImageType.receiptOptional.rawValue, "GENERIC":
+            return .receiptOptional
+        case ProductImageType.nonComplianceRequired.rawValue, "NON_COMPLIANCE":
+            return .nonComplianceRequired
+        default:
+            return .receiptOptional
+        }
     }
 }

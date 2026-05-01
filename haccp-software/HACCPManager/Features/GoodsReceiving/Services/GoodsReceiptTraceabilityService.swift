@@ -2,10 +2,11 @@ import Foundation
 import SwiftData
 
 struct GoodsReceiptTraceabilityService {
+    @discardableResult
     func createTraceabilityItem(
         receipt: GoodsReceipt,
         modelContext: ModelContext
-    ) {
+    ) -> TraceabilityRecord {
         let traceability = TraceabilityRecord(
             restaurantId: receipt.restaurantId,
             productName: receipt.productNameSnapshot,
@@ -22,6 +23,7 @@ struct GoodsReceiptTraceabilityService {
             operatorSignature: receipt.createdByNameSnapshot
         )
         traceability.categoryRaw = receipt.categoryRaw
+        traceability.goodsReceiptStatusRaw = receipt.status.rawValue
         traceability.currentStatusRaw = "DISPONIBILE"
         traceability.productStatus = .available
         modelContext.insert(traceability)
@@ -32,5 +34,6 @@ struct GoodsReceiptTraceabilityService {
                 operatorName: receipt.createdByNameSnapshot
             )
         )
+        return traceability
     }
 }

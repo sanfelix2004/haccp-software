@@ -12,6 +12,9 @@ class AppState: ObservableObject {
     
     @Published var showRestaurantOnboarding: Bool = false
     @Published var isLoading: Bool = false
+
+    /// Impostato da Tracciabilità per aprire la schermata Ricezione merci (sidebar).
+    @Published var navigateToGoodsReceiving: Bool = false
     
     private let firstAccessPrefix = "master_first_access_pending_"
     

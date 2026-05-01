@@ -181,6 +181,12 @@ struct DashboardRootView: View {
                 }
             }
         }
+        .onChange(of: appState.navigateToGoodsReceiving) { _, go in
+            if go {
+                selectedItem = .goodsReceiving
+                appState.navigateToGoodsReceiving = false
+            }
+        }
         .sheet(isPresented: $showCreateUserFromSidebar) {
             CreateUserView()
         }

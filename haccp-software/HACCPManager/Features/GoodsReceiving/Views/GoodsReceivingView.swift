@@ -27,6 +27,9 @@ struct GoodsReceivingView: View {
     @State private var editExpiryDate = Date()
     @State private var editNotes = ""
     @State private var editCorrectiveAction = ""
+    @State private var editProductName = ""
+    @State private var editSupplierId: UUID?
+    @State private var editCategory: GoodsCategory = .refrigerated
     @State private var showFinalizePhotoSheet = false
     @State private var finalizePhotoData: Data?
     @State private var awaitingFinalizeCapture = false
@@ -62,6 +65,16 @@ struct GoodsReceivingView: View {
     private var selectedRequirement: GoodsReceiptRequirement? {
         guard let product = vm.selectedProduct else { return nil }
         return vm.service.requirementService.makeRequirement(for: product)
+    }
+
+    /// Dopo "Ho finito": se checklist/temperatura indicano non conformità, la foto diventa obbligatoria.
+    private var pendingRequiresMandatoryPhoto: Bool {
+        guard let requirement = pendingSaveRequirement else { return false }
+        return vm.service.validationService.hasNonCompliance(
+            requirement: requirement,
+            checklistResults: controlVM.checklistResults,
+            temperatureValue: controlVM.temperatureValue
+        )
     }
 
     var body: some View {
@@ -224,6 +237,9 @@ struct GoodsReceivingView: View {
                                         Spacer()
                                         Button("Modifica") {
                                             editRecord = record
+                                            editProductName = record.productNameSnapshot
+                                            editSupplierId = record.supplierId ?? scopedSuppliers.first(where: { $0.name == record.supplierNameSnapshot })?.id
+                                            editCategory = record.category
                                             editReceivedAt = record.receivedAt
                                             editTemperatureText = record.temperatureValue.map { String(format: "%.1f", $0) } ?? ""
                                             editLot = record.lotNumber ?? ""
@@ -292,12 +308,15 @@ struct GoodsReceivingView: View {
                     Text("Foto ricezione")
                         .font(.title3.bold())
                         .foregroundColor(.white)
-                    Text("Aggiungi una foto prima del salvataggio.")
+                    Text(pendingRequiresMandatoryPhoto
+                         ? "Foto obbligatoria per non conformità."
+                         : "Aggiungi foto (opzionale). Puoi salvare senza foto se tutti i controlli sono conformi.")
                         .font(.subheadline)
                         .foregroundColor(.gray)
+                        .multilineTextAlignment(.center)
                     RoundedRectangle(cornerRadius: 12)
                         .fill(Color.black)
-                        .frame(height: 220)
+                        .frame(height: pendingRequiresMandatoryPhoto ? 220 : 160)
                         .overlay(
                             Group {
                                 if finalizeCamera.authorizationDenied {
@@ -320,11 +339,13 @@ struct GoodsReceivingView: View {
                         )
 
                     HStack(spacing: 10) {
-                        Button("Salta") {
-                            finalizeReceipt(photoData: nil)
+                        if !pendingRequiresMandatoryPhoto {
+                            Button("Salva senza foto") {
+                                finalizeReceipt(photoData: nil)
+                            }
+                            .buttonStyle(.bordered)
+                            .tint(.white)
                         }
-                        .buttonStyle(.bordered)
-                        .tint(.white)
                         Button("Scatta foto") {
                             awaitingFinalizeCapture = true
                             finalizeCamera.capturePhoto()
@@ -336,7 +357,22 @@ struct GoodsReceivingView: View {
                 }
                 .padding(24)
                 .background(Color(hex: "#0A0A0A").ignoresSafeArea())
-                .onAppear { finalizeCamera.start() }
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Annulla") {
+                            showFinalizePhotoSheet = false
+                            pendingSaveProduct = nil
+                            pendingSaveRequirement = nil
+                            finalizePhotoData = nil
+                            finalizeCamera.stop()
+                        }
+                    }
+                }
+                .onAppear {
+                    finalizeCamera.resetCaptureBuffer()
+                    awaitingFinalizeCapture = false
+                    finalizeCamera.start()
+                }
                 .onDisappear {
                     awaitingFinalizeCapture = false
                     finalizeCamera.stop()
@@ -372,6 +408,17 @@ struct GoodsReceivingView: View {
             NavigationStack {
                 Form {
                     Section("Modifica ricezione") {
+                        TextField("Nome prodotto", text: $editProductName)
+                        Picker("Fornitore", selection: $editSupplierId) {
+                            ForEach(scopedSuppliers, id: \.id) { s in
+                                Text(s.name).tag(Optional(s.id))
+                            }
+                        }
+                        Picker("Categoria", selection: $editCategory) {
+                            ForEach(GoodsCategory.allCases.filter { $0 != .all }, id: \.self) { cat in
+                                Text(cat.rawValue).tag(cat)
+                            }
+                        }
                         DatePicker("Momento", selection: $editReceivedAt)
                         TextField("Temperatura (°C)", text: $editTemperatureText)
                             .keyboardType(.numbersAndPunctuation)
@@ -435,6 +482,15 @@ struct GoodsReceivingView: View {
             showFinalizePhotoSheet = false
             return
         }
+        let mandatory = vm.service.validationService.hasNonCompliance(
+            requirement: requirement,
+            checklistResults: controlVM.checklistResults,
+            temperatureValue: controlVM.temperatureValue
+        )
+        if mandatory && (photoData == nil || photoData?.isEmpty == true) {
+            vm.errorMessage = "Per una non conformità è obbligatorio allegare una foto."
+            return
+        }
         saveReceipt(product: product, requirement: requirement, photoData: photoData)
         showFinalizePhotoSheet = false
         pendingSaveProduct = nil
@@ -454,7 +510,9 @@ struct GoodsReceivingView: View {
             lotNumber: controlVM.lotNumber,
             hasExpiryDate: controlVM.includeExpiryDate,
             notes: controlVM.notes,
-            correctiveAction: controlVM.correctiveAction
+            correctiveAction: controlVM.correctiveAction,
+            photoData: photoData,
+            enforcePhotoIfNonCompliant: true
         )
         guard validation.canSubmit else {
             vm.errorMessage = validation.message ?? "Controlla i dati obbligatori."
@@ -496,7 +554,9 @@ struct GoodsReceivingView: View {
             lotNumber: controlVM.lotNumber,
             hasExpiryDate: controlVM.includeExpiryDate,
             notes: controlVM.notes,
-            correctiveAction: controlVM.correctiveAction
+            correctiveAction: controlVM.correctiveAction,
+            photoData: nil,
+            enforcePhotoIfNonCompliant: false
         ).canSubmit
     }
 
@@ -517,6 +577,13 @@ struct GoodsReceivingView: View {
 
     private func saveEditedReceipt() {
         guard let record = editRecord else { return }
+        let name = editProductName.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !name.isEmpty { record.productNameSnapshot = name }
+        if let sid = editSupplierId, let supplier = scopedSuppliers.first(where: { $0.id == sid }) {
+            record.supplierId = supplier.id
+            record.supplierNameSnapshot = supplier.name
+        }
+        record.category = editCategory
         record.receivedAt = editReceivedAt
         record.temperatureValue = Double(editTemperatureText.replacingOccurrences(of: ",", with: "."))
         record.lotNumber = editLot.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : editLot
@@ -530,7 +597,10 @@ struct GoodsReceivingView: View {
 
     private func syncTraceabilityFromReceipt(_ receipt: GoodsReceipt) {
         let relatedTraceability = traceabilityRecords.filter { $0.goodsReceiptId == receipt.id }
+        let now = Date()
         for trace in relatedTraceability {
+            trace.productName = receipt.productNameSnapshot
+            trace.supplier = receipt.supplierNameSnapshot
             trace.lotCode = receipt.lotNumber ?? ""
             trace.receivedAt = receipt.receivedAt
             trace.expiryDate = receipt.expiryDate
@@ -538,6 +608,16 @@ struct GoodsReceivingView: View {
             trace.photoData = receipt.photoData
             trace.operatorSignature = receipt.createdByNameSnapshot
             trace.categoryRaw = receipt.categoryRaw
+            trace.goodsReceiptStatusRaw = receipt.status.rawValue
+
+            // Ricezione merci e la fonte: se la scadenza cambia, aggiorna anche lo stato in Tracciabilita.
+            guard trace.productStatus != .rejected else { continue }
+            let isExpiredNow = (receipt.expiryDate?.timeIntervalSince(now) ?? 1) < 0
+            if isExpiredNow {
+                trace.productStatus = .expired
+            } else if trace.productStatus == .expired {
+                trace.productStatus = .available
+            }
         }
     }
 
@@ -567,6 +647,10 @@ final class FinalizeReceiptCameraViewModel: ObservableObject {
     let session = AVCaptureSession()
     @Published var authorizationDenied = false
     @Published var capturedPhotoData: Data?
+
+    func resetCaptureBuffer() {
+        capturedPhotoData = nil
+    }
 
     private var configured = false
     private let photoOutput = AVCapturePhotoOutput()
