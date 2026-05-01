@@ -15,6 +15,7 @@ final class TraceabilityViewModel: ObservableObject {
     @Published var selectedTab: Tab = .photo
     @Published var productName = ""
     @Published var supplier = ""
+    @Published var selectedSupplierId: UUID?
     @Published var lotCode = ""
     @Published var productionReference = ""
     @Published var notes = ""
@@ -27,12 +28,16 @@ final class TraceabilityViewModel: ObservableObject {
     let service = TraceabilityService()
 
     var canSave: Bool {
-        !productName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        photoData != nil &&
+        !productName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+        selectedSupplierId != nil &&
+        !supplier.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     func resetForNext() {
         productName = ""
         supplier = ""
+        selectedSupplierId = nil
         lotCode = ""
         productionReference = ""
         notes = ""
