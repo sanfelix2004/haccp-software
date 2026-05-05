@@ -53,11 +53,11 @@ struct HistoryService {
             .map {
                 HistoryEntry(
                     module: "Controllo pulizia",
-                    title: $0.areaName,
-                    category: $0.completed ? "Completata" : "Da fare",
-                    operatorName: $0.createdByNameSnapshot,
-                    productOrDevice: $0.areaName,
-                    date: $0.createdAt
+                    title: "\($0.areaName) · \($0.taskName)",
+                    category: $0.outcome.label,
+                    operatorName: $0.updatedByNameSnapshot,
+                    productOrDevice: $0.correctiveAction ?? $0.areaName,
+                    date: $0.updatedAt
                 )
             }
         let defrost = defrostRecords

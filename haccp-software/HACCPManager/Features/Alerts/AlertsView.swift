@@ -2,9 +2,12 @@ import SwiftUI
 import SwiftData
 
 struct AlertsView: View {
+    @Environment(\.modelContext) private var modelContext
     @EnvironmentObject var appState: AppState
     @Query private var checklistAlerts: [ChecklistAlert]
     @Query private var temperatureAlerts: [TemperatureAlert]
+    @Query private var cleaningCriticalities: [CleaningCriticality]
+    @Query private var users: [LocalUser]
 
     private var activeChecklistAlerts: [ChecklistAlert] {
         guard let rid = appState.activeRestaurantId else { return [] }
@@ -16,10 +19,19 @@ struct AlertsView: View {
         return temperatureAlerts.filter { $0.restaurantId == rid && $0.isActive }
     }
 
+    private var activeCleaningCriticalities: [CleaningCriticality] {
+        guard let rid = appState.activeRestaurantId else { return [] }
+        return cleaningCriticalities.filter { $0.restaurantId == rid && !$0.isResolved }
+    }
+
+    private var currentUser: LocalUser? {
+        users.first(where: { $0.id == appState.currentUserId })
+    }
+
     var body: some View {
         ScrollView {
             DashboardCardView(title: "Alert") {
-                if activeChecklistAlerts.isEmpty && activeTemperatureAlerts.isEmpty {
+                if activeChecklistAlerts.isEmpty && activeTemperatureAlerts.isEmpty && activeCleaningCriticalities.isEmpty {
                     DashboardEmptyStateView(
                         state: DashboardEmptyState(
                             title: "Nessun alert attivo",
@@ -34,6 +46,9 @@ struct AlertsView: View {
                         }
                         ForEach(activeTemperatureAlerts) { alert in
                             alertRow(message: alert.message, date: alert.createdAt, icon: "thermometer.medium")
+                        }
+                        ForEach(activeCleaningCriticalities) { criticality in
+                            cleaningAlertRow(criticality)
                         }
                     }
                 }
@@ -58,5 +73,39 @@ struct AlertsView: View {
         .padding(10)
         .background(Color.red.opacity(0.1))
         .cornerRadius(10)
+    }
+
+    private func cleaningAlertRow(_ criticality: CleaningCriticality) -> some View {
+        HStack {
+            Image(systemName: "exclamationmark.triangle.fill").foregroundColor(.red)
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Pulizia non conforme: \(criticality.areaName) · \(criticality.taskName)")
+                    .foregroundColor(.white)
+                Text("Azione: \(criticality.correctiveAction)")
+                    .font(.caption)
+                    .foregroundColor(.gray)
+                Text(criticality.createdAt.formatted(date: .abbreviated, time: .shortened))
+                    .font(.caption2)
+                    .foregroundColor(.gray)
+            }
+            Spacer()
+            Button("Segna risolta") {
+                resolveCriticality(criticality)
+            }
+            .buttonStyle(.bordered)
+            .tint(.green)
+        }
+        .padding(10)
+        .background(Color.red.opacity(0.1))
+        .cornerRadius(10)
+    }
+
+    private func resolveCriticality(_ criticality: CleaningCriticality) {
+        guard let user = currentUser else { return }
+        criticality.isResolved = true
+        criticality.resolvedAt = Date()
+        criticality.resolvedByUserId = user.id
+        criticality.resolvedByNameSnapshot = user.name
+        try? modelContext.save()
     }
 }

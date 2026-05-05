@@ -16,6 +16,8 @@ final class MasterAuthorizationService {
         case editRestaurantInfo
         case manageTemperatureDevices
         case manageChecklistTemplates
+        case manageCleaningTasks
+        case clearCleaningHistory
         case deleteTraceabilityEntry
         case deleteDocument
         case regenerateDocument
@@ -45,6 +47,10 @@ final class MasterAuthorizationService {
                 return "Autorizza la gestione dei dispositivi temperatura"
             case .manageChecklistTemplates:
                 return "Autorizza la gestione critica delle checklist"
+            case .manageCleaningTasks:
+                return "Autorizza la gestione delle aree e task del controllo pulizia"
+            case .clearCleaningHistory:
+                return "Autorizza la cancellazione dello storico controllo pulizia"
             case .deleteTraceabilityEntry:
                 return "Autorizza l'eliminazione della voce di tracciabilità e della ricezione collegata"
             case .deleteDocument:
