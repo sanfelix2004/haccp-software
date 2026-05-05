@@ -1,26 +1,38 @@
 import SwiftUI
 import SwiftData
 
-enum SidebarItem: String, CaseIterable, Identifiable {
+enum SidebarItem: String, Identifiable {
     case dashboard = "Dashboard"
-    case scheduling = "Programmazione"
-    case traceability = "Tracciabilita"
+    case traceability = "Tracciabilità"
     case fridges = "Frigoriferi"
     case cleaningControl = "Controllo pulizia"
     case blastChilling = "Abbattimento"
+    case scheduling = "Programmazione"
+    case expiryControl = "Controllo scadenze"
     case defrost = "Decongelamento"
     case oilControl = "Controllo olio"
-    case productionLabels = "Etichette"
+    case productionLabels = "Etichette di produzione"
     case goodsReceiving = "Ricezione merci"
+    case moduleTimer = "Module Timer"
     case documents = "Documenti"
     case history = "Storia"
     case analytics = "Grafici"
     case alerts = "Alert"
     case users = "Utenti"
     case settings = "Impostazioni"
-    
-    var id: String { self.rawValue }
-    
+
+    var id: String { rawValue }
+
+    /// Moduli HACCP principali (ordine ufficiale).
+    static let haccpModulesInOrder: [SidebarItem] = [
+        .traceability, .fridges, .cleaningControl, .blastChilling, .scheduling,
+        .expiryControl, .defrost, .oilControl, .productionLabels, .goodsReceiving, .moduleTimer
+    ]
+
+    static let toolsInOrder: [SidebarItem] = [
+        .documents, .history, .analytics, .alerts, .users, .settings
+    ]
+
     var icon: String {
         switch self {
         case .dashboard: return "square.grid.2x2.fill"
@@ -33,6 +45,8 @@ enum SidebarItem: String, CaseIterable, Identifiable {
         case .oilControl: return "drop.fill"
         case .productionLabels: return "tag.fill"
         case .goodsReceiving: return "shippingbox.fill"
+        case .expiryControl: return "calendar.badge.exclamationmark"
+        case .moduleTimer: return "timer"
         case .documents: return "folder.fill"
         case .history: return "clock.arrow.circlepath"
         case .analytics: return "chart.xyaxis.line"
@@ -44,15 +58,19 @@ enum SidebarItem: String, CaseIterable, Identifiable {
 }
 
 struct DashboardRootView: View {
+    @Environment(\.modelContext) private var modelContext
     @EnvironmentObject var appState: AppState
     @Query private var users: [LocalUser]
     @Query private var restaurants: [Restaurant]
     @Query private var stores: [AppDataStore]
+    @Query private var documentFolders: [DocumentFolder]
+    @Query private var documentItems: [DocumentItem]
     
     @State private var selectedItem: SidebarItem? = .dashboard
     @State private var columnVisibility = NavigationSplitViewVisibility.all
     @State private var showCreateUserFromSidebar = false
     @State private var showMasterAuthForCreate = false
+    private let documentsService = DocumentsService()
     
     var currentUser: LocalUser? {
         users.first { $0.id == appState.currentUserId }
@@ -114,8 +132,29 @@ struct DashboardRootView: View {
                 
                 List(selection: $selectedItem) {
                     Section {
-                        ForEach(SidebarItem.allCases) { item in
-                            // Filter users section for non-master
+                        NavigationLink(value: SidebarItem.dashboard) {
+                            Label(SidebarItem.dashboard.rawValue, systemImage: SidebarItem.dashboard.icon)
+                        }
+                    } header: {
+                        Text("Dashboard")
+                            .font(.system(size: 12, weight: .black))
+                            .foregroundColor(.gray)
+                    }
+
+                    Section {
+                        ForEach(SidebarItem.haccpModulesInOrder) { item in
+                            NavigationLink(value: item) {
+                                Label(item.rawValue, systemImage: item.icon)
+                            }
+                        }
+                    } header: {
+                        Text("Moduli HACCP")
+                            .font(.system(size: 12, weight: .black))
+                            .foregroundColor(.gray)
+                    }
+
+                    Section {
+                        ForEach(SidebarItem.toolsInOrder) { item in
                             if item == .users {
                                 if currentUser?.role == .master {
                                     NavigationLink(value: item) {
@@ -129,7 +168,7 @@ struct DashboardRootView: View {
                             }
                         }
                     } header: {
-                        Text("Menu Principale")
+                        Text("Sistema e archivi")
                             .font(.system(size: 12, weight: .black))
                             .foregroundColor(.gray)
                     }
@@ -187,6 +226,11 @@ struct DashboardRootView: View {
                 appState.navigateToGoodsReceiving = false
             }
         }
+        .onChange(of: appState.pendingSidebarNavigation) { _, target in
+            guard let target else { return }
+            selectedItem = target
+            appState.pendingSidebarNavigation = nil
+        }
         .sheet(isPresented: $showCreateUserFromSidebar) {
             CreateUserView()
         }
@@ -205,6 +249,20 @@ struct DashboardRootView: View {
                 ) { EmptyView() }
             }
         }
+        .onAppear {
+            guard
+                let rid = appState.activeRestaurantId,
+                let user = currentUser
+            else { return }
+            let scoped = documentFolders.filter { $0.restaurantId == rid }
+            documentsService.ensureDefaultFolders(
+                restaurantId: rid,
+                user: user,
+                existingFolders: scoped,
+                existingItems: documentItems.filter { $0.restaurantId == rid },
+                modelContext: modelContext
+            )
+        }
     }
     
     @ViewBuilder
@@ -222,6 +280,8 @@ struct DashboardRootView: View {
             CleaningControlView()
         case .blastChilling:
             BlastChillingView()
+        case .expiryControl:
+            ExpiryControlView()
         case .defrost:
             DefrostView()
         case .oilControl:
@@ -230,6 +290,8 @@ struct DashboardRootView: View {
             ProductionLabelsView()
         case .goodsReceiving:
             GoodsReceivingView()
+        case .moduleTimer:
+            ModuleTimerView()
         case .documents:
             DocumentsView()
         case .history:

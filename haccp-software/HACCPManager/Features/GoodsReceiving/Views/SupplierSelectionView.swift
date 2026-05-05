@@ -3,7 +3,8 @@ import SwiftUI
 struct SupplierSelectionView: View {
     let suppliers: [Supplier]
     let selectedSupplierId: UUID?
-    let canManageSuppliers: Bool
+    let canAddSupplier: Bool
+    let canEditSupplier: Bool
     let onSelect: (Supplier) -> Void
     let onAdd: () -> Void
     let onEdit: () -> Void
@@ -13,6 +14,14 @@ struct SupplierSelectionView: View {
             Text("Scelta del fornitore")
                 .font(.title3.bold())
                 .foregroundColor(.white)
+            if suppliers.isEmpty {
+                Text("Nessun fornitore configurato")
+                    .font(.subheadline)
+                    .foregroundColor(.gray)
+                Text("Aggiungi un fornitore per poter salvare la ricezione. Puoi comunque scegliere il prodotto dall’elenco sotto.")
+                    .font(.caption)
+                    .foregroundColor(.gray.opacity(0.9))
+            }
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 160), spacing: 12)], spacing: 12) {
                 ForEach(suppliers) { supplier in
                     Button {
@@ -34,12 +43,16 @@ struct SupplierSelectionView: View {
                 }
             }
             HStack(spacing: 10) {
-                Button("+ Aggiungere", action: onAdd).buttonStyle(.bordered)
-                Button("Modifica", action: onEdit).buttonStyle(.bordered)
+                Button("+ Aggiungere", action: onAdd)
+                    .buttonStyle(.bordered)
+                    .disabled(!canAddSupplier)
+                    .opacity(canAddSupplier ? 1 : 0.4)
+                Button("Modifica", action: onEdit)
+                    .buttonStyle(.bordered)
+                    .disabled(!canEditSupplier || selectedSupplierId == nil)
+                    .opacity((canEditSupplier && selectedSupplierId != nil) ? 1 : 0.4)
             }
             .tint(.white)
-            .opacity(canManageSuppliers ? 1 : 0.4)
-            .disabled(!canManageSuppliers)
         }
     }
 }

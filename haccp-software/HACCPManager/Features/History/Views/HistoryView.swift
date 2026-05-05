@@ -10,6 +10,9 @@ struct HistoryView: View {
     @Query private var blastRecords: [BlastChillingRecord]
     @Query private var labelRecords: [ProductionLabelRecord]
     @Query private var goodsRecords: [GoodsReceipt]
+    @Query private var traceabilityRecords: [TraceabilityRecord]
+    @Query private var scheduledTasks: [ScheduledTask]
+    @Query private var oilRecords: [OilControlRecord]
 
     @StateObject private var vm = HistoryViewModel()
 
@@ -23,7 +26,10 @@ struct HistoryView: View {
             defrostRecords: defrostRecords,
             blastRecords: blastRecords,
             labelRecords: labelRecords,
-            goodsRecords: goodsRecords
+            goodsRecords: goodsRecords,
+            traceabilityRecords: traceabilityRecords,
+            scheduledTasks: scheduledTasks,
+            oilRecords: oilRecords
         )
     }
 
@@ -32,7 +38,7 @@ struct HistoryView: View {
     }
 
     private var moduleOptions: [String] {
-        ["Tutti"] + Array(Set(allEntries.map(\.module))).sorted()
+        ["Tutti"] + HistoryViewModel.allModuleFilterNames
     }
 
     private var categoryOptions: [String] {

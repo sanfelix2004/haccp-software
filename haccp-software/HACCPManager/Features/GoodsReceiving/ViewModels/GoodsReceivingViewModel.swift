@@ -31,13 +31,19 @@ final class GoodsReceivingViewModel: ObservableObject {
         defaults.set(recentProductIds.map(\.uuidString), forKey: "recent_products_\(restaurantId)")
     }
 
-    func setProduct(_ product: ProductTemplate) {
+    /// Seleziona il template in elenco (non apre il foglio controlli).
+    func selectProductTemplate(_ product: ProductTemplate) {
         selectedProduct = product
-        showControlSheet = true
         if recentProductIds.contains(product.id) == false {
             recentProductIds.insert(product.id, at: 0)
         }
         recentProductIds = Array(recentProductIds.prefix(8))
+    }
+
+    /// Apre il foglio controlli per `selectedProduct` (dopo fornitore + «Ho finito»).
+    func presentControlSheet() {
+        guard selectedProduct != nil else { return }
+        showControlSheet = true
     }
 
     func resetForNext() {

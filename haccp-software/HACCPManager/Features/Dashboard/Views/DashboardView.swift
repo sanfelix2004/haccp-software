@@ -3,6 +3,20 @@ import SwiftData
 
 struct DashboardView: View {
     @EnvironmentObject var appState: AppState
+
+    private let haccpDashboardModules: [(item: SidebarItem, description: String, icon: String)] = [
+        (.traceability, "Prodotti, lotti, fornitori e stato", "archivebox.fill"),
+        (.fridges, "Temperature e allarmi fuori range", "thermometer.medium"),
+        (.cleaningControl, "Piani pulizia e completamento", "sparkles"),
+        (.blastChilling, "Registrazioni abbattimento termico", "wind.snow"),
+        (.scheduling, "Attività periodiche e scadenze", "calendar.badge.clock"),
+        (.expiryControl, "Monitoraggio scadenze (in arrivo)", "calendar.badge.exclamationmark"),
+        (.defrost, "Storico decongelamenti", "snowflake"),
+        (.oilControl, "Controlli olio frittura", "drop.fill"),
+        (.productionLabels, "Etichette e tracciabilità produzione", "tag.fill"),
+        (.goodsReceiving, "Conformità in ingresso merci", "shippingbox.fill"),
+        (.moduleTimer, "Timer operativi (in arrivo)", "timer")
+    ]
     @Query private var users: [LocalUser]
     @Query private var restaurants: [Restaurant]
     @Query private var stores: [AppDataStore]
@@ -50,17 +64,36 @@ struct DashboardView: View {
 
                 DashboardCardView(title: "Moduli HACCP") {
                     LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
-                        moduleCard(title: "Programmazione", icon: "calendar.badge.clock", description: "Attivita periodiche e scadenze", badge: countForScheduling)
-                        moduleCard(title: "Tracciabilita", icon: "archivebox.fill", description: "Prodotti, lotti, fornitori", badge: countForTraceability)
-                        moduleCard(title: "Frigoriferi", icon: "thermometer.medium", description: "Temperature e alert fuori range", badge: countForFridges)
-                        moduleCard(title: "Controllo pulizia", icon: "sparkles", description: "Piani pulizia e completamento", badge: countForCleaning)
-                        moduleCard(title: "Abbattimento", icon: "wind.snow", description: "Registrazioni abbattimenti", badge: countForBlast)
-                        moduleCard(title: "Decongelamento", icon: "snowflake", description: "Storico decongelamenti", badge: countForDefrost)
-                        moduleCard(title: "Controllo olio", icon: "drop.fill", description: "Controlli olio frittura", badge: countForOil)
-                        moduleCard(title: "Etichette", icon: "tag.fill", description: "Etichette produzione", badge: countForLabels)
-                        moduleCard(title: "Ricezione merci", icon: "shippingbox.fill", description: "Conformita in ingresso", badge: countForGoods)
-                        moduleCard(title: "Documenti", icon: "folder.fill", description: "Cartelle HACCP", badge: countForDocuments)
-                        moduleCard(title: "Storia", icon: "clock.arrow.circlepath", description: "Archivio centralizzato", badge: nil)
+                        ForEach(haccpDashboardModules, id: \.item) { row in
+                            Button {
+                                appState.pendingSidebarNavigation = row.item
+                            } label: {
+                                moduleCard(
+                                    title: row.item.rawValue,
+                                    icon: row.icon,
+                                    description: row.description,
+                                    badge: badgeCount(for: row.item)
+                                )
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+
+                DashboardCardView(title: "Sistema e archivi") {
+                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
+                        Button {
+                            appState.pendingSidebarNavigation = .documents
+                        } label: {
+                            moduleCard(title: "Documenti", icon: "folder.fill", description: "Report e cartelle HACCP", badge: countForDocuments)
+                        }
+                        .buttonStyle(.plain)
+                        Button {
+                            appState.pendingSidebarNavigation = .history
+                        } label: {
+                            moduleCard(title: "Storia", icon: "clock.arrow.circlepath", description: "Archivio centralizzato", badge: nil)
+                        }
+                        .buttonStyle(.plain)
                     }
                 }
                 .offset(y: appeared ? 0 : 20)
@@ -81,6 +114,21 @@ struct DashboardView: View {
 
     private var currentUser: LocalUser? {
         users.first { $0.id == appState.currentUserId }
+    }
+
+    private func badgeCount(for item: SidebarItem) -> Int? {
+        switch item {
+        case .scheduling: return countForScheduling
+        case .traceability: return countForTraceability
+        case .fridges: return countForFridges
+        case .cleaningControl: return countForCleaning
+        case .blastChilling: return countForBlast
+        case .defrost: return countForDefrost
+        case .oilControl: return countForOil
+        case .productionLabels: return countForLabels
+        case .goodsReceiving: return countForGoods
+        default: return nil
+        }
     }
 
     private var countForScheduling: Int? {

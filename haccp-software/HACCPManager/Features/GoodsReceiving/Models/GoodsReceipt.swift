@@ -28,6 +28,9 @@ final class GoodsReceivingRecord {
     var createdAt: Date = Date()
     var createdByUserId: UUID?
     var createdByNameSnapshot: String = ""
+    /// Chiusura non conformità (se applicabile).
+    var nonComplianceResolvedAt: Date?
+    var nonComplianceResolvedByNameSnapshot: String?
 
     init(
         id: UUID = UUID(),
@@ -54,7 +57,9 @@ final class GoodsReceivingRecord {
         status: GoodsReceiptStatus,
         createdAt: Date = Date(),
         createdByUserId: UUID?,
-        createdByNameSnapshot: String
+        createdByNameSnapshot: String,
+        nonComplianceResolvedAt: Date? = nil,
+        nonComplianceResolvedByNameSnapshot: String? = nil
     ) {
         self.id = id
         self.restaurantId = restaurantId
@@ -81,6 +86,8 @@ final class GoodsReceivingRecord {
         self.createdAt = createdAt
         self.createdByUserId = createdByUserId
         self.createdByNameSnapshot = createdByNameSnapshot
+        self.nonComplianceResolvedAt = nonComplianceResolvedAt
+        self.nonComplianceResolvedByNameSnapshot = nonComplianceResolvedByNameSnapshot
     }
 
     var category: GoodsCategory {

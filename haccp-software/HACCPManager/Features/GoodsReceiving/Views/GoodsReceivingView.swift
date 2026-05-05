@@ -81,20 +81,14 @@ struct GoodsReceivingView: View {
         ScrollView {
             VStack(spacing: 14) {
                 DashboardCardView(title: "Ricezione merci") {
-                    if scopedSuppliers.isEmpty {
-                        DashboardEmptyStateView(state: .init(
-                            title: "Nessun fornitore configurato",
-                            message: "Aggiungi un fornitore per iniziare",
-                            actionTitle: nil
-                        ))
-                    }
                     VStack(spacing: 14) {
                         SupplierSelectionView(
                             suppliers: scopedSuppliers,
                             selectedSupplierId: vm.selectedSupplier?.id,
-                            canManageSuppliers: isMaster,
+                            canAddSupplier: appState.activeRestaurantId != nil,
+                            canEditSupplier: isMaster,
                             onSelect: { vm.selectedSupplier = $0 },
-                            onAdd: { if isMaster { showAddSupplier = true } },
+                            onAdd: { showAddSupplier = true },
                             onEdit: {
                                 guard isMaster else { return }
                                 guard let selected = vm.selectedSupplier else { return }
@@ -103,24 +97,26 @@ struct GoodsReceivingView: View {
                             }
                         )
                         ProductCategoryTabsView(selectedCategory: $vm.selectedCategory)
-                        ProductSelectionGridView(
-                            products: filteredTemplates,
-                            recentProductIds: vm.recentProductIds,
-                            selectedProductId: vm.selectedProduct?.id,
-                            onSelect: {
-                                guard vm.selectedSupplier != nil else {
-                                    vm.errorMessage = "Seleziona prima un fornitore."
-                                    return
-                                }
-                                vm.setProduct($0)
-                            }
-                        )
+                        if filteredTemplates.isEmpty {
+                            DashboardEmptyStateView(state: .init(
+                                title: "Nessun prodotto template",
+                                message: "I template verranno creati automaticamente. Torna tra un attimo o riapri la schermata.",
+                                actionTitle: nil
+                            ))
+                        } else {
+                            ProductSelectionGridView(
+                                products: filteredTemplates,
+                                recentProductIds: vm.recentProductIds,
+                                selectedProductId: vm.selectedProduct?.id,
+                                onSelect: { vm.selectProductTemplate($0) }
+                            )
+                        }
                         HStack(spacing: 10) {
-                            Button("Aggiungere") {}
+                            Button("Aggiungere") { showAddSupplier = true }
                                 .buttonStyle(.bordered)
                                 .tint(.white)
-                                .disabled(!isMaster)
-                                .opacity(isMaster ? 1 : 0.4)
+                                .disabled(appState.activeRestaurantId == nil)
+                                .opacity(appState.activeRestaurantId != nil ? 1 : 0.4)
                             Button("Modifica") {}
                                 .buttonStyle(.bordered)
                                 .tint(.white)
@@ -134,8 +130,12 @@ struct GoodsReceivingView: View {
                             .buttonStyle(.bordered)
                             .tint(.white)
                             Button("Ho finito") {
-                                guard let product = vm.selectedProduct else { return }
-                                vm.setProduct(product)
+                                guard vm.selectedSupplier != nil else {
+                                    vm.errorMessage = "Seleziona o aggiungi un fornitore prima di confermare la ricezione."
+                                    return
+                                }
+                                guard vm.selectedProduct != nil else { return }
+                                vm.presentControlSheet()
                             }
                             .buttonStyle(.borderedProminent)
                             .tint((vm.selectedProduct == nil || vm.selectedSupplier == nil) ? .gray : .green)
@@ -273,15 +273,10 @@ struct GoodsReceivingView: View {
         .background(Color(hex: "#0A0A0A").ignoresSafeArea())
         .navigationTitle("Ricezione merci")
         .onAppear {
-            guard let rid = appState.activeRestaurantId else { return }
-            vm.loadMemory(restaurantId: rid)
-            vm.selectedSupplier = scopedSuppliers.first(where: { $0.id == vm.lastSupplierId }) ?? scopedSuppliers.first
-            vm.service.ensureDefaults(
-                restaurantId: rid,
-                suppliers: scopedSuppliers,
-                templates: scopedTemplates,
-                modelContext: modelContext
-            )
+            bootstrapReceivingSession()
+        }
+        .onChange(of: appState.activeRestaurantId) { _, _ in
+            bootstrapReceivingSession()
         }
         .sheet(isPresented: $vm.showControlSheet) {
             if let product = vm.selectedProduct, let requirement = selectedRequirement {
@@ -390,12 +385,35 @@ struct GoodsReceivingView: View {
         } message: {
             Text(vm.errorMessage ?? "")
         }
-        .alert("Nuovo fornitore", isPresented: $showAddSupplier) {
-            TextField("Nome fornitore", text: $newSupplierName)
-            Button("Annulla", role: .cancel) {}
-            Button("Salva") { addSupplier() }
-        } message: {
-            Text("Inserisci il nome del fornitore.")
+        .sheet(isPresented: $showAddSupplier) {
+            NavigationStack {
+                Form {
+                    Section {
+                        TextField("Nome fornitore", text: $newSupplierName)
+                            .textInputAutocapitalization(.words)
+                    } footer: {
+                        Text("Il fornitore è salvato per questo ristorante e sarà subito selezionabile.")
+                    }
+                }
+                .navigationTitle("Nuovo fornitore")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Annulla") {
+                            newSupplierName = ""
+                            showAddSupplier = false
+                        }
+                    }
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Salva") {
+                            addSupplier()
+                            showAddSupplier = false
+                        }
+                        .disabled(newSupplierName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    }
+                }
+            }
+            .presentationDetents([.medium])
         }
         .alert("Modifica fornitore", isPresented: $showEditSupplier) {
             TextField("Nome fornitore", text: $newSupplierName)
@@ -445,8 +463,14 @@ struct GoodsReceivingView: View {
         }
     }
 
+    private func bootstrapReceivingSession() {
+        guard let rid = appState.activeRestaurantId else { return }
+        ProductTemplateSeeder.ensureTemplates(restaurantId: rid, modelContext: modelContext)
+        vm.loadMemory(restaurantId: rid)
+        vm.selectedSupplier = scopedSuppliers.first(where: { $0.id == vm.lastSupplierId }) ?? scopedSuppliers.first
+    }
+
     private func addSupplier() {
-        guard isMaster else { return }
         guard let rid = appState.activeRestaurantId else { return }
         let name = newSupplierName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty else { return }
@@ -454,6 +478,7 @@ struct GoodsReceivingView: View {
         modelContext.insert(supplier)
         try? modelContext.save()
         vm.selectedSupplier = supplier
+        vm.persistMemory(restaurantId: rid)
         newSupplierName = ""
     }
 

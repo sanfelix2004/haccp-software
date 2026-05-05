@@ -15,6 +15,9 @@ class AppState: ObservableObject {
 
     /// Impostato da Tracciabilità per aprire la schermata Ricezione merci (sidebar).
     @Published var navigateToGoodsReceiving: Bool = false
+
+    /// Seleziona una voce menu (es. da card Dashboard); `DashboardRootView` azzera dopo navigazione.
+    @Published var pendingSidebarNavigation: SidebarItem?
     
     private let firstAccessPrefix = "master_first_access_pending_"
     

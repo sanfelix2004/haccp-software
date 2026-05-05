@@ -338,7 +338,8 @@ struct RestaurantEditSheet: View {
                 logoData: logoData
             )
             modelContext.insert(new)
-            
+            ProductTemplateSeeder.ensureTemplates(restaurantId: new.id, modelContext: modelContext)
+
             // If it's the first one, make it active
             if store?.activeRestaurantId == nil {
                 store?.activeRestaurantId = new.id

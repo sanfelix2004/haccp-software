@@ -5,8 +5,9 @@ struct AppInfoSettingsView: View {
         VStack(spacing: 32) {
             
             VStack(spacing: 16) {
-                Image("AppIconPlaceholder") // Replacement if no icon
-                    .resizable()
+                Image(systemName: "app.fill")
+                    .font(.system(size: 44))
+                    .foregroundStyle(.white)
                     .frame(width: 80, height: 80)
                     .background(Color.red)
                     .cornerRadius(18)

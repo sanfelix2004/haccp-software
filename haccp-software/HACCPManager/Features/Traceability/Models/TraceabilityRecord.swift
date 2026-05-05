@@ -62,6 +62,8 @@ final class TraceabilityRecord {
     var createdByNameSnapshot: String
     var notes: String?
     var operatorSignature: String?
+    var nonComplianceResolvedAt: Date?
+    var nonComplianceResolvedByNameSnapshot: String?
 
     init(
         id: UUID = UUID(),
@@ -79,7 +81,9 @@ final class TraceabilityRecord {
         createdByUserId: UUID,
         createdByNameSnapshot: String,
         notes: String? = nil,
-        operatorSignature: String? = nil
+        operatorSignature: String? = nil,
+        nonComplianceResolvedAt: Date? = nil,
+        nonComplianceResolvedByNameSnapshot: String? = nil
     ) {
         self.id = id
         self.restaurantId = restaurantId
@@ -97,6 +101,8 @@ final class TraceabilityRecord {
         self.createdByNameSnapshot = createdByNameSnapshot
         self.notes = notes
         self.operatorSignature = operatorSignature
+        self.nonComplianceResolvedAt = nonComplianceResolvedAt
+        self.nonComplianceResolvedByNameSnapshot = nonComplianceResolvedByNameSnapshot
     }
 
     var source: TraceabilitySource {
