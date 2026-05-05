@@ -181,7 +181,9 @@ public struct CreateRestaurantOnboardingView: View {
                 modelContext: modelContext
             )
         }
-        
+
+        ProductTemplateSeeder.ensureTemplates(restaurantId: newRestaurant.id, modelContext: modelContext)
+
         try? modelContext.save()
         onComplete()
     }

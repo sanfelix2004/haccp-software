@@ -9,7 +9,7 @@ struct LabelPrinterSettingsView: View {
             
             // Empty State for Printers
             VStack(spacing: 24) {
-                Image(systemName: "printer.dotmatrix.filled.and.paper.fill")
+                Image(systemName: "printer.fill")
                     .font(.system(size: 60))
                     .foregroundColor(.gray.opacity(0.3))
                 

@@ -6,28 +6,6 @@ struct GoodsReceivingService {
     let validationService = GoodsReceiptValidationService()
     let traceabilityService = GoodsReceiptTraceabilityService()
 
-    func ensureDefaults(
-        restaurantId: UUID,
-        suppliers: [Supplier],
-        templates: [ProductTemplate],
-        modelContext: ModelContext
-    ) {
-        if templates.filter({ $0.restaurantId == restaurantId }).isEmpty {
-            let defaults: [ProductTemplate] = [
-                .init(restaurantId: restaurantId, name: "Carni fresche", category: .freshMeat, defaultMinTemp: 0, defaultMaxTemp: 4, requiresTemperature: true, requiresLot: true, requiresExpiry: true, requiresAppearanceCheck: true),
-                .init(restaurantId: restaurantId, name: "Pesce fresco", category: .freshFish, defaultMinTemp: 0, defaultMaxTemp: 4, requiresTemperature: true, requiresLot: true, requiresExpiry: true, requiresAppearanceCheck: true),
-                .init(restaurantId: restaurantId, name: "Uova", category: .refrigerated, defaultMinTemp: 0, defaultMaxTemp: 10, requiresTemperature: true, requiresLot: true, requiresExpiry: true),
-                .init(restaurantId: restaurantId, name: "Verdura e frutta", category: .produce, requiresAppearanceCheck: true, requiresMoldCheck: true, requiresFreshnessCheck: true),
-                .init(restaurantId: restaurantId, name: "Prodotti secchi", category: .dryProducts, requiresExpiry: true),
-                .init(restaurantId: restaurantId, name: "Prodotti surgelati", category: .frozenProducts, defaultMaxTemp: -18, requiresTemperature: true, requiresLot: true, requiresExpiry: true, requiresThawingCheck: true),
-                .init(restaurantId: restaurantId, name: "Alimenti misti (pronti)", category: .combined, defaultMinTemp: 0, defaultMaxTemp: 4, requiresTemperature: true, requiresLot: true, requiresExpiry: true),
-                .init(restaurantId: restaurantId, name: "Prodotti confezionati", category: .packaged, requiresLot: true, requiresExpiry: true)
-            ]
-            defaults.forEach { modelContext.insert($0) }
-        }
-        try? modelContext.save()
-    }
-
     func saveReceipt(
         restaurantId: UUID,
         supplier: Supplier,

@@ -3,6 +3,10 @@ import Combine
 
 @MainActor
 final class HistoryViewModel: ObservableObject {
+    /// Tutti i moduli HACCP previsti nei filtri (anche senza eventi ancora registrati).
+    static let allModuleFilterNames: [String] =
+        HACCPModuleCatalog.operationalModuleTitles + ["Checklist"]
+
     @Published var selectedModule: String = "Tutti"
     @Published var selectedCategory: String = "Tutte"
     @Published var selectedMonth: Int?

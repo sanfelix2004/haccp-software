@@ -19,7 +19,10 @@ struct HistoryService {
         defrostRecords: [DefrostRecord],
         blastRecords: [BlastChillingRecord],
         labelRecords: [ProductionLabelRecord],
-        goodsRecords: [GoodsReceipt]
+        goodsRecords: [GoodsReceipt],
+        traceabilityRecords: [TraceabilityRecord],
+        scheduledTasks: [ScheduledTask],
+        oilRecords: [OilControlRecord]
     ) -> [HistoryEntry] {
         let temperature = temperatureRecords
             .filter { $0.restaurantId == restaurantId }
@@ -85,7 +88,7 @@ struct HistoryService {
             .filter { $0.restaurantId == restaurantId }
             .map {
                 HistoryEntry(
-                    module: "Etichette",
+                    module: "Etichette di produzione",
                     title: $0.productName,
                     category: "Etichetta",
                     operatorName: $0.createdByNameSnapshot,
@@ -106,7 +109,46 @@ struct HistoryService {
                 )
             }
 
-        return (temperature + checklist + cleaning + defrost + blast + labels + goods)
+        let traceability = traceabilityRecords
+            .filter { $0.restaurantId == restaurantId }
+            .map {
+                HistoryEntry(
+                    module: "Tracciabilità",
+                    title: $0.productName,
+                    category: $0.productStatus.label,
+                    operatorName: $0.createdByNameSnapshot,
+                    productOrDevice: $0.lotCode,
+                    date: $0.receivedAt
+                )
+            }
+
+        let scheduling = scheduledTasks
+            .filter { $0.restaurantId == restaurantId }
+            .map {
+                HistoryEntry(
+                    module: "Programmazione",
+                    title: $0.title,
+                    category: $0.isCompleted ? "Completata" : "Da svolgere",
+                    operatorName: $0.createdByNameSnapshot,
+                    productOrDevice: $0.taskDescription,
+                    date: $0.dueAt ?? $0.createdAt
+                )
+            }
+
+        let oil = oilRecords
+            .filter { $0.restaurantId == restaurantId }
+            .map {
+                HistoryEntry(
+                    module: "Controllo olio",
+                    title: $0.oilState,
+                    category: $0.actionTaken,
+                    operatorName: $0.createdByNameSnapshot,
+                    productOrDevice: $0.indexValue.map { String(format: "%.2f", $0) } ?? "—",
+                    date: $0.checkedAt
+                )
+            }
+
+        return (temperature + checklist + cleaning + defrost + blast + labels + goods + traceability + scheduling + oil)
             .sorted(by: { $0.date > $1.date })
     }
 }

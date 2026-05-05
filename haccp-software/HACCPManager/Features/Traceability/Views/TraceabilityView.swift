@@ -77,7 +77,7 @@ struct TraceabilityView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 16) {
-                DashboardCardView(title: "Tracciabilita") {
+                DashboardCardView(title: "Tracciabilità") {
                     VStack(spacing: 10) {
                         Text("Le modifiche al prodotto si effettuano da Ricezione merci.")
                             .font(.caption)
@@ -240,14 +240,14 @@ struct TraceabilityView: View {
             .padding(24)
         }
         .background(Color(hex: "#0A0A0A").ignoresSafeArea())
-        .navigationTitle("Tracciabilita")
+        .navigationTitle("Tracciabilità")
         .onAppear {
             let expired = expiryService.refreshStatuses(records: scopedRecords, modelContext: modelContext)
             if expired > 0 {
                 errorMessage = "Sono stati marcati \(expired) prodotti come scaduti."
             }
         }
-        .alert("Tracciabilita", isPresented: Binding(get: { errorMessage != nil }, set: { _ in errorMessage = nil })) {
+        .alert("Tracciabilità", isPresented: Binding(get: { errorMessage != nil }, set: { _ in errorMessage = nil })) {
             Button("OK", role: .cancel) {}
         } message: {
             Text(errorMessage ?? "")

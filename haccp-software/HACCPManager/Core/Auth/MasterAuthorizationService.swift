@@ -17,6 +17,9 @@ final class MasterAuthorizationService {
         case manageTemperatureDevices
         case manageChecklistTemplates
         case deleteTraceabilityEntry
+        case deleteDocument
+        case regenerateDocument
+        case exportDocumentArchive
 
         var localizedReason: String {
             switch self {
@@ -44,6 +47,12 @@ final class MasterAuthorizationService {
                 return "Autorizza la gestione critica delle checklist"
             case .deleteTraceabilityEntry:
                 return "Autorizza l'eliminazione della voce di tracciabilità e della ricezione collegata"
+            case .deleteDocument:
+                return "Autorizza l'eliminazione del documento di registro"
+            case .regenerateDocument:
+                return "Autorizza la rigenerazione del documento di registro"
+            case .exportDocumentArchive:
+                return "Autorizza l'esportazione dell'archivio documenti completo"
             }
         }
     }
