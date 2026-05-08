@@ -26,6 +26,7 @@ struct DashboardView: View {
     @Query private var blastRecords: [BlastChillingRecord]
     @Query private var defrostRecords: [DefrostRecord]
     @Query private var oilRecords: [OilControlRecord]
+    @Query private var oilAlerts: [OilControlAlert]
     @Query private var labelRecords: [ProductionLabelRecord]
     @Query private var goodsRecords: [GoodsReceipt]
     @Query private var documentFolders: [DocumentFolder]
@@ -162,6 +163,8 @@ struct DashboardView: View {
     }
     private var countForOil: Int? {
         guard let rid = activeRestaurantId else { return nil }
+        let activeAlerts = oilAlerts.filter { $0.restaurantId == rid && $0.isActive }.count
+        if activeAlerts > 0 { return activeAlerts }
         let count = oilRecords.filter { $0.restaurantId == rid }.count
         return count > 0 ? count : nil
     }

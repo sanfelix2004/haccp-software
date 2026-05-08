@@ -7,6 +7,7 @@ struct AlertsView: View {
     @Query private var checklistAlerts: [ChecklistAlert]
     @Query private var temperatureAlerts: [TemperatureAlert]
     @Query private var cleaningCriticalities: [CleaningCriticality]
+    @Query private var oilAlerts: [OilControlAlert]
     @Query private var users: [LocalUser]
 
     private var activeChecklistAlerts: [ChecklistAlert] {
@@ -24,6 +25,11 @@ struct AlertsView: View {
         return cleaningCriticalities.filter { $0.restaurantId == rid && !$0.isResolved }
     }
 
+    private var activeOilAlerts: [OilControlAlert] {
+        guard let rid = appState.activeRestaurantId else { return [] }
+        return oilAlerts.filter { $0.restaurantId == rid && $0.isActive }
+    }
+
     private var currentUser: LocalUser? {
         users.first(where: { $0.id == appState.currentUserId })
     }
@@ -31,11 +37,11 @@ struct AlertsView: View {
     var body: some View {
         ScrollView {
             DashboardCardView(title: "Alert") {
-                if activeChecklistAlerts.isEmpty && activeTemperatureAlerts.isEmpty && activeCleaningCriticalities.isEmpty {
+                if activeChecklistAlerts.isEmpty && activeTemperatureAlerts.isEmpty && activeCleaningCriticalities.isEmpty && activeOilAlerts.isEmpty {
                     DashboardEmptyStateView(
                         state: DashboardEmptyState(
                             title: "Nessun alert attivo",
-                            message: "Gli alert di temperatura, checklist e pulizie appariranno qui",
+                            message: "Gli alert di temperatura, checklist, pulizie e controllo olio appariranno qui",
                             actionTitle: nil
                         )
                     )
@@ -49,6 +55,9 @@ struct AlertsView: View {
                         }
                         ForEach(activeCleaningCriticalities) { criticality in
                             cleaningAlertRow(criticality)
+                        }
+                        ForEach(activeOilAlerts) { alert in
+                            oilAlertRow(alert)
                         }
                     }
                 }
@@ -125,6 +134,31 @@ struct AlertsView: View {
         .cornerRadius(10)
     }
 
+    private func oilAlertRow(_ alert: OilControlAlert) -> some View {
+        HStack {
+            Image(systemName: "drop.fill").foregroundColor(.orange)
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Olio critico: \(alert.oilPointName)")
+                    .foregroundColor(.white)
+                Text(alert.message)
+                    .font(.caption)
+                    .foregroundColor(.gray)
+                Text(alert.createdAt.formatted(date: .abbreviated, time: .shortened))
+                    .font(.caption2)
+                    .foregroundColor(.gray)
+            }
+            Spacer()
+            Button("Risolvi") {
+                resolveOilAlert(alert)
+            }
+            .buttonStyle(.bordered)
+            .tint(.green)
+        }
+        .padding(10)
+        .background(Color.orange.opacity(0.12))
+        .cornerRadius(10)
+    }
+
     private func resolveCriticality(_ criticality: CleaningCriticality) {
         guard let user = currentUser else { return }
         criticality.isResolved = true
@@ -143,6 +177,17 @@ struct AlertsView: View {
                 restaurantId: rid,
                 modelContext: modelContext
             )
+        } catch {
+            alert.isActive = false
+            alert.resolvedAt = Date()
+            try? modelContext.save()
+        }
+    }
+
+    private func resolveOilAlert(_ alert: OilControlAlert) {
+        guard let user = currentUser else { return }
+        do {
+            try OilControlService().resolveAlert(alert, user: user, modelContext: modelContext)
         } catch {
             alert.isActive = false
             alert.resolvedAt = Date()

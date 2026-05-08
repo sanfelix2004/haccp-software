@@ -35,6 +35,23 @@ struct HACCPSettingsView: View {
             .padding()
             .background(Color.white.opacity(0.05))
             .cornerRadius(16)
+
+            VStack(alignment: .leading, spacing: 20) {
+                Text("Controllo olio")
+                    .font(.headline)
+                    .foregroundColor(.white)
+
+                HStack(spacing: 20) {
+                    TempConfigBox(title: "Limite attenzione", value: $storage.haccp.oilPolarAttentionLimit, unit: "%")
+                    TempConfigBox(title: "Limite massimo", value: $storage.haccp.oilPolarMaximumLimit, unit: "%")
+                }
+
+                Toggle("Foto obbligatoria per non conformità olio", isOn: $storage.haccp.oilNonCompliancePhotoRequired)
+                    .foregroundColor(.white)
+            }
+            .padding()
+            .background(Color.white.opacity(0.05))
+            .cornerRadius(16)
             
             VStack(alignment: .leading, spacing: 20) {
                 Text("Operatività")
@@ -64,6 +81,9 @@ struct HACCPSettingsView: View {
             .cornerRadius(16)
             .onChange(of: storage.haccp.fridgeMaxTemp) { storage.saveAll() }
             .onChange(of: storage.haccp.productExpiryThreshold) { storage.saveAll() }
+            .onChange(of: storage.haccp.oilPolarAttentionLimit) { storage.saveAll() }
+            .onChange(of: storage.haccp.oilPolarMaximumLimit) { storage.saveAll() }
+            .onChange(of: storage.haccp.oilNonCompliancePhotoRequired) { storage.saveAll() }
         }
     }
 }

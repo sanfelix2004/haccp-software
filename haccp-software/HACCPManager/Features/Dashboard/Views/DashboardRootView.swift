@@ -65,6 +65,7 @@ struct DashboardRootView: View {
     @Query private var documentItems: [DocumentItem]
     @Query private var productionCategories: [ProductionCategory]
     @Query private var productions: [Production]
+    @Query private var oilPoints: [OilPoint]
     
     @State private var selectedItem: SidebarItem? = .dashboard
     @State private var columnVisibility = NavigationSplitViewVisibility.all
@@ -72,6 +73,7 @@ struct DashboardRootView: View {
     @State private var showMasterAuthForCreate = false
     private let documentsService = DocumentsService()
     private let productionLibraryService = ProductionLibraryService()
+    private let oilControlService = OilControlService()
     
     var currentUser: LocalUser? {
         users.first { $0.id == appState.currentUserId }
@@ -275,6 +277,12 @@ struct DashboardRootView: View {
             restaurantId: rid,
             categories: productionCategories,
             productions: productions,
+            modelContext: modelContext
+        )
+        oilControlService.ensureDefaultPoints(
+            restaurantId: rid,
+            user: user,
+            existingPoints: oilPoints,
             modelContext: modelContext
         )
     }
