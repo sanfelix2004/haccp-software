@@ -6,13 +6,13 @@ struct ProductionLibraryService {
         "Tutti",
         "Antipasti",
         "Crudi",
-        "Dolci",
+        "Primi",
         "Secondi",
         "Contorni",
-        "Entrè",
         "Pane",
-        "Primi",
-        "Salse vegetali"
+        "Salse vegetali",
+        "Entrè",
+        "Dolci"
     ]
 
     private static let defaultProductionsByCategory: [String: [String]] = [
@@ -23,11 +23,12 @@ struct ProductionLibraryService {
         ],
         "Crudi": [
             "Astice", "Calamari", "Calamaro", "Gambero bianco", "Gambero rosso di mazzara",
-            "Mazzancolle", "Pescatrice", "Pesce spada", "Ricciola", "Tagliatelle",
+            "Mazzancolle", "Pescatrice", "Pesce spada", "Ricciola",
             "Tartare", "Tonno"
         ],
         "Dolci": [
-            "Astice", "Branzino", "Cube roll", "Dentice", "Filetti orata", "Filetto di spigola"
+            "Cheesecake", "Crostata", "Frutta", "Gelato", "Mousse al cioccolato",
+            "Panna cotta", "Semifreddo", "Sorbetto", "Tiramisù"
         ],
         "Secondi": [
             "Astice", "Branzino", "Cube roll", "Dentice", "Filetti orata", "Filetto di spigola",
@@ -36,7 +37,7 @@ struct ProductionLibraryService {
         "Contorni": ["Cipolla caramellata", "Concasse pomodoro", "Indivia", "Melanzane", "Porro", "Zucchine cotte"],
         "Entrè": ["Cialdella", "Mousse menta curry", "Salsa appetizer"],
         "Pane": ["Pane"],
-        "Primi": ["Fonduta pecorino", "Peperone giallo", "Pomodorino", "Ragù polpo"],
+        "Primi": ["Fonduta pecorino", "Peperone giallo", "Pomodorino", "Ragù polpo", "Tagliatelle"],
         "Salse vegetali": [
             "Acqua cipolla", "Barbabietola", "Carota", "Gazpacho pomodoro", "Lenticchie",
             "Lattughino liquido", "Mayo scapece", "Salsa basilico", "Salsa cicoria",
@@ -68,7 +69,13 @@ struct ProductionLibraryService {
         try? modelContext.save()
 
         let refreshedCategories = (try? modelContext.fetch(FetchDescriptor<ProductionCategory>()))?.filter { $0.restaurantId == restaurantId } ?? []
-        let scopedProductions = productions.filter { $0.restaurantId == restaurantId }
+        normalizeExistingProductions(
+            restaurantId: restaurantId,
+            categories: refreshedCategories,
+            modelContext: modelContext
+        )
+        let scopedProductions = ((try? modelContext.fetch(FetchDescriptor<Production>())) ?? productions)
+            .filter { $0.restaurantId == restaurantId }
         for category in refreshedCategories {
             let categoryName = category.name == "Entre" ? "Entrè" : category.name
             for productionName in Self.defaultProductionsByCategory[categoryName] ?? [] {
@@ -241,5 +248,80 @@ struct ProductionLibraryService {
         value
             .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: Locale(identifier: "it_IT"))
             .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func normalizeExistingProductions(
+        restaurantId: UUID,
+        categories: [ProductionCategory],
+        modelContext: ModelContext
+    ) {
+        var categoryByName: [String: ProductionCategory] = [:]
+        for category in categories {
+            categoryByName[normalized(category.name)] = category
+        }
+        let scopedProductions = ((try? modelContext.fetch(FetchDescriptor<Production>())) ?? [])
+            .filter { $0.restaurantId == restaurantId }
+        let traceabilityLinks = (try? modelContext.fetch(FetchDescriptor<TraceabilityLink>())) ?? []
+        let blastRecords = (try? modelContext.fetch(FetchDescriptor<BlastChillingRecord>())) ?? []
+
+        for production in scopedProductions {
+            let currentCategoryName = categories.first(where: { $0.id == production.categoryId })?.name
+                ?? production.categoryNameSnapshot
+            guard
+                let targetCategoryName = correctedCategoryName(for: production.name, currentCategoryName: currentCategoryName),
+                let targetCategory = categoryByName[normalized(targetCategoryName)]
+            else { continue }
+
+            if let duplicate = scopedProductions.first(where: {
+                $0.id != production.id &&
+                $0.categoryId == targetCategory.id &&
+                normalized($0.name) == normalized(production.name)
+            }) {
+                if isProductionUsed(production, traceabilityLinks: traceabilityLinks, blastRecords: blastRecords) == false {
+                    modelContext.delete(production)
+                    continue
+                }
+                if isProductionUsed(duplicate, traceabilityLinks: traceabilityLinks, blastRecords: blastRecords) == false {
+                    modelContext.delete(duplicate)
+                }
+            }
+
+            production.categoryId = targetCategory.id
+            production.categoryNameSnapshot = targetCategory.name
+        }
+        try? modelContext.save()
+    }
+
+    private func correctedCategoryName(for productionName: String, currentCategoryName: String) -> String? {
+        let current = normalized(currentCategoryName)
+        let name = simplifiedProductionName(productionName)
+        if current == normalized("Dolci") {
+            let secondi = [
+                "astice", "branzino", "cuberoll", "dentice", "filettiorata", "filettodispigola",
+                "ostriche", "pagro", "pescatrice", "pescespada", "ricciola", "sgombro",
+                "tonno", "tonnoinnero", "tonnoinpanaturanera"
+            ]
+            if secondi.contains(name) {
+                return "Secondi"
+            }
+        }
+        if current == normalized("Crudi"), name == "tagliatelle" {
+            return "Primi"
+        }
+        return nil
+    }
+
+    private func simplifiedProductionName(_ value: String) -> String {
+        normalized(value)
+            .filter { $0.isLetter }
+    }
+
+    private func isProductionUsed(
+        _ production: Production,
+        traceabilityLinks: [TraceabilityLink],
+        blastRecords: [BlastChillingRecord]
+    ) -> Bool {
+        traceabilityLinks.contains { $0.productionId == production.id } ||
+        blastRecords.contains { $0.productionId == production.id }
     }
 }

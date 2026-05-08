@@ -31,12 +31,11 @@ struct BlastChillingView: View {
 
     private var filteredProductions: [Production] {
         if let selectedCategoryId = vm.selectedCategoryId {
-            return scopedProductions.filter { $0.categoryId == selectedCategoryId }.sorted { $0.name < $1.name }
+            return scopedProductions
+                .filter { $0.categoryId == selectedCategoryId }
+                .sorted(by: productionNameSort)
         }
-        return scopedProductions.sorted {
-            if $0.categoryNameSnapshot == $1.categoryNameSnapshot { return $0.name < $1.name }
-            return $0.categoryNameSnapshot < $1.categoryNameSnapshot
-        }
+        return scopedProductions.sorted(by: productionCategorySort)
     }
 
     private var currentUser: LocalUser? {
@@ -45,6 +44,10 @@ struct BlastChillingView: View {
 
     private var isMaster: Bool {
         currentUser?.role == .master
+    }
+
+    private var categoryOrderById: [UUID: Int] {
+        Dictionary(uniqueKeysWithValues: scopedCategories.map { ($0.id, $0.orderIndex) })
     }
 
     private var filteredHistory: [BlastChillingRecord] {
@@ -215,6 +218,19 @@ struct BlastChillingView: View {
                 .cornerRadius(10)
         }
         .buttonStyle(.plain)
+    }
+
+    private func productionNameSort(_ lhs: Production, _ rhs: Production) -> Bool {
+        lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
+    }
+
+    private func productionCategorySort(_ lhs: Production, _ rhs: Production) -> Bool {
+        let lhsOrder = categoryOrderById[lhs.categoryId] ?? Int.max
+        let rhsOrder = categoryOrderById[rhs.categoryId] ?? Int.max
+        if lhsOrder != rhsOrder {
+            return lhsOrder < rhsOrder
+        }
+        return productionNameSort(lhs, rhs)
     }
 
     private var actionBar: some View {
