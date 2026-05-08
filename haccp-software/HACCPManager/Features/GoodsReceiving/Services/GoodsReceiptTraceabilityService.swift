@@ -7,6 +7,7 @@ struct GoodsReceiptTraceabilityService {
         receipt: GoodsReceipt,
         modelContext: ModelContext
     ) -> TraceabilityRecord {
+        let isRejected = receipt.status == .nonConforme || receipt.status == .rejected
         let traceability = TraceabilityRecord(
             restaurantId: receipt.restaurantId,
             productName: receipt.productNameSnapshot,
@@ -25,12 +26,15 @@ struct GoodsReceiptTraceabilityService {
         traceability.categoryRaw = receipt.categoryRaw
         traceability.goodsReceiptStatusRaw = receipt.status.rawValue
         traceability.currentStatusRaw = "DISPONIBILE"
-        traceability.productStatus = .available
+        traceability.isNonCompliant = isRejected
+        traceability.nonComplianceNote = isRejected ? receipt.notes : nil
+        traceability.nonComplianceCorrectiveAction = isRejected ? receipt.correctiveAction : nil
+        traceability.productStatus = isRejected ? .rejected : .available
         modelContext.insert(traceability)
         modelContext.insert(
             TraceabilityLog(
                 receivedItemId: traceability.id,
-                actionType: .created,
+                actionType: isRejected ? .nonCompliance : .created,
                 operatorName: receipt.createdByNameSnapshot
             )
         )

@@ -191,7 +191,7 @@ struct TemperatureRootView: View {
                                 }
                                 Spacer()
                                 if let status = problemMap[device.id] {
-                                    Text(status.rawValue)
+                                    Text(status.label)
                                         .font(.caption.bold())
                                         .foregroundColor(.white)
                                         .padding(.horizontal, 10)
@@ -359,7 +359,7 @@ struct TemperatureRootView: View {
                                 HStack {
                                     Text(record.deviceName).foregroundColor(.white).font(.headline)
                                     Spacer()
-                                    Text("\(record.value, specifier: "%.1f")C")
+                                    Text("\(record.value, specifier: "%.1f") °C")
                                         .foregroundColor(.white)
                                         .padding(.horizontal, 10)
                                         .padding(.vertical, 4)
@@ -508,8 +508,8 @@ struct TemperatureDeviceDetailView: View {
                             Text(record.measuredAt.formatted(date: .abbreviated, time: .shortened))
                                 .foregroundColor(.gray).font(.caption)
                             Spacer()
-                            Text("\(record.value, specifier: "%.1f")C").foregroundColor(.white)
-                            Text(record.status.rawValue)
+                            Text("\(record.value, specifier: "%.1f") °C").foregroundColor(.white)
+                            Text(record.status.label)
                                 .font(.caption.bold())
                                 .foregroundColor(.white)
                                 .padding(.horizontal, 8)
@@ -538,6 +538,7 @@ struct TemperatureDeviceEditView: View {
     @State private var type: TemperatureDeviceType = .fridge
     @State private var customMin = ""
     @State private var customMax = ""
+    @State private var validationError: String?
 
     var body: some View {
         NavigationStack {
@@ -560,6 +561,15 @@ struct TemperatureDeviceEditView: View {
                     Button("Salva") { save() }.disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
             }
+            .alert("Dati non validi", isPresented: Binding(get: {
+                validationError != nil
+            }, set: { _ in
+                validationError = nil
+            })) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(validationError ?? "")
+            }
         }
         .onAppear {
             guard let deviceToEdit else { return }
@@ -572,11 +582,23 @@ struct TemperatureDeviceEditView: View {
 
     private func save() {
         guard let restaurantId, let user else { return }
+        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedName.isEmpty else { return }
+        let minTemp = parseOptionalTemperature(customMin)
+        let maxTemp = parseOptionalTemperature(customMax)
+        if (minTemp == nil) != (maxTemp == nil) {
+            validationError = "Inserisci sia il limite minimo sia il limite massimo, oppure lascia entrambi vuoti."
+            return
+        }
+        if let minTemp, let maxTemp, minTemp >= maxTemp {
+            validationError = "Il limite minimo deve essere più basso del limite massimo."
+            return
+        }
         if let deviceToEdit {
-            deviceToEdit.name = name
+            deviceToEdit.name = trimmedName
             deviceToEdit.type = type
-            deviceToEdit.customMinTemp = Double(customMin)
-            deviceToEdit.customMaxTemp = Double(customMax)
+            deviceToEdit.customMinTemp = minTemp
+            deviceToEdit.customMaxTemp = maxTemp
             TemperatureModuleService().log(
                 action: "TEMPERATURE_DEVICE_UPDATED",
                 user: user,
@@ -588,10 +610,10 @@ struct TemperatureDeviceEditView: View {
         } else {
             let device = TemperatureDevice(
                 restaurantId: restaurantId,
-                name: name,
+                name: trimmedName,
                 type: type,
-                customMinTemp: Double(customMin),
-                customMaxTemp: Double(customMax)
+                customMinTemp: minTemp,
+                customMaxTemp: maxTemp
             )
             modelContext.insert(device)
             TemperatureModuleService().log(
@@ -605,6 +627,12 @@ struct TemperatureDeviceEditView: View {
         }
         try? modelContext.save()
         dismiss()
+    }
+
+    private func parseOptionalTemperature(_ text: String) -> Double? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        return Double(trimmed.replacingOccurrences(of: ",", with: "."))
     }
 }
 
@@ -841,8 +869,6 @@ struct AddTemperatureRecordView: View {
 
     private var canSubmit: Bool {
         guard selectedDevice != nil, Double(valueText) != nil else { return false }
-        guard let device = selectedDevice, let value = Double(valueText) else { return false }
-        let result = validationService.validate(value: value, device: device, settings: SettingsStorageService.shared.haccp)
         if requiresCorrectiveAction {
             return !correctiveAction.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         }

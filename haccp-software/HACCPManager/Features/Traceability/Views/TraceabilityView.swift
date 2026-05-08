@@ -487,7 +487,7 @@ struct TraceabilityView: View {
     }
 
     private func buildExportFile() -> URL? {
-        let csv = service.exportTraceabilityReport(records: scopedRecords, links: links, productions: productions)
+        let csv = service.exportTraceabilityReport(records: filteredRecords, links: links, productions: productions)
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("traceability_report.csv")
         do {
             try csv.write(to: url, atomically: true, encoding: .utf8)

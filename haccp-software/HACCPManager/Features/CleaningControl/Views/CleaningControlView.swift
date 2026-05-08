@@ -153,13 +153,52 @@ struct CleaningControlView: View {
             if cards.isEmpty {
                 DashboardEmptyStateView(state: .init(title: "Nessun elemento", message: emptyText, actionTitle: nil))
             } else {
-                VStack(spacing: 10) {
-                    ForEach(cards) { card in
-                        taskRow(card)
+                VStack(spacing: 14) {
+                    ForEach(areaNames(in: cards), id: \.self) { areaName in
+                        let areaCards = cards.filter { $0.areaName == areaName }
+                        VStack(alignment: .leading, spacing: 10) {
+                            areaSectionHeader(areaName: areaName, completed: completedCount(in: areaCards), total: areaCards.count)
+                            ForEach(areaCards) { card in
+                                taskRow(card)
+                            }
+                        }
+                        .padding(12)
+                        .background(
+                            RoundedRectangle(cornerRadius: 16)
+                                .fill(Color.white.opacity(0.04))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 16)
+                                        .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                                )
+                        )
                     }
                 }
             }
         }
+    }
+
+    private func areaSectionHeader(areaName: String, completed: Int, total: Int) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Label("Area pulizia: \(areaName)", systemImage: "square.grid.2x2")
+                    .font(.headline)
+                    .foregroundColor(.white)
+                Spacer()
+                Text("\(completed)/\(total)")
+                    .font(.caption.bold())
+                    .foregroundColor(.gray)
+            }
+            ProgressView(value: total == 0 ? 0.0 : Double(completed) / Double(total))
+                .tint(.green)
+        }
+    }
+
+    private func completedCount(in cards: [CleaningTaskCard]) -> Int {
+        cards.filter(\.isCompleted).count
+    }
+
+    private func areaNames(in cards: [CleaningTaskCard]) -> [String] {
+        Array(Set(cards.map(\.areaName))).sorted()
     }
 
     private func taskRow(_ card: CleaningTaskCard) -> some View {
@@ -172,12 +211,17 @@ struct CleaningControlView: View {
         return VStack(alignment: .leading, spacing: 8) {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(card.areaName).font(.subheadline.bold()).foregroundColor(.white)
-                    Text(card.taskName).font(.caption).foregroundColor(.white.opacity(0.9))
+                    Text(card.taskName).font(.subheadline.bold()).foregroundColor(.white.opacity(0.95))
                     Text("Frequenza: \(card.frequency.label)").font(.caption2).foregroundColor(.gray)
                     Text(dueDescription(for: card))
                         .font(.caption2)
                         .foregroundColor(card.isOverdue ? .red : .gray)
+                    Text(periodDescription(for: card.record))
+                        .font(.caption2)
+                        .foregroundColor(.gray)
+                    Text(automaticTimestampDescription(for: card.record))
+                        .font(.caption2)
+                        .foregroundColor(card.record.outcome == .daFare ? .gray : .cyan)
                 }
                 Spacer()
                 if card.isOverdue {
@@ -230,30 +274,60 @@ struct CleaningControlView: View {
     }
 
     private var historyList: some View {
-        VStack(spacing: 10) {
-            ForEach(grouped.history.prefix(200)) { record in
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("\(record.areaName) · \(record.taskName)")
-                        .foregroundColor(.white)
-                    Text("\(record.outcome.label) · \(record.updatedByNameSnapshot) · \(record.updatedAt.formatted(date: .abbreviated, time: .shortened))")
-                        .font(.caption)
-                        .foregroundColor(.gray)
-                    if let note = record.notes, !note.isEmpty {
-                        Text("Note: \(note)")
-                            .font(.caption2)
-                            .foregroundColor(.gray)
-                    }
-                    if let action = record.correctiveAction, !action.isEmpty {
-                        Text("Azione correttiva: \(action)")
-                            .font(.caption2)
-                            .foregroundColor(.orange)
+        let history = Array(grouped.history.prefix(200))
+        return VStack(spacing: 14) {
+            ForEach(areaNames(in: history), id: \.self) { areaName in
+                let areaRecords = history.filter { $0.areaName == areaName }
+                VStack(alignment: .leading, spacing: 10) {
+                    areaSectionHeader(areaName: areaName, completed: completedCount(in: areaRecords), total: areaRecords.count)
+                    ForEach(areaRecords) { record in
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(record.taskName)
+                                .foregroundColor(.white)
+                            Text("\(record.outcome.label) · \(record.updatedByNameSnapshot)")
+                                .font(.caption)
+                                .foregroundColor(.gray)
+                            Text(periodDescription(for: record))
+                                .font(.caption2)
+                                .foregroundColor(.gray)
+                            Text(automaticTimestampDescription(for: record))
+                                .font(.caption2)
+                                .foregroundColor(.cyan)
+                            if let note = record.notes, !note.isEmpty {
+                                Text("Note: \(note)")
+                                    .font(.caption2)
+                                    .foregroundColor(.gray)
+                            }
+                            if let action = record.correctiveAction, !action.isEmpty {
+                                Text("Azione correttiva: \(action)")
+                                    .font(.caption2)
+                                    .foregroundColor(.orange)
+                            }
+                        }
+                        .padding(10)
+                        .background(Color.white.opacity(0.05))
+                        .cornerRadius(10)
                     }
                 }
-                .padding(10)
-                .background(Color.white.opacity(0.05))
-                .cornerRadius(10)
+                .padding(12)
+                .background(
+                    RoundedRectangle(cornerRadius: 16)
+                        .fill(Color.white.opacity(0.04))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 16)
+                                .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                        )
+                )
             }
         }
+    }
+
+    private func completedCount(in records: [CleaningRecord]) -> Int {
+        records.filter { $0.outcome != .daFare }.count
+    }
+
+    private func areaNames(in records: [CleaningRecord]) -> [String] {
+        Array(Set(records.map(\.areaName))).sorted()
     }
 
     private func updateOutcome(for card: CleaningTaskCard, outcome: CleaningTaskOutcome) {
@@ -364,16 +438,29 @@ struct CleaningControlView: View {
     private func dueDescription(for card: CleaningTaskCard) -> String {
         let now = Date()
         if card.isOverdue {
-            return "Scaduto il \(card.dueDate.formatted(date: .abbreviated, time: .omitted))"
+            return "Scaduto il \(card.dueDate.formatted(date: .abbreviated, time: .shortened))"
         }
         if Calendar.current.isDate(card.dueDate, inSameDayAs: now) {
-            return "Scadenza: oggi"
+            return "Scadenza automatica: oggi alle \(card.dueDate.formatted(date: .omitted, time: .shortened))"
         }
         if let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: now),
            Calendar.current.isDate(card.dueDate, inSameDayAs: tomorrow) {
-            return "Scadenza: domani"
+            return "Scadenza automatica: domani alle \(card.dueDate.formatted(date: .omitted, time: .shortened))"
         }
-        return "Scadenza: \(card.dueDate.formatted(date: .abbreviated, time: .omitted))"
+        return "Scadenza automatica: \(card.dueDate.formatted(date: .abbreviated, time: .shortened))"
+    }
+
+    private func periodDescription(for record: CleaningRecord) -> String {
+        let start = record.periodStart.formatted(date: .abbreviated, time: .shortened)
+        let end = record.periodEnd.formatted(date: .abbreviated, time: .shortened)
+        return "Periodo automatico: \(start) → \(end)"
+    }
+
+    private func automaticTimestampDescription(for record: CleaningRecord) -> String {
+        if record.outcome == .daFare {
+            return "Creato automaticamente: \(record.createdAt.formatted(date: .abbreviated, time: .shortened))"
+        }
+        return "Data/ora pulizia automatica: \(record.updatedAt.formatted(date: .abbreviated, time: .shortened))"
     }
 
     @ViewBuilder
@@ -505,7 +592,17 @@ struct CleaningControlView: View {
             createdByNameSnapshot: user.name
         )
         modelContext.insert(task)
-        ensureRecordsForCurrentPeriod()
+        var cal = Calendar(identifier: .gregorian)
+        cal.locale = Locale(identifier: "it_IT")
+        cal.timeZone = .current
+        _ = vm.service.ensureRecordForCurrentPeriod(
+            task: task,
+            restaurantId: rid,
+            user: user,
+            existingRecords: scopedRecords,
+            calendar: cal,
+            modelContext: modelContext
+        )
         newTaskName = ""
         newTaskCustomDays = ""
         try? modelContext.save()
@@ -530,6 +627,7 @@ struct CleaningControlView: View {
         guard isMaster else { return }
         for record in scopedRecords { modelContext.delete(record) }
         for c in scopedCriticalities { modelContext.delete(c) }
+        try? modelContext.save()
         ensureRecordsForCurrentPeriod()
         try? modelContext.save()
     }
