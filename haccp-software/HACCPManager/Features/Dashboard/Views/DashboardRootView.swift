@@ -13,7 +13,6 @@ enum SidebarItem: String, Identifiable {
     case oilControl = "Controllo olio"
     case productionLabels = "Etichette di produzione"
     case goodsReceiving = "Ricezione merci"
-    case moduleTimer = "Module Timer"
     case documents = "Documenti"
     case history = "Storia"
     case analytics = "Grafici"
@@ -26,7 +25,7 @@ enum SidebarItem: String, Identifiable {
     /// Moduli HACCP principali (ordine ufficiale).
     static let haccpModulesInOrder: [SidebarItem] = [
         .traceability, .fridges, .cleaningControl, .blastChilling, .scheduling,
-        .expiryControl, .defrost, .oilControl, .productionLabels, .goodsReceiving, .moduleTimer
+        .expiryControl, .defrost, .oilControl, .productionLabels, .goodsReceiving
     ]
 
     static let toolsInOrder: [SidebarItem] = [
@@ -46,7 +45,6 @@ enum SidebarItem: String, Identifiable {
         case .productionLabels: return "tag.fill"
         case .goodsReceiving: return "shippingbox.fill"
         case .expiryControl: return "calendar.badge.exclamationmark"
-        case .moduleTimer: return "timer"
         case .documents: return "folder.fill"
         case .history: return "clock.arrow.circlepath"
         case .analytics: return "chart.xyaxis.line"
@@ -306,8 +304,6 @@ struct DashboardRootView: View {
             ProductionLabelsView()
         case .goodsReceiving:
             GoodsReceivingView()
-        case .moduleTimer:
-            ModuleTimerView()
         case .documents:
             DocumentsView()
         case .history:

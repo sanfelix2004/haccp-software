@@ -14,8 +14,7 @@ struct DashboardView: View {
         (.defrost, "Storico decongelamenti", "snowflake"),
         (.oilControl, "Controlli olio frittura", "drop.fill"),
         (.productionLabels, "Etichette e tracciabilità produzione", "tag.fill"),
-        (.goodsReceiving, "Conformità in ingresso merci", "shippingbox.fill"),
-        (.moduleTimer, "Timer operativi (in arrivo)", "timer")
+        (.goodsReceiving, "Conformità in ingresso merci", "shippingbox.fill")
     ]
     @Query private var users: [LocalUser]
     @Query private var restaurants: [Restaurant]

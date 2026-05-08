@@ -13,7 +13,6 @@ enum HACCPModuleCatalog {
         "Controllo olio",
         "Etichette di produzione",
         "Ricezione merci",
-        "Module Timer",
         "HACCP combinato"
     ]
 

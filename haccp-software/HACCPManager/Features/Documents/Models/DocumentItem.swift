@@ -46,7 +46,6 @@ enum DocumentModule: String, Codable, CaseIterable {
     case decongelamento = "DECONGELAMENTO"
     case controlloOlio = "CONTROLLO_OLIO"
     case etichetteProduzione = "ETICHETTE_PRODUZIONE"
-    case moduleTimer = "MODULE_TIMER"
 
     var label: String {
         switch self {
@@ -62,7 +61,6 @@ enum DocumentModule: String, Codable, CaseIterable {
         case .decongelamento: return "Decongelamento"
         case .controlloOlio: return "Controllo olio"
         case .etichetteProduzione: return "Etichette di produzione"
-        case .moduleTimer: return "Module Timer"
         }
     }
 }

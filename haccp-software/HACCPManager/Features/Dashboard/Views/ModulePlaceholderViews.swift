@@ -21,19 +21,3 @@ struct ExpiryControlView: View {
     }
 }
 
-struct ModuleTimerView: View {
-    var body: some View {
-        ScrollView {
-            DashboardCardView(title: "Module Timer") {
-                DashboardEmptyStateView(state: .init(
-                    title: "Modulo in preparazione",
-                    message: "Timer e promemoria operativi saranno disponibili in una prossima versione.",
-                    actionTitle: nil
-                ))
-            }
-            .padding(24)
-        }
-        .background(Color(hex: "#0A0A0A").ignoresSafeArea())
-        .navigationTitle("Module Timer")
-    }
-}
