@@ -140,10 +140,10 @@ struct HistoryService {
             .map {
                 HistoryEntry(
                     module: "Controllo olio",
-                    title: $0.oilState,
-                    category: $0.actionTaken,
+                    title: $0.oilPointNameSnapshot,
+                    category: $0.oilStatus.label,
                     operatorName: $0.createdByNameSnapshot,
-                    productOrDevice: $0.indexValue.map { String(format: "%.2f", $0) } ?? "—",
+                    productOrDevice: $0.effectivePolarCompoundsValue.map { String(format: "%.1f%%", $0) } ?? $0.oilAction.label,
                     date: $0.checkedAt
                 )
             }
