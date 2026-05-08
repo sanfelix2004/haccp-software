@@ -1,11 +1,9 @@
 import SwiftUI
 
-struct ProductionGrid: View {
+struct BlastChillingProductionGridView: View {
     let productions: [Production]
-    let selectedProductionIds: Set<UUID>
-    let isEditMode: Bool
+    let selectedProductionId: UUID?
     let onSelect: (Production) -> Void
-    let onDelete: (Production) -> Void
 
     var body: some View {
         LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 10)], spacing: 10) {
@@ -13,7 +11,7 @@ struct ProductionGrid: View {
                 Button {
                     onSelect(production)
                 } label: {
-                    VStack(alignment: .leading, spacing: 6) {
+                    VStack(alignment: .leading, spacing: 8) {
                         Text(production.name)
                             .font(.headline)
                             .foregroundColor(.white)
@@ -27,11 +25,11 @@ struct ProductionGrid: View {
                     .background(Color.white.opacity(0.06))
                     .overlay(
                         RoundedRectangle(cornerRadius: 12)
-                            .stroke(selectedProductionIds.contains(production.id) ? Color.red : Color.white.opacity(0.1), lineWidth: selectedProductionIds.contains(production.id) ? 2 : 1)
+                            .stroke(selectedProductionId == production.id ? Color.green : Color.white.opacity(0.1), lineWidth: selectedProductionId == production.id ? 2 : 1)
                     )
                     .cornerRadius(12)
                     .overlay(alignment: .topTrailing) {
-                        if selectedProductionIds.contains(production.id) {
+                        if selectedProductionId == production.id {
                             Image(systemName: "checkmark.circle.fill")
                                 .foregroundColor(.green)
                                 .padding(8)

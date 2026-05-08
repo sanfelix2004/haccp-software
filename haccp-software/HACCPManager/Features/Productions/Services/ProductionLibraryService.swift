@@ -2,59 +2,94 @@ import Foundation
 import SwiftData
 
 struct ProductionLibraryService {
+    private static let defaultCategoryNames = [
+        "Tutti",
+        "Antipasti",
+        "Crudi",
+        "Dolci",
+        "Secondi",
+        "Contorni",
+        "Entrè",
+        "Pane",
+        "Primi",
+        "Salse vegetali"
+    ]
+
+    private static let defaultProductionsByCategory: [String: [String]] = [
+        "Antipasti": [
+            "Alici", "Baccalà", "Bufala", "Cozze pastellate", "Emulsione cozze",
+            "Guancia", "Mozzarella di bufala", "Peperone rosso", "Peperone verde",
+            "Polipetti", "Razza", "Triglia"
+        ],
+        "Crudi": [
+            "Astice", "Calamari", "Calamaro", "Gambero bianco", "Gambero rosso di mazzara",
+            "Mazzancolle", "Pescatrice", "Pesce spada", "Ricciola", "Tagliatelle",
+            "Tartare", "Tonno"
+        ],
+        "Dolci": [
+            "Astice", "Branzino", "Cube roll", "Dentice", "Filetti orata", "Filetto di spigola"
+        ],
+        "Secondi": [
+            "Astice", "Branzino", "Cube roll", "Dentice", "Filetti orata", "Filetto di spigola",
+            "Ostriche", "Pagro", "Petto pollo", "Sgombro", "Tonno in nero", "Tonno in panatura nera"
+        ],
+        "Contorni": ["Cipolla caramellata", "Concasse pomodoro", "Indivia", "Melanzane", "Porro", "Zucchine cotte"],
+        "Entrè": ["Cialdella", "Mousse menta curry", "Salsa appetizer"],
+        "Pane": ["Pane"],
+        "Primi": ["Fonduta pecorino", "Peperone giallo", "Pomodorino", "Ragù polpo"],
+        "Salse vegetali": [
+            "Acqua cipolla", "Barbabietola", "Carota", "Gazpacho pomodoro", "Lenticchie",
+            "Lattughino liquido", "Mayo scapece", "Salsa basilico", "Salsa cicoria",
+            "Salsa finocchietto", "Salsa pizzaiola", "Salsa taralli", "Salsa zafferano",
+            "Salsa zucca", "Sedano rapa", "Topinambur", "Yogurt"
+        ]
+    ]
+
     func ensureDefaults(
         restaurantId: UUID,
         categories: [ProductionCategory],
         productions: [Production],
         modelContext: ModelContext
     ) {
-        let scopedCategories = categories.filter { $0.restaurantId == restaurantId }
-        if scopedCategories.isEmpty {
-            let names = ["Antipasti", "Contorni", "Crudi", "Dolci", "Entre", "Pane", "Primi", "Salse vegetali", "Secondi"]
-            for (index, name) in names.enumerated() {
-                modelContext.insert(ProductionCategory(restaurantId: restaurantId, name: name, orderIndex: index))
-            }
-            try? modelContext.save()
+        var scopedCategories = categories.filter { $0.restaurantId == restaurantId }
+        if let legacyEntre = scopedCategories.first(where: { normalized($0.name) == "entre" }) {
+            legacyEntre.name = "Entrè"
         }
+        for (index, name) in Self.defaultCategoryNames.enumerated() {
+            guard name != "Tutti" else { continue }
+            if scopedCategories.contains(where: { normalized($0.name) == normalized(name) }) == false {
+                let category = ProductionCategory(restaurantId: restaurantId, name: name, orderIndex: index)
+                modelContext.insert(category)
+                scopedCategories.append(category)
+            } else if let category = scopedCategories.first(where: { normalized($0.name) == normalized(name) }) {
+                category.orderIndex = index
+            }
+        }
+        try? modelContext.save()
 
         let refreshedCategories = (try? modelContext.fetch(FetchDescriptor<ProductionCategory>()))?.filter { $0.restaurantId == restaurantId } ?? []
         let scopedProductions = productions.filter { $0.restaurantId == restaurantId }
-        if scopedProductions.isEmpty {
-            let dictionary: [String: [String]] = [
-                "Antipasti": ["Alici", "Astice", "Baccala", "Branzino", "Bufala", "Calamaro", "Cozze pastellate"],
-                "Contorni": ["Cipolla caramellata", "Concasse pomodoro", "Indivia", "Melanzane", "Porro", "Zucchine cotte"],
-                "Crudi": ["Gambero bianco", "Gambero rosso", "Tonno", "Ostriche", "Pesce spada crudo", "Mazzancolle"],
-                "Dolci": ["Brownie", "Crema inglese", "Crema limone", "Mousse ricotta", "Namelaka", "Semifreddi"],
-                "Entre": ["Cialdella", "Mousse menta curry", "Salsa apetaizer"],
-                "Pane": ["Pane"],
-                "Primi": ["Fonduta pecorino", "Peperone giallo", "Pomodorino", "Ragusa polpo"],
-                "Salse vegetali": [
-                    "Acqua cipolla", "Barbabietola", "Carota", "Gazpacho pomodoro", "Lenticchie",
-                    "Peperone rosso", "Peperone verde", "Lattughino liquido", "Mayo scapece",
-                    "Salsa basilico", "Salsa cicoria", "Salsa finocchietto", "Salsa pizzaiola",
-                    "Salsa taralli", "Salsa zafferano", "Salsa zucca", "Sedano rapa", "Topinambur", "Yogurt"
-                ],
-                "Secondi": [
-                    "Astice", "Calamaro", "Carcifi", "Coppa di suino", "Crema ceci",
-                    "Cube roll", "Dentice filetto", "Filetti orata", "Filetto di spigola",
-                    "Guancia", "Pagro", "Pescatrice", "Polenta", "Pollo", "Polpo", "Rombo", "Sarago", "Sgombro", "Tonno in nero"
-                ]
-            ]
-            for category in refreshedCategories {
-                for productionName in dictionary[category.name] ?? [] {
-                    modelContext.insert(
-                        Production(
-                            restaurantId: restaurantId,
-                            name: productionName,
-                            categoryId: category.id,
-                            categoryNameSnapshot: category.name,
-                            isCustom: false
-                        )
-                    )
+        for category in refreshedCategories {
+            let categoryName = category.name == "Entre" ? "Entrè" : category.name
+            for productionName in Self.defaultProductionsByCategory[categoryName] ?? [] {
+                let alreadyExists = scopedProductions.contains {
+                    $0.restaurantId == restaurantId &&
+                    $0.categoryId == category.id &&
+                    normalized($0.name) == normalized(productionName)
                 }
+                guard !alreadyExists else { continue }
+                modelContext.insert(
+                    Production(
+                        restaurantId: restaurantId,
+                        name: productionName,
+                        categoryId: category.id,
+                        categoryNameSnapshot: category.name,
+                        isCustom: false
+                    )
+                )
             }
-            try? modelContext.save()
         }
+        try? modelContext.save()
     }
 
     func associate(
@@ -132,5 +167,79 @@ struct ProductionLibraryService {
             record.productStatus = .available
         }
         try modelContext.save()
+    }
+
+    func addProduction(
+        name: String,
+        category: ProductionCategory,
+        restaurantId: UUID,
+        existingProductions: [Production],
+        modelContext: ModelContext
+    ) throws {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        let exists = existingProductions.contains {
+            $0.restaurantId == restaurantId &&
+            $0.categoryId == category.id &&
+            normalized($0.name) == normalized(trimmed)
+        }
+        guard !exists else {
+            throw NSError(domain: "ProductionLibraryService", code: 7002, userInfo: [NSLocalizedDescriptionKey: "Produzione già presente in questa categoria."])
+        }
+        modelContext.insert(
+            Production(
+                restaurantId: restaurantId,
+                name: trimmed,
+                categoryId: category.id,
+                categoryNameSnapshot: category.name,
+                isCustom: true
+            )
+        )
+        try modelContext.save()
+    }
+
+    func updateProduction(
+        _ production: Production,
+        name: String,
+        category: ProductionCategory,
+        existingProductions: [Production],
+        modelContext: ModelContext
+    ) throws {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        let exists = existingProductions.contains {
+            $0.id != production.id &&
+            $0.restaurantId == production.restaurantId &&
+            $0.categoryId == category.id &&
+            normalized($0.name) == normalized(trimmed)
+        }
+        guard !exists else {
+            throw NSError(domain: "ProductionLibraryService", code: 7003, userInfo: [NSLocalizedDescriptionKey: "Esiste già una produzione con questo nome nella categoria."])
+        }
+        production.name = trimmed
+        production.categoryId = category.id
+        production.categoryNameSnapshot = category.name
+        try modelContext.save()
+    }
+
+    func deleteProductionIfUnused(
+        _ production: Production,
+        traceabilityLinks: [TraceabilityLink],
+        blastRecords: [BlastChillingRecord],
+        modelContext: ModelContext
+    ) throws {
+        let usedInTraceability = traceabilityLinks.contains { $0.productionId == production.id }
+        let usedInBlastChilling = blastRecords.contains { $0.productionId == production.id }
+        guard !usedInTraceability && !usedInBlastChilling else {
+            throw NSError(domain: "ProductionLibraryService", code: 7004, userInfo: [NSLocalizedDescriptionKey: "Produzione già usata nello storico: non può essere eliminata."])
+        }
+        modelContext.delete(production)
+        try modelContext.save()
+    }
+
+    private func normalized(_ value: String) -> String {
+        value
+            .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: Locale(identifier: "it_IT"))
+            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }

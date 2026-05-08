@@ -4,9 +4,15 @@ import SwiftData
 struct ProductionSelectionView: View {
     @Environment(\.modelContext) private var modelContext
     @EnvironmentObject var appState: AppState
+    @Query private var users: [LocalUser]
     @Query private var categories: [ProductionCategory]
     @Query private var productions: [Production]
+    @Query private var links: [TraceabilityLink]
+    @Query private var blastRecords: [BlastChillingRecord]
     @StateObject private var vm = ProductionSelectionViewModel()
+    @State private var showMasterAuthForEdit = false
+    @State private var showMasterAuthForDelete = false
+    @State private var productionPendingDeletion: Production?
     private let service = ProductionLibraryService()
     let initialSelectedIds: Set<UUID>
 
@@ -30,6 +36,20 @@ struct ProductionSelectionView: View {
                 .sorted { $0.name < $1.name }
         }
         return scopedProductions.sorted { $0.name < $1.name }
+    }
+
+    private var currentUser: LocalUser? {
+        users.first { $0.id == appState.currentUserId }
+    }
+
+    private var isMaster: Bool {
+        currentUser?.role == .master
+    }
+
+    private var selectedSingleProduction: Production? {
+        guard vm.selectedProductionIds.count == 1,
+              let id = vm.selectedProductionIds.first else { return nil }
+        return scopedProductions.first { $0.id == id }
     }
 
     var body: some View {
@@ -68,9 +88,27 @@ struct ProductionSelectionView: View {
                     }
                     .buttonStyle(.bordered)
                     .tint(.white)
-                    Button("Modifica") { vm.isEditMode.toggle() }
+                    Button("Modifica") {
+                        guard let selected = selectedSingleProduction else {
+                            vm.errorMessage = "Seleziona una sola produzione da modificare."
+                            return
+                        }
+                        vm.productionToEdit = selected
+                        showMasterAuthForEdit = true
+                    }
                         .buttonStyle(.bordered)
                         .tint(.white)
+                        .disabled(selectedSingleProduction == nil)
+                    Button("Elimina", role: .destructive) {
+                        guard let selected = selectedSingleProduction else {
+                            vm.errorMessage = "Seleziona una sola produzione da eliminare."
+                            return
+                        }
+                        productionPendingDeletion = selected
+                        showMasterAuthForDelete = true
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(selectedSingleProduction == nil)
                     Spacer()
                     Button("Annullare", action: onCancel)
                         .buttonStyle(.bordered)
@@ -98,16 +136,51 @@ struct ProductionSelectionView: View {
                 )
             }
             .sheet(isPresented: $vm.showAddSheet) {
-                addSheet
+                productionEditor(title: "Nuova produzione", production: nil)
+            }
+            .sheet(isPresented: $vm.showEditSheet) {
+                if let production = vm.productionToEdit {
+                    productionEditor(title: "Modifica produzione", production: production)
+                }
+            }
+            .fullScreenCover(isPresented: $showMasterAuthForEdit) {
+                masterOverlay {
+                    showMasterAuthForEdit = false
+                    if let production = vm.productionToEdit {
+                        vm.newProductionName = production.name
+                        vm.newProductionCategoryId = production.categoryId
+                        vm.showEditSheet = true
+                    }
+                } onCancel: {
+                    showMasterAuthForEdit = false
+                    vm.productionToEdit = nil
+                }
+            }
+            .fullScreenCover(isPresented: $showMasterAuthForDelete) {
+                masterOverlay {
+                    showMasterAuthForDelete = false
+                    if let production = productionPendingDeletion {
+                        performDeleteProduction(production)
+                    }
+                    productionPendingDeletion = nil
+                } onCancel: {
+                    showMasterAuthForDelete = false
+                    productionPendingDeletion = nil
+                }
+            }
+            .alert("Produzioni", isPresented: Binding(get: { vm.errorMessage != nil }, set: { _ in vm.errorMessage = nil })) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(vm.errorMessage ?? "")
             }
         }
     }
 
     @ViewBuilder
-    private var addSheet: some View {
+    private func productionEditor(title: String, production: Production?) -> some View {
         NavigationStack {
             Form {
-                Section("Nuova produzione") {
+                Section(title) {
                     TextField("Nome produzione", text: $vm.newProductionName)
                     Picker("Categoria", selection: Binding(
                         get: { vm.newProductionCategoryId ?? scopedCategories.first?.id ?? UUID() },
@@ -118,13 +191,24 @@ struct ProductionSelectionView: View {
                         }
                     }
                 }
+                if production != nil {
+                    Section {
+                        Text("La modifica è riservata al MASTER. La produzione resta condivisa tra Abbattimento e Tracciabilità.")
+                            .font(.caption)
+                    }
+                }
             }
+            .navigationTitle(title)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Annullare") { vm.showAddSheet = false }
+                    Button("Annullare") {
+                        vm.showAddSheet = false
+                        vm.showEditSheet = false
+                    }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Salva") { addProduction() }
+                    Button("Salva") { saveProduction(production) }
+                        .disabled(vm.newProductionName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }
         }
@@ -145,33 +229,74 @@ struct ProductionSelectionView: View {
         .buttonStyle(.plain)
     }
 
-    private func addProduction() {
+    private func saveProduction(_ production: Production?) {
         guard
             let rid = appState.activeRestaurantId,
             let categoryId = vm.newProductionCategoryId,
             let category = scopedCategories.first(where: { $0.id == categoryId })
         else { return }
 
-        let name = vm.newProductionName.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !name.isEmpty else { return }
+        do {
+            if let production {
+                guard isMaster else { return }
+                try service.updateProduction(
+                    production,
+                    name: vm.newProductionName,
+                    category: category,
+                    existingProductions: scopedProductions,
+                    modelContext: modelContext
+                )
+            } else {
+                try service.addProduction(
+                    name: vm.newProductionName,
+                    category: category,
+                    restaurantId: rid,
+                    existingProductions: scopedProductions,
+                    modelContext: modelContext
+                )
+            }
+            vm.newProductionName = ""
+            vm.showAddSheet = false
+            vm.showEditSheet = false
+        } catch {
+            vm.errorMessage = error.localizedDescription
+        }
+    }
 
-        modelContext.insert(
-            Production(
-                restaurantId: rid,
-                name: name,
-                categoryId: category.id,
-                categoryNameSnapshot: category.name,
-                isCustom: true
-            )
-        )
-        try? modelContext.save()
-        vm.newProductionName = ""
-        vm.showAddSheet = false
+    @ViewBuilder
+    private func masterOverlay(onAuthorized: @escaping () -> Void, onCancel: @escaping () -> Void) -> some View {
+        if let master = users.first(where: { $0.role == .master }) {
+            MasterAuthOverlay(
+                master: master,
+                operation: .privilegedAction,
+                onAuthorized: onAuthorized,
+                onCancel: onCancel
+            ) {
+                EmptyView()
+            }
+        }
     }
 
     private func deleteProduction(_ production: Production) {
-        modelContext.delete(production)
-        try? modelContext.save()
-        vm.selectedProductionIds.remove(production.id)
+        guard isMaster else {
+            productionPendingDeletion = production
+            showMasterAuthForDelete = true
+            return
+        }
+        performDeleteProduction(production)
+    }
+
+    private func performDeleteProduction(_ production: Production) {
+        do {
+            try service.deleteProductionIfUnused(
+                production,
+                traceabilityLinks: links,
+                blastRecords: blastRecords,
+                modelContext: modelContext
+            )
+            vm.selectedProductionIds.remove(production.id)
+        } catch {
+            vm.errorMessage = error.localizedDescription
+        }
     }
 }
