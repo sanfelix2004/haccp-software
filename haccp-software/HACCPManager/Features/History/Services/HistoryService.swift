@@ -77,11 +77,11 @@ struct HistoryService {
             .map {
                 HistoryEntry(
                     module: "Abbattimento",
-                    title: $0.productName,
-                    category: $0.outcome,
+                    title: $0.productionNameSnapshot,
+                    category: $0.status.label,
                     operatorName: $0.createdByNameSnapshot,
-                    productOrDevice: $0.productName,
-                    date: $0.createdAt
+                    productOrDevice: $0.productionCategorySnapshot,
+                    date: $0.startedAt
                 )
             }
         let labels = labelRecords

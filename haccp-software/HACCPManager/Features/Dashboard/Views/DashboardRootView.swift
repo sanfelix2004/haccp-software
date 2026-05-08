@@ -65,12 +65,15 @@ struct DashboardRootView: View {
     @Query private var stores: [AppDataStore]
     @Query private var documentFolders: [DocumentFolder]
     @Query private var documentItems: [DocumentItem]
+    @Query private var productionCategories: [ProductionCategory]
+    @Query private var productions: [Production]
     
     @State private var selectedItem: SidebarItem? = .dashboard
     @State private var columnVisibility = NavigationSplitViewVisibility.all
     @State private var showCreateUserFromSidebar = false
     @State private var showMasterAuthForCreate = false
     private let documentsService = DocumentsService()
+    private let productionLibraryService = ProductionLibraryService()
     
     var currentUser: LocalUser? {
         users.first { $0.id == appState.currentUserId }
@@ -231,6 +234,9 @@ struct DashboardRootView: View {
             selectedItem = target
             appState.pendingSidebarNavigation = nil
         }
+        .onChange(of: appState.activeRestaurantId) { _, _ in
+            ensureRestaurantDefaults()
+        }
         .sheet(isPresented: $showCreateUserFromSidebar) {
             CreateUserView()
         }
@@ -250,19 +256,29 @@ struct DashboardRootView: View {
             }
         }
         .onAppear {
-            guard
-                let rid = appState.activeRestaurantId,
-                let user = currentUser
-            else { return }
-            let scoped = documentFolders.filter { $0.restaurantId == rid }
-            documentsService.ensureDefaultFolders(
-                restaurantId: rid,
-                user: user,
-                existingFolders: scoped,
-                existingItems: documentItems.filter { $0.restaurantId == rid },
-                modelContext: modelContext
-            )
+            ensureRestaurantDefaults()
         }
+    }
+
+    private func ensureRestaurantDefaults() {
+        guard
+            let rid = appState.activeRestaurantId,
+            let user = currentUser
+        else { return }
+        let scoped = documentFolders.filter { $0.restaurantId == rid }
+        documentsService.ensureDefaultFolders(
+            restaurantId: rid,
+            user: user,
+            existingFolders: scoped,
+            existingItems: documentItems.filter { $0.restaurantId == rid },
+            modelContext: modelContext
+        )
+        productionLibraryService.ensureDefaults(
+            restaurantId: rid,
+            categories: productionCategories,
+            productions: productions,
+            modelContext: modelContext
+        )
     }
     
     @ViewBuilder

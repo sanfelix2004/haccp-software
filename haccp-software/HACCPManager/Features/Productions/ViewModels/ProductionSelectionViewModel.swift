@@ -7,6 +7,9 @@ final class ProductionSelectionViewModel: ObservableObject {
     @Published var selectedProductionIds: Set<UUID> = []
     @Published var isEditMode = false
     @Published var showAddSheet = false
+    @Published var showEditSheet = false
     @Published var newProductionName = ""
     @Published var newProductionCategoryId: UUID?
+    @Published var productionToEdit: Production?
+    @Published var errorMessage: String?
 }
