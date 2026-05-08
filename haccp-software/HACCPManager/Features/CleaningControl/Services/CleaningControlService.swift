@@ -9,6 +9,7 @@ struct CleaningTaskCard: Identifiable {
     let customIntervalDays: Int?
     let dueDate: Date
     let isOverdue: Bool
+    let isCompleted: Bool
     let record: CleaningRecord
 }
 
@@ -212,14 +213,16 @@ struct CleaningControlService {
             guard let record = records.first(where: { $0.taskId == task.id && $0.periodStart == due.start }) else { continue }
             let hasOpenCriticality = resolveCriticalityForRecord(record, criticalities: criticalities) != nil
             let done = record.outcome != .daFare && !hasOpenCriticality
+            let visibleDueDate = calendar.date(byAdding: .second, value: -1, to: due.end) ?? due.end
             let card = CleaningTaskCard(
                 id: task.id,
                 areaName: task.areaNameSnapshot,
                 taskName: task.title,
                 frequency: task.frequency,
                 customIntervalDays: task.customIntervalDays,
-                dueDate: due.end,
+                dueDate: visibleDueDate,
                 isOverdue: due.end < now && !done,
+                isCompleted: done,
                 record: record
             )
             if done {
@@ -232,7 +235,7 @@ struct CleaningControlService {
         }
 
         let history = records
-            .filter { $0.restaurantId == restaurantId }
+            .filter { $0.restaurantId == restaurantId && $0.outcome != .daFare }
             .sorted { $0.updatedAt > $1.updatedAt }
 
         return (todo, overdue, completed, history)
@@ -240,7 +243,7 @@ struct CleaningControlService {
 
     func summary(for cards: [CleaningTaskCard]) -> CleaningSummary {
         let total = cards.count
-        let completed = cards.filter { $0.record.outcome != .daFare }.count
+        let completed = cards.filter(\.isCompleted).count
         return CleaningSummary(completed: completed, total: total)
     }
 }

@@ -93,8 +93,16 @@ final class TemperatureModuleService {
         modelContext: ModelContext
     ) throws {
         let records = (try? modelContext.fetch(FetchDescriptor<TemperatureRecord>())) ?? []
+        let deviceRecordIds = Set(records.filter { $0.deviceId == device.id }.map(\.id))
         for record in records where record.deviceId == device.id {
             record.isArchived = true
+        }
+        let alerts = (try? modelContext.fetch(FetchDescriptor<TemperatureAlert>())) ?? []
+        for alert in alerts where alert.restaurantId == restaurantId &&
+            alert.isActive &&
+            (deviceRecordIds.contains(alert.recordId) || alert.deviceName == device.name) {
+            alert.isActive = false
+            alert.resolvedAt = Date()
         }
 
         device.isActive = false

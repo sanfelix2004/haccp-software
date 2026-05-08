@@ -45,7 +45,7 @@ struct AlertsView: View {
                             alertRow(message: alert.message, date: alert.createdAt, icon: "checklist")
                         }
                         ForEach(activeTemperatureAlerts) { alert in
-                            alertRow(message: alert.message, date: alert.createdAt, icon: "thermometer.medium")
+                            temperatureAlertRow(alert)
                         }
                         ForEach(activeCleaningCriticalities) { criticality in
                             cleaningAlertRow(criticality)
@@ -100,6 +100,31 @@ struct AlertsView: View {
         .cornerRadius(10)
     }
 
+    private func temperatureAlertRow(_ alert: TemperatureAlert) -> some View {
+        HStack {
+            Image(systemName: "thermometer.medium").foregroundColor(.red)
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Temperatura fuori range: \(alert.deviceName)")
+                    .foregroundColor(.white)
+                Text(alert.message)
+                    .font(.caption)
+                    .foregroundColor(.gray)
+                Text(alert.createdAt.formatted(date: .abbreviated, time: .shortened))
+                    .font(.caption2)
+                    .foregroundColor(.gray)
+            }
+            Spacer()
+            Button("Risolvi") {
+                resolveTemperatureAlert(alert)
+            }
+            .buttonStyle(.bordered)
+            .tint(.green)
+        }
+        .padding(10)
+        .background(Color.red.opacity(0.1))
+        .cornerRadius(10)
+    }
+
     private func resolveCriticality(_ criticality: CleaningCriticality) {
         guard let user = currentUser else { return }
         criticality.isResolved = true
@@ -107,5 +132,21 @@ struct AlertsView: View {
         criticality.resolvedByUserId = user.id
         criticality.resolvedByNameSnapshot = user.name
         try? modelContext.save()
+    }
+
+    private func resolveTemperatureAlert(_ alert: TemperatureAlert) {
+        guard let user = currentUser, let rid = appState.activeRestaurantId else { return }
+        do {
+            try TemperatureModuleService().resolveAlert(
+                alert,
+                user: user,
+                restaurantId: rid,
+                modelContext: modelContext
+            )
+        } catch {
+            alert.isActive = false
+            alert.resolvedAt = Date()
+            try? modelContext.save()
+        }
     }
 }

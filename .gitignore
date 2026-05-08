@@ -5,6 +5,7 @@
 
 build/
 DerivedData/
+DerivedDataLocal/
 *.pbxuser
 !default.pbxuser
 *.mode1v3

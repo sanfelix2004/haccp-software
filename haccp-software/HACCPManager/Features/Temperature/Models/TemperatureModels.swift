@@ -9,7 +9,15 @@ enum TemperatureDeviceType: String, Codable, CaseIterable {
     case hotHolding = "HOT_HOLDING"
     case ambient = "AMBIENT"
 
-    var label: String { rawValue.replacingOccurrences(of: "_", with: " ") }
+    var label: String {
+        switch self {
+        case .fridge: return "Frigorifero"
+        case .freezer: return "Freezer"
+        case .blastChiller: return "Abbattitore"
+        case .hotHolding: return "Mantenimento caldo"
+        case .ambient: return "Ambiente"
+        }
+    }
 }
 
 enum TemperatureUnit: String, Codable {
@@ -28,6 +36,15 @@ enum TemperatureStatus: String, Codable, CaseIterable {
         case .warning: return 1
         case .outOfRange: return 2
         case .critical: return 3
+        }
+    }
+
+    var label: String {
+        switch self {
+        case .ok: return "Conforme"
+        case .warning: return "Attenzione"
+        case .outOfRange: return "Fuori range"
+        case .critical: return "Critica"
         }
     }
 }

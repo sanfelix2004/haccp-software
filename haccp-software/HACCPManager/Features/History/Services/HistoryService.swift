@@ -30,7 +30,7 @@ struct HistoryService {
                 HistoryEntry(
                     module: "Frigoriferi",
                     title: "Temperatura \(String(format: "%.1f", $0.value))°C",
-                    category: $0.status.rawValue,
+                    category: $0.status.label,
                     operatorName: $0.measuredByName,
                     productOrDevice: $0.deviceName,
                     date: $0.measuredAt
@@ -49,7 +49,7 @@ struct HistoryService {
                 )
             }
         let cleaning = cleaningRecords
-            .filter { $0.restaurantId == restaurantId }
+            .filter { $0.restaurantId == restaurantId && $0.outcome != .daFare }
             .map {
                 HistoryEntry(
                     module: "Controllo pulizia",

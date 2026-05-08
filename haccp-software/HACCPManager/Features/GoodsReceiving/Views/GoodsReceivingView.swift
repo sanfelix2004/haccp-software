@@ -1,6 +1,6 @@
 import SwiftUI
 import SwiftData
-import AVFoundation
+@preconcurrency import AVFoundation
 import Combine
 
 struct GoodsReceivingView: View {
@@ -36,6 +36,8 @@ struct GoodsReceivingView: View {
     @StateObject private var finalizeCamera = FinalizeReceiptCameraViewModel()
     @State private var pendingSaveProduct: ProductTemplate?
     @State private var pendingSaveRequirement: GoodsReceiptRequirement?
+    @State private var showMasterAuthDeleteReceipt = false
+    @State private var receiptPendingDeletion: GoodsReceipt?
 
     private var scopedRecords: [GoodsReceipt] {
         guard let rid = appState.activeRestaurantId else { return [] }
@@ -250,10 +252,13 @@ struct GoodsReceivingView: View {
                                         }
                                         .buttonStyle(.bordered)
                                         .tint(.white)
-                                        Button("Elimina", role: .destructive) {
-                                            deleteReceipt(record)
+                                        if isMaster {
+                                            Button("Elimina", role: .destructive) {
+                                                receiptPendingDeletion = record
+                                                showMasterAuthDeleteReceipt = true
+                                            }
+                                            .buttonStyle(.bordered)
                                         }
-                                        .buttonStyle(.bordered)
                                     }
 
                                     Text("Creato: \(record.createdAt.formatted(date: .abbreviated, time: .shortened))")
@@ -461,6 +466,25 @@ struct GoodsReceivingView: View {
                 }
             }
         }
+        .fullScreenCover(isPresented: $showMasterAuthDeleteReceipt) {
+            if let master = users.first(where: { $0.role == .master }) {
+                MasterAuthOverlay(
+                    master: master,
+                    operation: .deleteTraceabilityEntry,
+                    onAuthorized: {
+                        showMasterAuthDeleteReceipt = false
+                        if let receipt = receiptPendingDeletion {
+                            deleteReceipt(receipt)
+                        }
+                        receiptPendingDeletion = nil
+                    },
+                    onCancel: {
+                        showMasterAuthDeleteReceipt = false
+                        receiptPendingDeletion = nil
+                    }
+                ) { EmptyView() }
+            }
+        }
     }
 
     private func bootstrapReceivingSession() {
@@ -610,14 +634,46 @@ struct GoodsReceivingView: View {
         }
         record.category = editCategory
         record.receivedAt = editReceivedAt
-        record.temperatureValue = Double(editTemperatureText.replacingOccurrences(of: ",", with: "."))
-        record.lotNumber = editLot.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : editLot
+        let temperature = Double(editTemperatureText.replacingOccurrences(of: ",", with: "."))
+        record.temperatureValue = temperature
+        record.lotNumber = trimmedOrNil(editLot)
         record.expiryDate = editIncludeExpiry ? editExpiryDate : nil
-        record.notes = editNotes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : editNotes
-        record.correctiveAction = editCorrectiveAction.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : editCorrectiveAction
+        record.notes = trimmedOrNil(editNotes)
+        record.correctiveAction = trimmedOrNil(editCorrectiveAction)
+        let status = recomputedReceiptStatus(for: record)
+        if status.requiresDetails && (record.notes == nil || record.correctiveAction == nil) {
+            vm.errorMessage = "Per una ricezione non conforme servono note e azione correttiva."
+            return
+        }
+        record.temperatureStatus = status.temperatureStatus
+        record.status = status.receiptStatus
         syncTraceabilityFromReceipt(record)
         try? modelContext.save()
         editRecord = nil
+    }
+
+    private func trimmedOrNil(_ text: String) -> String? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    private func recomputedReceiptStatus(for record: GoodsReceipt) -> (receiptStatus: GoodsReceiptStatus, temperatureStatus: GoodsReceiptStatus, requiresDetails: Bool) {
+        let tempOut = isReceiptTemperatureOutOfRange(record)
+        let hasChecklistNotOk = record.checklistResults.contains { $0.value == .notOk }
+        if hasChecklistNotOk {
+            return (.nonConforme, tempOut ? .acceptedWithNotes : .conforme, true)
+        }
+        if tempOut {
+            return (.acceptedWithNotes, .acceptedWithNotes, true)
+        }
+        return (.conforme, .conforme, false)
+    }
+
+    private func isReceiptTemperatureOutOfRange(_ record: GoodsReceipt) -> Bool {
+        guard let value = record.temperatureValue else { return false }
+        if let min = record.minAllowed, value < min { return true }
+        if let max = record.maxAllowed, value > max { return true }
+        return false
     }
 
     private func syncTraceabilityFromReceipt(_ receipt: GoodsReceipt) {
@@ -635,8 +691,16 @@ struct GoodsReceivingView: View {
             trace.categoryRaw = receipt.categoryRaw
             trace.goodsReceiptStatusRaw = receipt.status.rawValue
 
+            if receipt.status == .nonConforme || receipt.status == .rejected {
+                trace.isNonCompliant = true
+                trace.nonComplianceNote = receipt.notes
+                trace.nonComplianceCorrectiveAction = receipt.correctiveAction
+                trace.productStatus = .rejected
+                continue
+            }
+
             // Ricezione merci e la fonte: se la scadenza cambia, aggiorna anche lo stato in Tracciabilita.
-            guard trace.productStatus != .rejected else { continue }
+            guard trace.isNonCompliant == false && trace.productStatus != .rejected else { continue }
             let isExpiredNow = (receipt.expiryDate?.timeIntervalSince(now) ?? 1) < 0
             if isExpiredNow {
                 trace.productStatus = .expired
@@ -687,9 +751,10 @@ final class FinalizeReceiptCameraViewModel: ObservableObject {
                 self.authorizationDenied = !granted
                 guard granted else { return }
                 self.configureIfNeeded()
+                let session = self.session
                 DispatchQueue.global(qos: .userInitiated).async {
-                    if self.session.isRunning == false {
-                        self.session.startRunning()
+                    if session.isRunning == false {
+                        session.startRunning()
                     }
                 }
             }
@@ -697,9 +762,10 @@ final class FinalizeReceiptCameraViewModel: ObservableObject {
     }
 
     func stop() {
+        let session = self.session
         DispatchQueue.global(qos: .userInitiated).async {
-            if self.session.isRunning {
-                self.session.stopRunning()
+            if session.isRunning {
+                session.stopRunning()
             }
         }
     }
@@ -772,11 +838,7 @@ struct FinalizeCameraSessionPreview: UIViewRepresentable {
 
     private func applyOrientation(on layer: AVCaptureVideoPreviewLayer) {
         guard let connection = layer.connection else { return }
-        guard let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene else {
-            connection.videoRotationAngle = 0
-            return
-        }
-        switch scene.interfaceOrientation {
+        switch UIDevice.current.orientation {
         case .landscapeLeft:
             connection.videoRotationAngle = 180
         case .landscapeRight:
