@@ -3,29 +3,27 @@ import Combine
 
 @MainActor
 final class HistoryViewModel: ObservableObject {
-    /// Tutti i moduli HACCP previsti nei filtri (anche senza eventi ancora registrati).
-    static let allModuleFilterNames: [String] =
-        HACCPModuleCatalog.operationalModuleTitles + ["Checklist"]
-
-    @Published var selectedModule: String = "Tutti"
-    @Published var selectedCategory: String = "Tutte"
-    @Published var selectedMonth: Int?
-    @Published var selectedDay: Int?
-    @Published var searchText: String = ""
-
     let service = HistoryService()
+}
+
+@MainActor
+final class HistoryModuleDetailViewModel: ObservableObject {
+    @Published var filter = HistoryFilter()
 
     func filtered(entries: [HistoryEntry]) -> [HistoryEntry] {
-        entries.filter { entry in
-            let moduleOk = selectedModule == "Tutti" || entry.module == selectedModule
-            let categoryOk = selectedCategory == "Tutte" || entry.category == selectedCategory
-            let monthOk = selectedMonth == nil || Calendar.current.component(.month, from: entry.date) == selectedMonth
-            let dayOk = selectedDay == nil || Calendar.current.component(.day, from: entry.date) == selectedDay
-            let searchOk = searchText.isEmpty
-                || entry.productOrDevice.localizedCaseInsensitiveContains(searchText)
-                || entry.operatorName.localizedCaseInsensitiveContains(searchText)
-                || entry.title.localizedCaseInsensitiveContains(searchText)
-            return moduleOk && categoryOk && monthOk && dayOk && searchOk
+        let calendar = Calendar.current
+        let start = calendar.startOfDay(for: filter.startDate)
+        let endStart = calendar.startOfDay(for: filter.endDate)
+        let end = calendar.date(byAdding: DateComponents(day: 1, second: -1), to: endStart) ?? filter.endDate
+        return entries.filter { entry in
+            let categoryOk = filter.category == "Tutte" || entry.category == filter.category
+            let statusOk = filter.status == "Tutti" || entry.status == filter.status
+            let operatorOk = filter.operatorName == "Tutti" || entry.operatorName == filter.operatorName
+            let periodOk = entry.date >= start && entry.date <= end
+            let search = filter.searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+            let searchOk = search.isEmpty
+                || entry.searchText.localizedCaseInsensitiveContains(search)
+            return categoryOk && statusOk && operatorOk && periodOk && searchOk
         }
     }
 }
