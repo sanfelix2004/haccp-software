@@ -53,7 +53,10 @@ struct HACCPManagerApp: App {
                 TraceabilityLog.self,
                 ProductImage.self,
                 DocumentFolder.self,
-                DocumentItem.self
+                DocumentItem.self,
+                HACCPAuditEvent.self,
+                HACCPReportRevision.self,
+                HACCPReportSnapshot.self
             )
         } catch {
             fatalError("Failed to initialize SwiftData model container: \(error)")
@@ -72,6 +75,31 @@ struct HACCPManagerApp: App {
             if let all = try? context.fetch(FetchDescriptor<TraceabilityRecord>()) {
                 _ = expiryService.refreshStatuses(records: all, modelContext: context)
             }
+            if newPhase == .active {
+                Task { @MainActor in
+                    await tickReportEngine(modelContext: context)
+                }
+            }
         }
+    }
+
+    /// "Catch-up" del motore report: appena l'app torna in foreground, verifica se
+    /// sono state attraversate frontiere giornaliere/settimanali/mensili/annuali e,
+    /// in caso, esegue la pipeline completa senza richiedere azioni manuali.
+    @MainActor
+    private func tickReportEngine(modelContext: ModelContext) async {
+        guard let restaurantId = appState.activeRestaurantId,
+              let userId = appState.currentUserId else { return }
+        let restaurants = (try? modelContext.fetch(FetchDescriptor<Restaurant>())) ?? []
+        let users = (try? modelContext.fetch(FetchDescriptor<LocalUser>())) ?? []
+        guard let restaurant = restaurants.first(where: { $0.id == restaurantId }),
+              let user = users.first(where: { $0.id == userId }) else { return }
+
+        await HACCPReportScheduler.shared.tickIfNeeded(
+            restaurant: restaurant,
+            user: user,
+            modelContext: modelContext
+        )
+        HACCPReportEngine.shared.refreshStats(restaurantId: restaurant.id, in: modelContext)
     }
 }

@@ -11,6 +11,7 @@ public final class AppDataStore {
     var securityData: Data?
     var notificationData: Data?
     var printerData: Data?
+    var appearanceData: Data?
     
     // Multi-location management
     var activeRestaurantId: UUID?

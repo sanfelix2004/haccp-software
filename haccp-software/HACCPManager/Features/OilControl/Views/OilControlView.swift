@@ -96,7 +96,7 @@ struct OilControlView: View {
             }
             .padding(24)
         }
-        .background(Color(hex: "#0A0A0A").ignoresSafeArea())
+        .background(ThemeManager.shared.colorBackground.ignoresSafeArea())
         .navigationTitle("Controllo olio")
         .onAppear { ensureDefaults() }
         .onChange(of: appState.activeRestaurantId) { _, _ in ensureDefaults() }

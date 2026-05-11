@@ -73,7 +73,7 @@ struct GoodsReceiptControlSheet: View {
                 }
                 .padding(20)
             }
-            .background(Color(hex: "#0A0A0A").ignoresSafeArea())
+            .background(ThemeManager.shared.colorBackground.ignoresSafeArea())
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Annulla", action: onCancel)

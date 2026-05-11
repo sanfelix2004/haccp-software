@@ -20,7 +20,7 @@ struct UserProfileView: View {
     
     var body: some View {
         ZStack {
-            Color(hex: "#0A0A0A").ignoresSafeArea()
+            ThemeManager.shared.colorBackground.ignoresSafeArea()
             
             if let user = currentUser {
                 ScrollView {

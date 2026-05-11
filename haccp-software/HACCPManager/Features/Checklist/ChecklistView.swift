@@ -97,7 +97,7 @@ struct ChecklistView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
         .padding(24)
-        .background(Color(hex: "#0A0A0A").ignoresSafeArea())
+        .background(ThemeManager.shared.colorBackground.ignoresSafeArea())
         .navigationTitle("Checklist")
         .sheet(isPresented: $showRunSheet) {
             if let selectedRunForSheet {

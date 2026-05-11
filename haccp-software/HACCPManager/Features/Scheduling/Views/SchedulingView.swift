@@ -42,7 +42,7 @@ struct SchedulingView: View {
             }
             .padding(24)
         }
-        .background(Color(hex: "#0A0A0A").ignoresSafeArea())
+        .background(ThemeManager.shared.colorBackground.ignoresSafeArea())
         .navigationTitle("Programmazione")
     }
 }

@@ -76,7 +76,7 @@ struct TemperatureRootView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
         .padding(24)
-        .background(Color(hex: "#0A0A0A").ignoresSafeArea())
+        .background(ThemeManager.shared.colorBackground.ignoresSafeArea())
         .navigationTitle("Temperature")
         .sheet(isPresented: $viewModel.showAddDeviceSheet) {
             TemperatureDeviceEditView(
@@ -523,7 +523,7 @@ struct TemperatureDeviceDetailView: View {
             }
             .padding(20)
         }
-        .background(Color(hex: "#0A0A0A").ignoresSafeArea())
+        .background(ThemeManager.shared.colorBackground.ignoresSafeArea())
     }
 }
 
@@ -781,7 +781,7 @@ struct AddTemperatureRecordView: View {
                 .frame(maxWidth: 760)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             }
-            .background(Color(hex: "#0A0A0A").ignoresSafeArea())
+            .background(ThemeManager.shared.colorBackground.ignoresSafeArea())
             .navigationTitle("Nuova misurazione")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

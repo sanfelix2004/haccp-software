@@ -234,7 +234,7 @@ struct NameEditSheet: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                Color(hex: "#0A0A0A").ignoresSafeArea()
+                ThemeManager.shared.colorBackground.ignoresSafeArea()
                 
                 VStack(spacing: 30) {
                     VStack(alignment: .leading, spacing: 8) {
@@ -290,7 +290,7 @@ struct PinChangeSheet: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                Color(hex: "#0A0A0A").ignoresSafeArea()
+                ThemeManager.shared.colorBackground.ignoresSafeArea()
                 
                 ScrollView {
                     VStack(spacing: 24) {
@@ -366,7 +366,7 @@ struct DetailEditSheet: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                Color(hex: "#0A0A0A").ignoresSafeArea()
+                ThemeManager.shared.colorBackground.ignoresSafeArea()
                 
                 VStack(spacing: 30) {
                     VStack(alignment: .leading, spacing: 8) {

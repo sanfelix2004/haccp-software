@@ -173,7 +173,7 @@ struct CreateUserView: View {
                         }
                         .padding(40)
                     }
-                    .background(Color(hex: "#0A0A0A"))
+                    .background(ThemeManager.shared.colorBackground)
                 }
             }
             .navigationTitle("Anagrafica Personale")

@@ -25,7 +25,7 @@ struct SettingsView: View {
     
     var body: some View {
         ZStack {
-            Color(hex: "#0A0A0A").ignoresSafeArea()
+            ThemeManager.shared.colorBackground.ignoresSafeArea()
             
             ScrollView {
                 VStack(alignment: .leading, spacing: 32) {
@@ -33,11 +33,11 @@ struct SettingsView: View {
                     VStack(alignment: .leading, spacing: 12) {
                         Text("Impostazioni")
                             .font(.system(size: 44, weight: .black, design: .rounded))
-                            .foregroundColor(.white)
+                            .foregroundColor(ThemeManager.shared.colorTextPrimary)
                         
                         Text("Configura e personalizza il tuo sistema gestionale HACCP certificato.")
                             .font(.title3)
-                            .foregroundColor(.gray)
+                            .foregroundColor(ThemeManager.shared.colorTextSecondary)
                     }
                     .padding(.horizontal, 30)
                     .padding(.top, 40)
@@ -63,7 +63,7 @@ struct SettingsView: View {
                             Text("© 2026 Romanazzi IT Solutions. All rights reserved.")
                                 .font(.caption2)
                         }
-                        .foregroundColor(.white.opacity(0.15))
+                        .foregroundColor(ThemeManager.shared.colorTextSecondary.opacity(0.5))
                         .multilineTextAlignment(.center)
                         Spacer()
                     }
@@ -119,21 +119,21 @@ struct SettingsDetailContainer: View {
             HStack(spacing: 20) {
                 ZStack {
                     Circle()
-                        .fill(Color.red.opacity(0.2))
+                        .fill(ThemeManager.shared.colorPrimary.opacity(0.2))
                         .frame(width: 54, height: 54)
                     Image(systemName: section.icon)
                         .font(.title)
-                        .foregroundColor(.red)
+                        .foregroundColor(ThemeManager.shared.colorPrimary)
                 }
                 
                 VStack(alignment: .leading, spacing: 4) {
                     Text(section.rawValue)
                         .font(.title2)
                         .fontWeight(.black)
-                        .foregroundColor(.white)
+                        .foregroundColor(ThemeManager.shared.colorTextPrimary)
                     Text(section.description)
                         .font(.caption)
-                        .foregroundColor(.gray)
+                        .foregroundColor(ThemeManager.shared.colorTextSecondary)
                 }
                 
                 Spacer()
@@ -141,13 +141,13 @@ struct SettingsDetailContainer: View {
                 Button(action: onDismiss) {
                     Image(systemName: "xmark.circle.fill")
                         .font(.system(size: 30))
-                        .foregroundColor(.white.opacity(0.3))
+                        .foregroundColor(ThemeManager.shared.colorTextSecondary.opacity(0.6))
                 }
             }
             .padding(24)
-            .background(Color.white.opacity(0.03))
+            .background(ThemeManager.shared.colorSurfaceElevated)
             
-            Divider().background(Color.white.opacity(0.1))
+            Divider().background(ThemeManager.shared.colorDivider)
             
             // Content
             ScrollView {
@@ -156,11 +156,11 @@ struct SettingsDetailContainer: View {
                 }
                 .padding(32)
             }
-            .background(Color(hex: "#0F0F0F"))
+            .background(ThemeManager.shared.colorSurface)
         }
         .frame(maxWidth: 750)
         .frame(maxHeight: 900)
-        .background(Color(hex: "#0F0F0F"))
+        .background(ThemeManager.shared.colorSurface)
         .cornerRadius(32)
         .shadow(color: .black.opacity(0.6), radius: 40)
         .padding(40)
@@ -170,6 +170,7 @@ struct SettingsDetailContainer: View {
     private func detailView(for section: SettingsSection) -> some View {
         switch section {
         case .profile: ProfileSettingsView(user: currentUser)
+        case .appearance: AppearanceSettingsView()
         case .security: SecuritySettingsView()
         case .restaurant: RestaurantSettingsView()
         case .haccp: HACCPSettingsView()

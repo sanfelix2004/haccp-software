@@ -48,6 +48,7 @@ final class SettingsStorageService {
         if let data = store.securityData { security = (try? decoder.decode(SecuritySettings.self, from: data)) ?? security }
         if let data = store.notificationData { notifications = (try? decoder.decode(NotificationSettings.self, from: data)) ?? notifications }
         if let data = store.printerData { printer = (try? decoder.decode(LabelPrinterSettings.self, from: data)) ?? printer }
+        if let data = store.appearanceData { appearance = (try? decoder.decode(AppearanceSettings.self, from: data)) ?? appearance }
     }
     
     func saveAll() {
@@ -59,6 +60,7 @@ final class SettingsStorageService {
         store.securityData = try? encoder.encode(security)
         store.notificationData = try? encoder.encode(notifications)
         store.printerData = try? encoder.encode(printer)
+        store.appearanceData = try? encoder.encode(appearance)
         
         try? modelContext?.save()
     }

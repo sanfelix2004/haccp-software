@@ -275,7 +275,7 @@ struct GoodsReceivingView: View {
             }
             .padding(24)
         }
-        .background(Color(hex: "#0A0A0A").ignoresSafeArea())
+        .background(ThemeManager.shared.colorBackground.ignoresSafeArea())
         .navigationTitle("Ricezione merci")
         .onAppear {
             bootstrapReceivingSession()
@@ -356,7 +356,7 @@ struct GoodsReceivingView: View {
                     }
                 }
                 .padding(24)
-                .background(Color(hex: "#0A0A0A").ignoresSafeArea())
+                .background(ThemeManager.shared.colorBackground.ignoresSafeArea())
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) {
                         Button("Annulla") {

@@ -19,6 +19,7 @@ struct DocumentsView: View {
     @Query private var checklistAuditLogs: [ChecklistAuditLog]
     @Query private var temperatureAuditLogs: [TemperatureAuditLog]
     @StateObject private var vm = DocumentsViewModel()
+    @StateObject private var reportEngine = HACCPReportEngine.shared
     @State private var documentPreviewItem: DocumentPreviewSheetItem?
     @State private var shareURLs: [URL] = []
     @State private var showShareSheet = false
@@ -127,6 +128,12 @@ struct DocumentsView: View {
                         }
 
                         if currentFolder == nil {
+                            HACCPReportEngineCard(
+                                stats: reportEngine.currentStats,
+                                lastRunSummary: reportEngine.lastRunSummary,
+                                isRunning: reportEngine.isRunning,
+                                onRunNow: { runEngineNow() }
+                            )
                             folderGrid(folders: rootFolders)
                             cloudSyncStatusCard
                             if isMaster {
@@ -166,7 +173,7 @@ struct DocumentsView: View {
             }
             .padding(24)
         }
-        .background(Color(hex: "#0A0A0A").ignoresSafeArea())
+        .background(ThemeManager.shared.colorBackground.ignoresSafeArea())
         .navigationTitle("Documenti")
         .onAppear {
             refreshArchive()
@@ -377,24 +384,30 @@ struct DocumentsView: View {
                 existingItems: scopedItems,
                 modelContext: modelContext
             )
-            DocumentGeneratorService.shared.syncArchive(
+            await HACCPReportEngine.shared.runFullArchive(
                 restaurant: restaurant,
                 user: currentUser,
-                receipts: receipts,
-                traceabilityRecords: traceabilityRecords,
-                traceabilityImages: traceabilityImages,
-                productions: productions,
-                traceabilityLinks: traceabilityLinks,
-                traceabilityLogs: traceabilityLogs,
-                checklistAuditLogs: checklistAuditLogs,
-                temperatureAuditLogs: temperatureAuditLogs,
-                modelContext: modelContext
+                in: modelContext
             )
+            HACCPReportEngine.shared.refreshStats(restaurantId: restaurant.id, in: modelContext)
             if let selected = vm.selectedFolderId, !scopedFolders.contains(where: { $0.id == selected }) {
                 vm.selectedFolderId = nil
             }
             lastArchiveRefreshAt = Date()
             isRefreshingArchive = false
+        }
+    }
+
+    private func runEngineNow() {
+        guard let restaurant = activeRestaurant, let currentUser else { return }
+        Task { @MainActor in
+            await HACCPReportEngine.shared.runFullArchive(
+                restaurant: restaurant,
+                user: currentUser,
+                in: modelContext,
+                force: true
+            )
+            HACCPReportEngine.shared.refreshStats(restaurantId: restaurant.id, in: modelContext)
         }
     }
 
@@ -577,22 +590,14 @@ struct DocumentsView: View {
     private func performRegenerate(_ doc: DocumentItem) {
         guard let restaurant = activeRestaurant, let currentUser else { return }
         do {
-            try DocumentGeneratorService.shared.regenerateDocument(
-                doc,
+            try HACCPReportEngine.shared.regenerate(
+                document: doc,
                 restaurant: restaurant,
                 user: currentUser,
-                folders: folders,
-                receipts: receipts,
-                traceabilityRecords: traceabilityRecords,
-                traceabilityImages: traceabilityImages,
-                productions: productions,
-                traceabilityLinks: traceabilityLinks,
-                traceabilityLogs: traceabilityLogs,
-                checklistAuditLogs: checklistAuditLogs,
-                temperatureAuditLogs: temperatureAuditLogs,
-                allDocumentItems: items,
-                modelContext: modelContext
+                reason: "Rigenerazione manuale autorizzata dal MASTER",
+                in: modelContext
             )
+            HACCPReportEngine.shared.refreshStats(restaurantId: restaurant.id, in: modelContext)
         } catch {
             regenerateError = error.localizedDescription
         }

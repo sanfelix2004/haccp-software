@@ -27,7 +27,7 @@ struct UsersManagementView: View {
     
     var body: some View {
         ZStack {
-            Color(hex: "#0A0A0A").ignoresSafeArea()
+            ThemeManager.shared.colorBackground.ignoresSafeArea()
             
             VStack(spacing: 0) {
                 // --- ACTUAL LIST ---

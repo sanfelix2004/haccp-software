@@ -100,22 +100,22 @@ struct DashboardRootView: View {
                                 .clipShape(RoundedRectangle(cornerRadius: 12))
                         } else {
                             RoundedRectangle(cornerRadius: 12)
-                                .fill(Color.red.opacity(0.1))
+                                .fill(ThemeManager.shared.colorPrimary.opacity(0.12))
                                 .frame(width: 54, height: 54)
                                 .overlay(
                                     Image(systemName: "house.fill")
-                                        .foregroundColor(.red)
+                                        .foregroundColor(ThemeManager.shared.colorPrimary)
                                 )
                         }
                         
                         VStack(alignment: .leading, spacing: 2) {
                             Text(activeRestaurant?.name ?? "HACCP")
                                 .font(.headline)
-                                .foregroundColor(.white)
+                                .foregroundColor(ThemeManager.shared.colorTextPrimary)
                             Text(activeRestaurant?.city ?? "Manager")
                                 .font(.caption2)
                                 .fontWeight(.bold)
-                                .foregroundColor(.gray)
+                                .foregroundColor(ThemeManager.shared.colorTextSecondary)
                                 .tracking(1)
                         }
                     }
@@ -128,7 +128,7 @@ struct DashboardRootView: View {
                         }
                     }
                     
-                    Divider().background(Color.white.opacity(0.1))
+                    Divider().background(ThemeManager.shared.colorDivider)
                         .padding(.top, 8)
                 }
                 .background(ThemeManager.shared.surface)
@@ -141,7 +141,7 @@ struct DashboardRootView: View {
                     } header: {
                         Text("Dashboard")
                             .font(.system(size: 12, weight: .black))
-                            .foregroundColor(.gray)
+                            .foregroundColor(ThemeManager.shared.colorTextSecondary)
                     }
 
                     Section {
@@ -153,7 +153,7 @@ struct DashboardRootView: View {
                     } header: {
                         Text("Moduli HACCP")
                             .font(.system(size: 12, weight: .black))
-                            .foregroundColor(.gray)
+                            .foregroundColor(ThemeManager.shared.colorTextSecondary)
                     }
 
                     Section {
@@ -173,7 +173,7 @@ struct DashboardRootView: View {
                     } header: {
                         Text("Sistema e archivi")
                             .font(.system(size: 12, weight: .black))
-                            .foregroundColor(.gray)
+                            .foregroundColor(ThemeManager.shared.colorTextSecondary)
                     }
                 }
                 .listStyle(.sidebar)
@@ -181,17 +181,17 @@ struct DashboardRootView: View {
                 
                 // Native Logout Button at the bottom
                 VStack(spacing: 0) {
-                    Divider().background(Color.white.opacity(0.1))
+                    Divider().background(ThemeManager.shared.colorDivider)
                     Button(action: { appState.logout() }) {
                         HStack {
                             Image(systemName: "rectangle.portrait.and.arrow.right")
                             Text("Esci dal sistema")
                                 .fontWeight(.bold)
                         }
-                        .foregroundColor(.red)
+                        .foregroundColor(ThemeManager.shared.colorPrimary)
                         .frame(maxWidth: .infinity)
                         .padding()
-                        .background(Color.red.opacity(0.1))
+                        .background(ThemeManager.shared.colorPrimary.opacity(0.12))
                         .cornerRadius(12)
                     }
                     .padding(16)

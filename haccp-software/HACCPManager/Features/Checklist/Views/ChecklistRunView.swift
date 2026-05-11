@@ -45,7 +45,7 @@ struct ChecklistRunView: View {
 
         }
         .padding(20)
-        .background(Color(hex: "#0A0A0A").ignoresSafeArea())
+        .background(ThemeManager.shared.colorBackground.ignoresSafeArea())
         .navigationTitle(run.templateTitleSnapshot)
         .alert("Checklist", isPresented: Binding(get: { vm.completionError != nil }, set: { _ in vm.completionError = nil })) {
             Button("OK", role: .cancel) {}
