@@ -40,7 +40,7 @@ struct PinLoginView: View {
             keypadView
         }
         .padding(isCompact ? 20 : 40)
-        .background(isCompact ? Color.clear : Color.black.opacity(0.1))
+        .background(isCompact ? Color.clear : ThemeManager.shared.colorSurface)
         .cornerRadius(32)
         .frame(maxWidth: 600)
         .onAppear {
@@ -64,14 +64,14 @@ struct PinLoginView: View {
                     
                     Text(String(user.name.prefix(1)).uppercased())
                         .font(.system(size: 32, weight: .bold, design: .rounded))
-                        .foregroundColor(.white)
+                        .foregroundStyle(ThemeManager.shared.colorTextPrimary)
                 }
             }
             
             Text(user.name)
                 .font(.title2)
                 .fontWeight(.bold)
-                .foregroundColor(.white)
+                .foregroundStyle(ThemeManager.shared.colorTextPrimary)
         }
     }
     
@@ -106,11 +106,11 @@ struct PinLoginView: View {
                 Text("Accedi con \(MasterAuthorizationService.shared.biometricLabel)")
             }
             .font(.headline)
-            .foregroundColor(.white)
+            .foregroundStyle(ThemeManager.shared.colorTextPrimary)
             .padding(.horizontal, 28)
             .padding(.vertical, 16)
-            .background(Color.white.opacity(0.08))
-            .overlay(Capsule().stroke(Color.white.opacity(0.12), lineWidth: 1))
+            .background(ThemeManager.shared.colorDivider)
+            .overlay(Capsule().stroke(ThemeManager.shared.colorDivider, lineWidth: 1))
             .clipShape(Capsule())
         }
         .scaleEffect(isError ? 0.95 : 1.0)
@@ -136,7 +136,7 @@ struct PinLoginView: View {
         }) {
             Text("Annulla")
                 .font(.headline)
-                .foregroundColor(.gray)
+                .foregroundStyle(ThemeManager.shared.colorTextSecondary)
                 .frame(width: 84, height: 84)
         }
         
@@ -148,7 +148,7 @@ struct PinLoginView: View {
         }) {
             Image(systemName: "delete.left.fill")
                 .font(.title2)
-                .foregroundColor(enteredPin.isEmpty ? .gray : .white)
+                .foregroundStyle(enteredPin.isEmpty ? ThemeManager.shared.colorTextSecondary : ThemeManager.shared.colorTextPrimary)
                 .frame(width: 84, height: 84)
         }
         .disabled(enteredPin.isEmpty)
@@ -164,9 +164,9 @@ private func keypadButton(text: String, action: @escaping () -> Void) -> some Vi
     }) {
         Text(text)
             .font(.system(size: 36, weight: .regular, design: .rounded))
-            .foregroundColor(.white)
+            .foregroundStyle(ThemeManager.shared.colorTextPrimary)
             .frame(width: 84, height: 84)
-            .background(Color.white.opacity(0.08))
+            .background(ThemeManager.shared.colorDivider)
             .clipShape(Circle())
     }
     .buttonStyle(KeypadButtonStyle())

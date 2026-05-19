@@ -84,11 +84,11 @@ struct ChecklistDashboardView: View {
 
                 if !alerts.isEmpty {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Alert checklist attivi").foregroundColor(.white).font(.headline)
+                        Text("Alert checklist attivi").foregroundStyle(ThemeManager.shared.colorTextPrimary).font(.headline)
                         ForEach(alerts.prefix(5)) { alert in
                             HStack {
                                 Image(systemName: "exclamationmark.triangle.fill").foregroundColor(.red)
-                                Text(alert.message).foregroundColor(.white)
+                                Text(alert.message).foregroundStyle(ThemeManager.shared.colorTextPrimary)
                                 Spacer()
                             }
                             .padding(10)
@@ -105,8 +105,8 @@ struct ChecklistDashboardView: View {
 
     private func metric(_ title: String, value: Int, color: Color) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(title).font(.caption).foregroundColor(.gray)
-            Text("\(value)").font(.title2.bold()).foregroundColor(.white)
+            Text(title).font(.caption).foregroundStyle(ThemeManager.shared.colorTextSecondary)
+            Text("\(value)").font(.title2.bold()).foregroundStyle(ThemeManager.shared.colorTextPrimary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(12)
@@ -119,7 +119,7 @@ struct ChecklistDashboardView: View {
         VStack(alignment: .leading, spacing: 8) {
             Text(title)
                 .font(.headline)
-                .foregroundColor(.white)
+                .foregroundStyle(ThemeManager.shared.colorTextPrimary)
                 .frame(maxWidth: .infinity, alignment: .leading)
             ForEach(runs.prefix(8)) { run in
                 let summary = progressSummary(for: run)
@@ -128,25 +128,25 @@ struct ChecklistDashboardView: View {
                 } label: {
                     VStack(alignment: .leading, spacing: 8) {
                         HStack {
-                            Text(run.templateTitleSnapshot).foregroundColor(.white).font(.headline)
+                            Text(run.templateTitleSnapshot).foregroundStyle(ThemeManager.shared.colorTextPrimary).font(.headline)
                             Spacer()
                             Text(statusLabel(for: run, progress: summary.progressPercentage))
                                 .font(.caption.bold())
                                 .padding(.horizontal, 8)
                                 .padding(.vertical, 5)
                                 .background(run.status.color.opacity(0.25))
-                                .foregroundColor(.white)
+                                .foregroundStyle(ThemeManager.shared.colorTextPrimary)
                                 .cornerRadius(8)
                         }
                         Text("\(summary.completed)/\(summary.total) completati · \(summary.progressPercentage)%")
                             .font(.caption)
-                            .foregroundColor(.gray)
+                            .foregroundStyle(ThemeManager.shared.colorTextSecondary)
                         ProgressView(value: Double(summary.progressPercentage), total: 100)
                             .tint(progressTint(for: summary.progressPercentage))
                         if summary.hasFailures {
                             Text("Con criticita")
                                 .font(.caption2.bold())
-                                .foregroundColor(.white)
+                                .foregroundStyle(ThemeManager.shared.colorTextPrimary)
                                 .padding(.horizontal, 8)
                                 .padding(.vertical, 4)
                                 .background(Color.red.opacity(0.25))
@@ -154,7 +154,7 @@ struct ChecklistDashboardView: View {
                         }
                     }
                     .padding(12)
-                    .background(Color.white.opacity(0.05))
+                    .background(ThemeManager.shared.colorSurface)
                     .cornerRadius(12)
                 }
                 .buttonStyle(.plain)

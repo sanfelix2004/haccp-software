@@ -21,7 +21,7 @@ struct UserPickerLoginView: View {
     var body: some View {
         ZStack {
             // Background
-            LinearGradient(colors: [Color.black, Color(hex: "#1A0000")], startPoint: .topLeading, endPoint: .bottomTrailing)
+            ThemeManager.shared.colorBackground
                 .ignoresSafeArea()
             
             VStack(spacing: 40) {
@@ -30,13 +30,13 @@ struct UserPickerLoginView: View {
                     VStack(spacing: 12) {
                         Text("HACCP Manager")
                             .font(.system(size: 48, weight: .black, design: .rounded))
-                            .foregroundColor(.white)
+                            .foregroundStyle(ThemeManager.shared.colorTextPrimary)
                             .shadow(color: .red.opacity(0.3), radius: 20)
                             .transition(.move(edge: .top).combined(with: .opacity))
                         
                         Text("Seleziona il tuo profilo professionale")
                             .font(.title3)
-                            .foregroundColor(.gray)
+                            .foregroundStyle(ThemeManager.shared.colorTextSecondary)
                             .tracking(2)
                             .transition(.move(edge: .top).combined(with: .opacity).combined(with: .scale(scale: 0.9)))
                     }
@@ -147,10 +147,10 @@ struct UserPickerLoginView: View {
                     Button(action: resetDatabase) {
                         Text("Reset completo app")
                             .font(.system(size: 12, weight: .bold))
-                            .foregroundColor(.white.opacity(0.5))
+                            .foregroundStyle(ThemeManager.shared.colorTextSecondary)
                             .padding(.horizontal, 16)
                             .padding(.vertical, 12)
-                            .background(Color.white.opacity(0.06))
+                            .background(ThemeManager.shared.colorSurfaceElevated)
                             .cornerRadius(10)
                     }
                     .padding(24)
@@ -187,10 +187,10 @@ struct LoginRestaurantSelectionView: View {
                 Button(action: onBack) {
                     Label("Indietro", systemImage: "chevron.left")
                         .font(.headline)
-                        .foregroundColor(.white.opacity(0.8))
+                        .foregroundStyle(ThemeManager.shared.colorTextSecondary)
                         .padding(.horizontal, 16)
                         .padding(.vertical, 10)
-                        .background(Color.white.opacity(0.08))
+                        .background(ThemeManager.shared.colorDivider)
                         .cornerRadius(10)
                 }
                 Spacer()
@@ -199,9 +199,9 @@ struct LoginRestaurantSelectionView: View {
             VStack(spacing: 10) {
                 Text("Accesso ristorante")
                     .font(.system(size: 40, weight: .black, design: .rounded))
-                    .foregroundColor(.white)
+                    .foregroundStyle(ThemeManager.shared.colorTextPrimary)
                 Text("Seleziona il ristorante per \(selectedUser.name)")
-                    .foregroundColor(.gray)
+                    .foregroundStyle(ThemeManager.shared.colorTextSecondary)
             }
 
             if restaurants.count == 1, let onlyRestaurant = restaurants.first {
@@ -247,10 +247,10 @@ struct RestaurantPinAccessView: View {
                 Button(action: onCancel) {
                     Label("Ristoranti", systemImage: "chevron.left")
                         .font(.headline)
-                        .foregroundColor(.white.opacity(0.8))
+                        .foregroundStyle(ThemeManager.shared.colorTextSecondary)
                         .padding(.horizontal, 16)
                         .padding(.vertical, 10)
-                        .background(Color.white.opacity(0.08))
+                        .background(ThemeManager.shared.colorDivider)
                         .cornerRadius(10)
                 }
                 Spacer()
@@ -259,9 +259,9 @@ struct RestaurantPinAccessView: View {
             VStack(spacing: 14) {
                 Text("Accesso a \(restaurant.name)")
                     .font(.system(size: 38, weight: .black, design: .rounded))
-                    .foregroundColor(.white)
+                    .foregroundStyle(ThemeManager.shared.colorTextPrimary)
                 Text("Inserisci il codice del ristorante per continuare")
-                    .foregroundColor(.gray)
+                    .foregroundStyle(ThemeManager.shared.colorTextSecondary)
             }
 
             HStack(spacing: 16) {
@@ -273,14 +273,14 @@ struct RestaurantPinAccessView: View {
                         .clipShape(RoundedRectangle(cornerRadius: 14))
                 } else {
                     RoundedRectangle(cornerRadius: 14)
-                        .fill(Color.white.opacity(0.08))
+                        .fill(ThemeManager.shared.colorDivider)
                         .frame(width: 74, height: 74)
                         .overlay(Image(systemName: "building.2.fill").foregroundColor(.red))
                 }
 
                 VStack(alignment: .leading, spacing: 6) {
-                    Text(restaurant.name).foregroundColor(.white).font(.headline)
-                    Text(user.role.rawValue).foregroundColor(.gray).font(.subheadline)
+                    Text(restaurant.name).foregroundStyle(ThemeManager.shared.colorTextPrimary).font(.headline)
+                    Text(user.role.rawValue).foregroundStyle(ThemeManager.shared.colorTextSecondary).font(.subheadline)
                 }
                 Spacer()
                 if user.role == .master {
@@ -289,12 +289,12 @@ struct RestaurantPinAccessView: View {
                         .padding(.horizontal, 10)
                         .padding(.vertical, 6)
                         .background(Color(hex: "#FFD700"))
-                        .foregroundColor(.black)
+                        .foregroundStyle(ThemeManager.shared.colorTextPrimary)
                         .cornerRadius(8)
                 }
             }
             .padding(20)
-            .background(Color.white.opacity(0.05))
+            .background(ThemeManager.shared.colorSurface)
             .cornerRadius(16)
 
             HStack(spacing: 18) {
@@ -331,9 +331,9 @@ struct RestaurantPinAccessView: View {
         Button(action: action) {
             Text(text)
                 .font(.system(size: 28, weight: .medium, design: .rounded))
-                .foregroundColor(.white)
+                .foregroundStyle(ThemeManager.shared.colorTextPrimary)
                 .frame(width: 84, height: 84)
-                .background(Color.white.opacity(0.08))
+                .background(ThemeManager.shared.colorDivider)
                 .clipShape(Circle())
         }
         .buttonStyle(KeypadButtonStyle())
@@ -419,7 +419,7 @@ struct UserPickerCell: View {
                         
                         Text(String(user.name.prefix(1)).uppercased())
                             .font(.system(size: 40, weight: .black, design: .rounded))
-                            .foregroundColor(.white)
+                            .foregroundStyle(ThemeManager.shared.colorTextPrimary)
                     }
                 }
                 .shadow(color: Color.black.opacity(0.4), radius: 12, y: 8)
@@ -435,7 +435,7 @@ struct UserPickerCell: View {
             VStack(spacing: 6) {
                 Text(user.name)
                     .font(.system(size: 22, weight: .bold))
-                    .foregroundColor(.white)
+                    .foregroundStyle(ThemeManager.shared.colorTextPrimary)
                     .lineLimit(1)
                 
                 if user.role == .master {
@@ -447,12 +447,12 @@ struct UserPickerCell: View {
                             LinearGradient(colors: [Color(hex: "#FFD700"), Color(hex: "#FFA500")], startPoint: .leading, endPoint: .trailing)
                         )
                         .cornerRadius(6)
-                        .foregroundColor(.black)
+                        .foregroundStyle(ThemeManager.shared.colorTextPrimary)
                 } else {
                     Text(user.role.rawValue.uppercased())
                         .font(.caption2)
                         .fontWeight(.black)
-                        .foregroundColor(.gray)
+                        .foregroundStyle(ThemeManager.shared.colorTextSecondary)
                         .tracking(1.5)
                 }
             }
@@ -461,7 +461,7 @@ struct UserPickerCell: View {
         .padding(.vertical, 35)
         .background(
             RoundedRectangle(cornerRadius: 28)
-                .fill(user.role == .master ? Color.white.opacity(0.08) : Color.white.opacity(0.04))
+                .fill(user.role == .master ? ThemeManager.shared.colorDivider : ThemeManager.shared.colorSurface)
                 .shadow(color: .black.opacity(0.2), radius: 15)
         )
         .overlay(
@@ -523,7 +523,7 @@ struct AddUserCell: View {
         .padding(.vertical, 35)
         .background(
             RoundedRectangle(cornerRadius: 28)
-                .fill(Color.white.opacity(0.02))
+                .fill(ThemeManager.shared.colorSurface)
         )
         .onTapGesture {
             action()

@@ -34,10 +34,10 @@ struct ChecklistAlertsView: View {
                                 HStack(alignment: .top) {
                                     Image(systemName: "exclamationmark.triangle.fill").foregroundColor(.red)
                                     VStack(alignment: .leading, spacing: 4) {
-                                        Text(alert.message).foregroundColor(.white)
+                                        Text(alert.message).foregroundStyle(ThemeManager.shared.colorTextPrimary)
                                         Text(alert.createdAt.formatted(date: .abbreviated, time: .shortened))
                                             .font(.caption)
-                                            .foregroundColor(.gray)
+                                            .foregroundStyle(ThemeManager.shared.colorTextSecondary)
                                         Text("Stato: \(ChecklistAlertStatus.active.label)")
                                             .font(.caption2)
                                             .foregroundColor(.red)
@@ -61,24 +61,24 @@ struct ChecklistAlertsView: View {
                             sectionTitle("Storico criticita risolte")
                             ForEach(resolvedAlerts.prefix(30)) { alert in
                                 VStack(alignment: .leading, spacing: 4) {
-                                    Text(alert.message).foregroundColor(.white)
+                                    Text(alert.message).foregroundStyle(ThemeManager.shared.colorTextPrimary)
                                     Text("Stato: \(ChecklistAlertStatus.resolved.label)")
                                         .font(.caption2)
-                                        .foregroundColor(.green)
+                                        .foregroundStyle(ThemeManager.shared.colorSuccess)
                                     if let correctiveAction = alert.correctiveAction {
                                         Text("Azione correttiva: \(correctiveAction)")
                                             .font(.caption)
-                                            .foregroundColor(.white.opacity(0.85))
+                                            .foregroundStyle(ThemeManager.shared.colorTextSecondary)
                                     }
                                     if let resolvedAt = alert.resolvedAt, let resolvedByName = alert.resolvedByName {
                                         Text("Risolta da \(resolvedByName) · \(resolvedAt.formatted(date: .abbreviated, time: .shortened))")
                                             .font(.caption2)
-                                            .foregroundColor(.gray)
+                                            .foregroundStyle(ThemeManager.shared.colorTextSecondary)
                                     }
                                 }
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .padding(12)
-                                .background(Color.white.opacity(0.05))
+                                .background(ThemeManager.shared.colorSurface)
                                 .cornerRadius(12)
                             }
                         }
@@ -124,7 +124,7 @@ struct ChecklistAlertsView: View {
     private func sectionTitle(_ title: String) -> some View {
         Text(title)
             .font(.headline)
-            .foregroundColor(.white)
+            .foregroundStyle(ThemeManager.shared.colorTextPrimary)
             .frame(maxWidth: .infinity, alignment: .leading)
     }
 }

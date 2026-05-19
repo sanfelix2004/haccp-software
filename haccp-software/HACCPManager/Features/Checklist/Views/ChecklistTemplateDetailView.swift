@@ -14,18 +14,18 @@ struct ChecklistTemplateDetailView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
-                Text(template.title).font(.largeTitle.bold()).foregroundColor(.white)
-                Text(template.checklistDescription).foregroundColor(.gray)
+                Text(template.title).font(.largeTitle.bold()).foregroundStyle(ThemeManager.shared.colorTextPrimary)
+                Text(template.checklistDescription).foregroundStyle(ThemeManager.shared.colorTextSecondary)
                 Text("\(template.category.label) - \(template.frequency.label)")
-                    .foregroundColor(.white.opacity(0.75))
-                Divider().overlay(Color.white.opacity(0.1))
+                    .foregroundStyle(ThemeManager.shared.colorTextSecondary)
+                Divider().overlay(ThemeManager.shared.colorDivider)
                 ForEach(items) { item in
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(item.title).foregroundColor(.white).font(.headline)
-                        Text(item.itemDescription).foregroundColor(.gray).font(.caption)
+                        Text(item.title).foregroundStyle(ThemeManager.shared.colorTextPrimary).font(.headline)
+                        Text(item.itemDescription).foregroundStyle(ThemeManager.shared.colorTextSecondary).font(.caption)
                     }
                     .padding(10)
-                    .background(Color.white.opacity(0.05))
+                    .background(ThemeManager.shared.colorSurface)
                     .cornerRadius(10)
                 }
             }

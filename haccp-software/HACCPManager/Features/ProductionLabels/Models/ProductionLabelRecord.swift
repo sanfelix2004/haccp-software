@@ -15,6 +15,8 @@ final class ProductionLabelRecord {
     var createdByNameSnapshot: String
     var notes: String?
     var operatorSignature: String?
+    var isArchived: Bool = false
+    var archivedAt: Date?
 
     init(
         id: UUID = UUID(),

@@ -3,117 +3,196 @@ import SwiftData
 
 struct DashboardView: View {
     @EnvironmentObject var appState: AppState
+    @Environment(\.theme) private var theme
 
     private let haccpDashboardModules: [(item: SidebarItem, description: String, icon: String)] = [
-        (.traceability, "Prodotti, lotti, fornitori e stato", "archivebox.fill"),
-        (.fridges, "Temperature e allarmi fuori range", "thermometer.medium"),
-        (.cleaningControl, "Piani pulizia e completamento", "sparkles"),
-        (.blastChilling, "Registrazioni abbattimento termico", "wind.snow"),
-        (.scheduling, "Attività periodiche e scadenze", "calendar.badge.clock"),
-        (.expiryControl, "Monitoraggio scadenze (in arrivo)", "calendar.badge.exclamationmark"),
-        (.defrost, "Storico decongelamenti", "snowflake"),
-        (.oilControl, "Controlli olio frittura", "drop.fill"),
-        (.productionLabels, "Etichette e tracciabilità produzione", "tag.fill"),
-        (.goodsReceiving, "Conformità in ingresso merci", "shippingbox.fill")
+        (.traceability, "Prodotti, lotti, fornitori", "archivebox.fill"),
+        (.fridges, "Temperature e allarmi", "thermometer.medium"),
+        (.cleaningControl, "Piani pulizia", "sparkles"),
+        (.blastChilling, "Abbattimento termico", "wind.snow"),
+        (.scheduling, "Attività periodiche", "calendar.badge.clock"),
+        (.expiryControl, "Scadenze prodotti", "calendar.badge.exclamationmark"),
+        (.defrost, "Decongelamenti", "snowflake"),
+        (.oilControl, "Olio frittura", "drop.fill"),
+        (.productionLabels, "Etichette produzione", "tag.fill"),
+        (.goodsReceiving, "Ingresso merci", "shippingbox.fill")
     ]
+
+    @Environment(\.modelContext) private var modelContext
     @Query private var users: [LocalUser]
     @Query private var restaurants: [Restaurant]
     @Query private var stores: [AppDataStore]
-    @Query private var scheduledTasks: [ScheduledTask]
-    @Query private var traceabilityRecords: [TraceabilityRecord]
-    @Query private var temperatureAlerts: [TemperatureAlert]
-    @Query private var cleaningRecords: [CleaningRecord]
-    @Query private var blastRecords: [BlastChillingRecord]
-    @Query private var defrostRecords: [DefrostRecord]
-    @Query private var oilRecords: [OilControlRecord]
-    @Query private var oilAlerts: [OilControlAlert]
-    @Query private var labelRecords: [ProductionLabelRecord]
-    @Query private var goodsRecords: [GoodsReceipt]
-    @Query private var documentFolders: [DocumentFolder]
 
     @StateObject private var viewModel: DashboardViewModel
     @State private var appeared = false
-    
+    @State private var metrics = DashboardMetrics.empty
+
+    private let columns = [
+        GridItem(.flexible(), spacing: 16),
+        GridItem(.flexible(), spacing: 16),
+        GridItem(.flexible(), spacing: 16)
+    ]
+
     init() {
         _viewModel = StateObject(wrappedValue: DashboardViewModel(provider: DashboardDataProvider()))
     }
 
-    var activeRestaurant: Restaurant? {
-        if let activeId = stores.first?.activeRestaurantId {
-            return restaurants.first { $0.id == activeId }
-        }
-        return restaurants.first
-    }
-
-    private var activeRestaurantId: UUID? {
-        activeRestaurant?.id
-    }
-
     var body: some View {
         ScrollView {
-            VStack(spacing: 18) {
+            VStack(alignment: .leading, spacing: theme.spacing.sectionSpacing) {
                 DashboardHeaderView(
                     user: currentUser,
                     restaurant: activeRestaurant,
                     dateTimeText: viewModel.formattedDateTime,
-                    systemStateMessage: "Sistema pronto per \(activeRestaurant?.name ?? "il tuo ristorante")"
+                    systemStateMessage: "Sistema pronto · \(activeRestaurant?.name ?? "HACCP")"
                 )
-                .offset(y: appeared ? 0 : 20)
                 .opacity(appeared ? 1 : 0)
-                .animation(ThemeManager.shared.spring, value: appeared)
+                .offset(y: appeared ? 0 : 16)
 
-                DashboardCardView(title: "Moduli HACCP") {
-                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
+                statsRow
+                    .opacity(appeared ? 1 : 0)
+                    .offset(y: appeared ? 0 : 20)
+
+                DashboardCardView(title: "Moduli HACCP", subtitle: "Accesso rapido alle registrazioni") {
+                    LazyVGrid(columns: columns, spacing: 16) {
                         ForEach(haccpDashboardModules, id: \.item) { row in
                             Button {
+                                HapticManager.shared.selection()
                                 appState.pendingSidebarNavigation = row.item
                             } label: {
-                                moduleCard(
+                                ModuleTileView(
                                     title: row.item.rawValue,
                                     icon: row.icon,
                                     description: row.description,
                                     badge: badgeCount(for: row.item)
                                 )
                             }
-                            .buttonStyle(.plain)
+                            .buttonStyle(PremiumPressButtonStyle())
                         }
                     }
                 }
 
-                DashboardCardView(title: "Sistema e archivi") {
-                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
-                        Button {
-                            appState.pendingSidebarNavigation = .documents
-                        } label: {
-                            moduleCard(title: "Documenti", icon: "folder.fill", description: "Report e cartelle HACCP", badge: countForDocuments)
-                        }
-                        .buttonStyle(.plain)
-                        Button {
-                            appState.pendingSidebarNavigation = .history
-                        } label: {
-                            moduleCard(title: "Storia", icon: "clock.arrow.circlepath", description: "Archivio centralizzato", badge: nil)
-                        }
-                        .buttonStyle(.plain)
+                DashboardCardView(title: "Sistema e archivi", subtitle: "Documenti, storico e report") {
+                    LazyVGrid(columns: columns, spacing: 16) {
+                        archiveTile(
+                            title: "Documenti",
+                            icon: "folder.fill",
+                            description: "Archivio PDF e registri",
+                            badge: countForDocuments,
+                            target: .documents
+                        )
+                        archiveTile(
+                            title: "Storia",
+                            icon: "clock.arrow.circlepath",
+                            description: "Registrazioni centralizzate",
+                            badge: nil,
+                            target: .history
+                        )
+                        archiveTile(
+                            title: "Grafici",
+                            icon: "chart.xyaxis.line",
+                            description: "Analytics conformità",
+                            badge: nil,
+                            target: .analytics
+                        )
                     }
                 }
-                .offset(y: appeared ? 0 : 20)
-                .opacity(appeared ? 1 : 0)
-                .animation(ThemeManager.shared.spring.delay(0.2), value: appeared)
             }
-            .padding(24)
+            .padding(theme.spacing.screenPadding + 8)
         }
-        .background(ThemeManager.shared.background.ignoresSafeArea())
-        .navigationTitle("Dashboard")
+        .background(Color.clear)
+        .navigationTitle("")
+        .navigationBarHidden(true)
         .onAppear {
-            withAnimation {
-                appeared = true
-            }
+            withAnimation(theme.spring) { appeared = true }
             viewModel.reload()
         }
+        .task(id: activeRestaurantId) {
+            guard let rid = activeRestaurantId else {
+                metrics = .empty
+                return
+            }
+            metrics = DashboardMetricsFetcher.fetch(context: modelContext, restaurantId: rid)
+        }
+    }
+
+    private var statsRow: some View {
+        LazyVGrid(columns: [
+            GridItem(.flexible(), spacing: 16),
+            GridItem(.flexible(), spacing: 16),
+            GridItem(.flexible(), spacing: 16),
+            GridItem(.flexible(), spacing: 16)
+        ], spacing: 16) {
+            StatCard(
+                title: "Conformità oggi",
+                value: "\(complianceScore)%",
+                subtitle: "Indice stimato",
+                icon: "checkmark.shield.fill",
+                accent: theme.colorSuccess
+            )
+            StatCard(
+                title: "Alert attivi",
+                value: "\(activeAlertsCount)",
+                subtitle: temperatureAlertsLabel,
+                icon: "bell.badge.fill",
+                accent: activeAlertsCount > 0 ? theme.colorError : theme.colorTextSecondary
+            )
+            StatCard(
+                title: "Task aperti",
+                value: "\(openTasksCount)",
+                subtitle: "Programmazione",
+                icon: "calendar.badge.clock",
+                accent: theme.colorInfo
+            )
+            StatCard(
+                title: "Registrazioni",
+                value: "\(recordsCount)",
+                subtitle: "Oggi nel sistema",
+                icon: "doc.text.fill",
+                accent: theme.colorPrimary
+            )
+        }
+    }
+
+    private func archiveTile(title: String, icon: String, description: String, badge: Int?, target: SidebarItem) -> some View {
+        Button {
+            HapticManager.shared.selection()
+            appState.pendingSidebarNavigation = target
+        } label: {
+            ModuleTileView(title: title, icon: icon, description: description, badge: badge)
+        }
+        .buttonStyle(PremiumPressButtonStyle())
     }
 
     private var currentUser: LocalUser? {
         users.first { $0.id == appState.currentUserId }
+    }
+
+    private var activeRestaurant: Restaurant? {
+        if let activeId = stores.first?.activeRestaurantId {
+            return restaurants.first { $0.id == activeId }
+        }
+        return restaurants.first
+    }
+
+    private var activeRestaurantId: UUID? { activeRestaurant?.id }
+
+    private var complianceScore: Int {
+        let alerts = activeAlertsCount
+        if alerts == 0 { return 98 }
+        return max(72, 98 - alerts * 4)
+    }
+
+    private var activeAlertsCount: Int { metrics.activeAlerts }
+
+    private var temperatureAlertsLabel: String {
+        activeAlertsCount > 0 ? "Richiede attenzione" : "Nessuna criticità"
+    }
+
+    private var openTasksCount: Int { metrics.openTasks }
+
+    private var recordsCount: Int {
+        metrics.traceabilityCount + metrics.blastCount
     }
 
     private func badgeCount(for item: SidebarItem) -> Int? {
@@ -123,88 +202,26 @@ struct DashboardView: View {
         case .fridges: return countForFridges
         case .cleaningControl: return countForCleaning
         case .blastChilling: return countForBlast
-        case .defrost: return countForDefrost
-        case .oilControl: return countForOil
-        case .productionLabels: return countForLabels
-        case .goodsReceiving: return countForGoods
         default: return nil
         }
     }
 
     private var countForScheduling: Int? {
-        guard let rid = activeRestaurantId else { return nil }
-        let count = scheduledTasks.filter { $0.restaurantId == rid && !$0.isCompleted }.count
-        return count > 0 ? count : nil
+        metrics.openTasks > 0 ? metrics.openTasks : nil
     }
     private var countForTraceability: Int? {
-        guard let rid = activeRestaurantId else { return nil }
-        let count = traceabilityRecords.filter { $0.restaurantId == rid }.count
-        return count > 0 ? count : nil
+        metrics.traceabilityCount > 0 ? metrics.traceabilityCount : nil
     }
     private var countForFridges: Int? {
-        guard let rid = activeRestaurantId else { return nil }
-        let count = temperatureAlerts.filter { $0.restaurantId == rid && $0.isActive }.count
-        return count > 0 ? count : nil
+        metrics.activeAlerts > 0 ? metrics.activeAlerts : nil
     }
     private var countForCleaning: Int? {
-        guard let rid = activeRestaurantId else { return nil }
-        let count = cleaningRecords.filter { $0.restaurantId == rid && !$0.completed }.count
-        return count > 0 ? count : nil
+        metrics.incompleteCleaning > 0 ? metrics.incompleteCleaning : nil
     }
     private var countForBlast: Int? {
-        guard let rid = activeRestaurantId else { return nil }
-        let count = blastRecords.filter { $0.restaurantId == rid }.count
-        return count > 0 ? count : nil
-    }
-    private var countForDefrost: Int? {
-        guard let rid = activeRestaurantId else { return nil }
-        let count = defrostRecords.filter { $0.restaurantId == rid }.count
-        return count > 0 ? count : nil
-    }
-    private var countForOil: Int? {
-        guard let rid = activeRestaurantId else { return nil }
-        let activeAlerts = oilAlerts.filter { $0.restaurantId == rid && $0.isActive }.count
-        if activeAlerts > 0 { return activeAlerts }
-        let count = oilRecords.filter { $0.restaurantId == rid }.count
-        return count > 0 ? count : nil
-    }
-    private var countForLabels: Int? {
-        guard let rid = activeRestaurantId else { return nil }
-        let count = labelRecords.filter { $0.restaurantId == rid }.count
-        return count > 0 ? count : nil
-    }
-    private var countForGoods: Int? {
-        guard let rid = activeRestaurantId else { return nil }
-        let count = goodsRecords.filter { $0.restaurantId == rid }.count
-        return count > 0 ? count : nil
+        metrics.blastCount > 0 ? metrics.blastCount : nil
     }
     private var countForDocuments: Int? {
-        guard let rid = activeRestaurantId else { return nil }
-        let count = documentFolders.filter { $0.restaurantId == rid }.count
-        return count > 0 ? count : nil
-    }
-
-    private func moduleCard(title: String, icon: String, description: String, badge: Int?) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Image(systemName: icon).foregroundColor(.red)
-                Spacer()
-                if let badge {
-                    Text("\(badge)")
-                        .font(.caption.bold())
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(Color.red.opacity(0.3))
-                        .cornerRadius(8)
-                }
-            }
-            Text(title).foregroundColor(.white).font(.headline)
-            Text(description).foregroundColor(.gray).font(.caption)
-        }
-        .frame(maxWidth: .infinity, minHeight: 120, alignment: .topLeading)
-        .padding(12)
-        .background(Color.white.opacity(0.05))
-        .cornerRadius(12)
+        metrics.documentFolders > 0 ? metrics.documentFolders : nil
     }
 }

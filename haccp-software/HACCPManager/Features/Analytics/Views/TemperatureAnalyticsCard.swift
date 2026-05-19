@@ -53,13 +53,13 @@ struct TemperatureAnalyticsCard: View {
                         AxisMarks(position: .leading) {
                             AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5))
                                 .foregroundStyle(Color.gray.opacity(0.3))
-                            AxisValueLabel().foregroundStyle(.gray)
+                            AxisValueLabel().foregroundStyle(ThemeManager.shared.colorTextSecondary)
                         }
                     }
                     .chartXAxis {
                         AxisMarks {
                             AxisValueLabel(format: .dateTime.day().hour(), centered: true)
-                                .foregroundStyle(.gray)
+                                .foregroundStyle(ThemeManager.shared.colorTextSecondary)
                         }
                     }
 
@@ -75,14 +75,14 @@ struct TemperatureAnalyticsCard: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(kpi.title)
                         .font(.caption)
-                        .foregroundColor(.gray)
+                        .foregroundStyle(ThemeManager.shared.colorTextSecondary)
                     Text(kpi.value)
                         .font(.headline)
                         .foregroundColor(kpi.color)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(10)
-                .background(Color.white.opacity(0.05))
+                .background(ThemeManager.shared.colorSurface)
                 .cornerRadius(10)
             }
         }

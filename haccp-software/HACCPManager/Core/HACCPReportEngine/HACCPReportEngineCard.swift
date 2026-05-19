@@ -68,7 +68,7 @@ struct HACCPReportEngineCard: View {
                 Button(action: onRunNow) {
                     HStack(spacing: theme.spacing.xs) {
                         if isRunning {
-                            ProgressView().tint(theme.colorTextOnPrimary).scaleEffect(0.7)
+                            ProgressView().tint(theme.colorPrimary).scaleEffect(0.7)
                         } else {
                             Image(systemName: "play.fill")
                         }

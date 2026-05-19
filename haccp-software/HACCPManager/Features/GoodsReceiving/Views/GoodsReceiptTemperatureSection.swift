@@ -8,29 +8,29 @@ struct GoodsReceiptTemperatureSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Temperatura").font(.headline).foregroundColor(.white)
+            Text("Temperatura").font(.headline).foregroundStyle(ThemeManager.shared.colorTextPrimary)
             HStack {
                 TextField("--", text: $temperatureText)
                     .font(.system(size: 30, weight: .bold, design: .rounded))
                     .multilineTextAlignment(.center)
                     .keyboardType(.numbersAndPunctuation)
-                Text("°C").foregroundColor(.white)
+                Text("°C").foregroundStyle(ThemeManager.shared.colorTextPrimary)
             }
             .padding(10)
-            .background(Color.white.opacity(0.07))
+            .background(ThemeManager.shared.colorSurfaceElevated)
             .cornerRadius(12)
 
             if requirement.defaultMinTemp != nil || requirement.defaultMaxTemp != nil {
                 Text(rangeText)
                     .font(.caption)
-                    .foregroundColor(.gray)
+                    .foregroundStyle(ThemeManager.shared.colorTextSecondary)
             }
 
             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
                 ForEach(keypad, id: \.self) { key in
                     Button(key) { tapKey(key) }
                         .buttonStyle(.borderedProminent)
-                        .tint(.white.opacity(0.16))
+                        .tint(ThemeManager.shared.colorPrimary)
                 }
             }
         }

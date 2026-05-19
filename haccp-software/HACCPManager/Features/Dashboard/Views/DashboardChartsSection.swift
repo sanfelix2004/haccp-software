@@ -11,7 +11,7 @@ struct DashboardChartsSection: View {
                         Image(systemName: "chart.line.uptrend.xyaxis")
                             .foregroundColor(.red)
                         Text(chart.rawValue)
-                            .foregroundColor(.white)
+                            .foregroundStyle(ThemeManager.shared.colorTextPrimary)
                         Spacer()
                     }
                 }

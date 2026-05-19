@@ -1,6 +1,6 @@
 import Foundation
 
-struct HistoryFilter {
+struct HistoryFilter: Equatable {
     var searchText: String = ""
     var startDate: Date = Calendar.current.date(byAdding: .month, value: -1, to: Date()) ?? Date()
     var endDate: Date = Date()

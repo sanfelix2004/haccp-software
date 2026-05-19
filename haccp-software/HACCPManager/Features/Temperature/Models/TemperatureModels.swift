@@ -110,6 +110,7 @@ final class TemperatureRecord {
     var notes: String?
     var correctiveAction: String?
     var isArchived: Bool
+    var archivedAt: Date? = nil
     var createdAt: Date
 
     var unit: TemperatureUnit {

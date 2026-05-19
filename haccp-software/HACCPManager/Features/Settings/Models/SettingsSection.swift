@@ -30,7 +30,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
     var description: String {
         switch self {
         case .profile: return "Gestisci i tuoi dati e il tuo PIN."
-        case .appearance: return "Tema chiaro, scuro o automatico."
+        case .appearance: return "Temi premium, layout e modalità cucina."
         case .security: return "Protezione app e biometria."
         case .restaurant: return "Dati del locale e logo aziendale."
         case .haccp: return "Range temperature e soglie critiche."

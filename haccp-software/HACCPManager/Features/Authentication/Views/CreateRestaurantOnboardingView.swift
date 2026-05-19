@@ -45,7 +45,7 @@ public struct CreateRestaurantOnboardingView: View {
                         
                         Text("Configura la tua attività principale per iniziare.")
                             .font(.title3)
-                            .foregroundColor(.gray)
+                            .foregroundStyle(ThemeManager.shared.colorTextSecondary)
                     }
                     .padding(.top, 40)
                     .transition(.move(edge: .top).combined(with: .opacity))
@@ -86,7 +86,7 @@ public struct CreateRestaurantOnboardingView: View {
                         Text("Conferma e Inizia")
                             .font(.title3)
                             .fontWeight(.black)
-                            .foregroundColor(.white)
+                            .foregroundStyle(ThemeManager.shared.colorTextPrimary)
                             .frame(maxWidth: 300)
                             .padding(.vertical, 20)
                             .background(formInvalid ? Color.gray : Color.red)
@@ -108,7 +108,7 @@ public struct CreateRestaurantOnboardingView: View {
             Text(label)
                 .font(.caption)
                 .fontWeight(.bold)
-                .foregroundColor(.gray)
+                .foregroundStyle(ThemeManager.shared.colorTextSecondary)
             
             HStack(spacing: 12) {
                 Image(systemName: icon)
@@ -117,7 +117,7 @@ public struct CreateRestaurantOnboardingView: View {
                     .foregroundColor(ThemeManager.shared.text)
             }
             .padding()
-            .background(Color.black.opacity(0.1))
+            .background(ThemeManager.shared.colorSurface)
             .cornerRadius(12)
         }
     }
@@ -127,7 +127,7 @@ public struct CreateRestaurantOnboardingView: View {
             Text(label)
                 .font(.caption)
                 .fontWeight(.bold)
-                .foregroundColor(.gray)
+                .foregroundStyle(ThemeManager.shared.colorTextSecondary)
 
             HStack(spacing: 12) {
                 Image(systemName: icon)
@@ -141,7 +141,7 @@ public struct CreateRestaurantOnboardingView: View {
                     }
             }
             .padding()
-            .background(Color.black.opacity(0.1))
+            .background(ThemeManager.shared.colorSurface)
             .cornerRadius(12)
         }
     }

@@ -19,7 +19,7 @@ struct SetNewUserPinView: View {
     
     var body: some View {
         ZStack {
-            Color.black.ignoresSafeArea()
+            ThemeManager.shared.colorBackground.ignoresSafeArea()
             
             VStack(spacing: 30) {
                 // Header for the New User
@@ -31,11 +31,11 @@ struct SetNewUserPinView: View {
                     Text("Imposta il tuo PIN personale")
                         .font(.title)
                         .fontWeight(.bold)
-                        .foregroundColor(.white)
+                        .foregroundStyle(ThemeManager.shared.colorTextPrimary)
                     
                     Text("Ciao \(name), inserisci un codice di 4-6 cifre che userai per accedere al tuo profilo.")
                         .multilineTextAlignment(.center)
-                        .foregroundColor(.gray)
+                        .foregroundStyle(ThemeManager.shared.colorTextSecondary)
                         .padding(.horizontal, 40)
                 }
                 .padding(.top, 40)
@@ -44,10 +44,9 @@ struct SetNewUserPinView: View {
                     SecureField("Scegli PIN", text: $pin)
                         .keyboardType(.numberPad)
                         .padding()
-                        .background(Color.white.opacity(0.1))
+                        .background(ThemeManager.shared.colorDivider)
                         .cornerRadius(12)
-                        .foregroundColor(.white)
-                        .colorScheme(.dark)
+                        .foregroundStyle(ThemeManager.shared.colorTextPrimary)
                         .onChange(of: pin) { oldValue, newValue in
                             if newValue.count > 6 { pin = String(newValue.prefix(6)) }
                         }
@@ -55,10 +54,9 @@ struct SetNewUserPinView: View {
                     SecureField("Conferma PIN", text: $confirmPin)
                         .keyboardType(.numberPad)
                         .padding()
-                        .background(Color.white.opacity(0.1))
+                        .background(ThemeManager.shared.colorDivider)
                         .cornerRadius(12)
-                        .foregroundColor(.white)
-                        .colorScheme(.dark)
+                        .foregroundStyle(ThemeManager.shared.colorTextPrimary)
                         .onChange(of: confirmPin) { oldValue, newValue in
                             if newValue.count > 6 { confirmPin = String(newValue.prefix(6)) }
                         }
@@ -81,7 +79,7 @@ struct SetNewUserPinView: View {
                     .fontWeight(.bold)
                     .frame(maxWidth: .infinity)
                     .padding()
-                    .background(isValid ? Color.red : Color.white.opacity(0.1))
+                    .background(isValid ? Color.red : ThemeManager.shared.colorDivider)
                     .foregroundColor(isValid ? .white : .gray)
                     .cornerRadius(12)
                 }
@@ -91,15 +89,15 @@ struct SetNewUserPinView: View {
             }
             
             if isSuccess {
-                Color.black.ignoresSafeArea()
+                ThemeManager.shared.colorBackground.ignoresSafeArea()
                 VStack(spacing: 20) {
                     Image(systemName: "checkmark.seal.fill")
                         .font(.system(size: 80))
-                        .foregroundColor(.green)
+                        .foregroundStyle(ThemeManager.shared.colorSuccess)
                     Text("Profilo Creato!")
                         .font(.title)
                         .fontWeight(.bold)
-                        .foregroundColor(.white)
+                        .foregroundStyle(ThemeManager.shared.colorTextPrimary)
                 }
                 .transition(.scale)
             }

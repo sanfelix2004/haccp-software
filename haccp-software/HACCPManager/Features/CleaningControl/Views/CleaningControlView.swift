@@ -86,7 +86,7 @@ struct CleaningControlView: View {
                             HStack(spacing: 8) {
                                 Button("Gestione aree/task") { showMasterManage = true }
                                     .buttonStyle(.bordered)
-                                    .tint(.white)
+                                    .tint(ThemeManager.shared.colorPrimary)
                                 Button("Pulisci storico", role: .destructive) { showMasterClearHistory = true }
                                     .buttonStyle(.bordered)
                             }
@@ -136,15 +136,15 @@ struct CleaningControlView: View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Completamento periodo corrente")
                 .font(.subheadline.bold())
-                .foregroundColor(.white.opacity(0.9))
+                .foregroundStyle(ThemeManager.shared.colorTextPrimary)
             Text("\(summary.completed) / \(summary.total) task · \(Int(summary.percentage * 100))%")
                 .font(.caption)
-                .foregroundColor(.gray)
+                .foregroundStyle(ThemeManager.shared.colorTextSecondary)
             ProgressView(value: summary.percentage)
                 .tint(.green)
         }
         .padding(10)
-        .background(Color.white.opacity(0.05))
+        .background(ThemeManager.shared.colorSurface)
         .cornerRadius(10)
     }
 
@@ -165,10 +165,10 @@ struct CleaningControlView: View {
                         .padding(12)
                         .background(
                             RoundedRectangle(cornerRadius: 16)
-                                .fill(Color.white.opacity(0.04))
+                                .fill(ThemeManager.shared.colorSurface)
                                 .overlay(
                                     RoundedRectangle(cornerRadius: 16)
-                                        .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                                        .stroke(ThemeManager.shared.colorDivider, lineWidth: 1)
                                 )
                         )
                     }
@@ -182,11 +182,11 @@ struct CleaningControlView: View {
             HStack {
                 Label("Area pulizia: \(areaName)", systemImage: "square.grid.2x2")
                     .font(.headline)
-                    .foregroundColor(.white)
+                    .foregroundStyle(ThemeManager.shared.colorTextPrimary)
                 Spacer()
                 Text("\(completed)/\(total)")
                     .font(.caption.bold())
-                    .foregroundColor(.gray)
+                    .foregroundStyle(ThemeManager.shared.colorTextSecondary)
             }
             ProgressView(value: total == 0 ? 0.0 : Double(completed) / Double(total))
                 .tint(.green)
@@ -211,17 +211,17 @@ struct CleaningControlView: View {
         return VStack(alignment: .leading, spacing: 8) {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(card.taskName).font(.subheadline.bold()).foregroundColor(.white.opacity(0.95))
-                    Text("Frequenza: \(card.frequency.label)").font(.caption2).foregroundColor(.gray)
+                    Text(card.taskName).font(.subheadline.bold()).foregroundStyle(ThemeManager.shared.colorTextPrimary)
+                    Text("Frequenza: \(card.frequency.label)").font(.caption2).foregroundStyle(ThemeManager.shared.colorTextSecondary)
                     Text(dueDescription(for: card))
                         .font(.caption2)
-                        .foregroundColor(card.isOverdue ? .red : .gray)
+                        .foregroundStyle(card.isOverdue ? ThemeManager.shared.colorError : ThemeManager.shared.colorTextSecondary)
                     Text(periodDescription(for: card.record))
                         .font(.caption2)
-                        .foregroundColor(.gray)
+                        .foregroundStyle(ThemeManager.shared.colorTextSecondary)
                     Text(automaticTimestampDescription(for: card.record))
                         .font(.caption2)
-                        .foregroundColor(card.record.outcome == .daFare ? .gray : .cyan)
+                        .foregroundStyle(card.record.outcome == .daFare ? ThemeManager.shared.colorTextSecondary : ThemeManager.shared.colorInfo)
                 }
                 Spacer()
                 if card.isOverdue {
@@ -265,11 +265,11 @@ struct CleaningControlView: View {
             if card.record.outcome == .nonPulito {
                 Text("Per 'Non pulito' è obbligatoria un'azione correttiva.")
                     .font(.caption2)
-                    .foregroundColor(.orange)
+                    .foregroundStyle(ThemeManager.shared.colorWarning)
             }
         }
         .padding(10)
-        .background(Color.white.opacity(0.05))
+        .background(ThemeManager.shared.colorSurface)
         .cornerRadius(10)
     }
 
@@ -283,39 +283,39 @@ struct CleaningControlView: View {
                     ForEach(areaRecords) { record in
                         VStack(alignment: .leading, spacing: 4) {
                             Text(record.taskName)
-                                .foregroundColor(.white)
+                                .foregroundStyle(ThemeManager.shared.colorTextPrimary)
                             Text("\(record.outcome.label) · \(record.updatedByNameSnapshot)")
                                 .font(.caption)
-                                .foregroundColor(.gray)
+                                .foregroundStyle(ThemeManager.shared.colorTextSecondary)
                             Text(periodDescription(for: record))
                                 .font(.caption2)
-                                .foregroundColor(.gray)
+                                .foregroundStyle(ThemeManager.shared.colorTextSecondary)
                             Text(automaticTimestampDescription(for: record))
                                 .font(.caption2)
-                                .foregroundColor(.cyan)
+                                .foregroundStyle(ThemeManager.shared.colorInfo)
                             if let note = record.notes, !note.isEmpty {
                                 Text("Note: \(note)")
                                     .font(.caption2)
-                                    .foregroundColor(.gray)
+                                    .foregroundStyle(ThemeManager.shared.colorTextSecondary)
                             }
                             if let action = record.correctiveAction, !action.isEmpty {
                                 Text("Azione correttiva: \(action)")
                                     .font(.caption2)
-                                    .foregroundColor(.orange)
+                                    .foregroundStyle(ThemeManager.shared.colorWarning)
                             }
                         }
                         .padding(10)
-                        .background(Color.white.opacity(0.05))
+                        .background(ThemeManager.shared.colorSurface)
                         .cornerRadius(10)
                     }
                 }
                 .padding(12)
                 .background(
                     RoundedRectangle(cornerRadius: 16)
-                        .fill(Color.white.opacity(0.04))
+                        .fill(ThemeManager.shared.colorSurface)
                         .overlay(
                             RoundedRectangle(cornerRadius: 16)
-                                .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                                .stroke(ThemeManager.shared.colorDivider, lineWidth: 1)
                         )
                 )
             }
@@ -392,7 +392,7 @@ struct CleaningControlView: View {
                     .font(.headline)
                 Text("Inserisci nota e azione correttiva per completare.")
                     .font(.caption)
-                    .foregroundColor(.gray)
+                    .foregroundStyle(ThemeManager.shared.colorTextSecondary)
                 TextField("Nota criticità", text: Binding(
                     get: { pendingCriticalityRecord?.notes ?? "" },
                     set: { pendingCriticalityRecord?.notes = $0 }
@@ -495,7 +495,7 @@ struct CleaningControlView: View {
                     ForEach(scopedAreas) { area in
                         VStack(alignment: .leading, spacing: 8) {
                             HStack {
-                                Text(area.name).foregroundColor(.white)
+                                Text(area.name).foregroundStyle(ThemeManager.shared.colorTextPrimary)
                                 Spacer()
                                 Button("Elimina", role: .destructive) { deleteArea(area) }
                                     .buttonStyle(.bordered)
@@ -505,7 +505,7 @@ struct CleaningControlView: View {
                                 HStack {
                                     Text("• \(task.title) · \(task.frequency.label)")
                                         .font(.caption)
-                                        .foregroundColor(.gray)
+                                        .foregroundStyle(ThemeManager.shared.colorTextSecondary)
                                     Spacer()
                                     Button("Elimina", role: .destructive) { deleteTask(task) }
                                         .buttonStyle(.bordered)
@@ -536,7 +536,7 @@ struct CleaningControlView: View {
                             }
                         }
                         .padding(10)
-                        .background(Color.white.opacity(0.05))
+                        .background(ThemeManager.shared.colorSurface)
                         .cornerRadius(10)
                     }
                 }

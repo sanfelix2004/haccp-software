@@ -18,7 +18,7 @@ struct ChecklistHistoryView: View {
                     }
                 }
                 .buttonStyle(.bordered)
-                .tint(.white)
+                .tint(ThemeManager.shared.colorPrimary)
             }
 
             let filtered = vm.filteredRuns(runs: runs, templates: templates)
@@ -34,22 +34,22 @@ struct ChecklistHistoryView: View {
                         ForEach(filtered) { run in
                             HStack {
                                 VStack(alignment: .leading) {
-                                    Text(run.templateTitleSnapshot).foregroundColor(.white)
+                                    Text(run.templateTitleSnapshot).foregroundStyle(ThemeManager.shared.colorTextPrimary)
                                     Text(run.startedAt.formatted(date: .abbreviated, time: .shortened))
-                                        .foregroundColor(.gray)
+                                        .foregroundStyle(ThemeManager.shared.colorTextSecondary)
                                         .font(.caption)
                                 }
                                 Spacer()
                                 Text(run.status.label)
                                     .font(.caption.bold())
-                                    .foregroundColor(.white)
+                                    .foregroundStyle(ThemeManager.shared.colorTextPrimary)
                                     .padding(.horizontal, 10)
                                     .padding(.vertical, 5)
                                     .background(run.status.color.opacity(0.25))
                                     .cornerRadius(8)
                             }
                             .padding(12)
-                            .background(Color.white.opacity(0.05))
+                            .background(ThemeManager.shared.colorSurface)
                             .cornerRadius(12)
                         }
                     }

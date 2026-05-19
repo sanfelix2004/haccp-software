@@ -11,7 +11,7 @@ struct HACCPSettingsView: View {
             VStack(alignment: .leading, spacing: 24) {
                 Text("Range Temperature")
                     .font(.headline)
-                    .foregroundColor(.white)
+                    .foregroundStyle(ThemeManager.shared.colorTextPrimary)
                 
                 HStack(spacing: 20) {
                     TempConfigBox(title: "Frigo (Max)", value: $storage.haccp.fridgeMaxTemp, unit: "°C")
@@ -33,13 +33,13 @@ struct HACCPSettingsView: View {
                 )
             }
             .padding()
-            .background(Color.white.opacity(0.05))
+            .background(ThemeManager.shared.colorSurface)
             .cornerRadius(16)
 
             VStack(alignment: .leading, spacing: 20) {
                 Text("Controllo olio")
                     .font(.headline)
-                    .foregroundColor(.white)
+                    .foregroundStyle(ThemeManager.shared.colorTextPrimary)
 
                 HStack(spacing: 20) {
                     TempConfigBox(title: "Limite attenzione", value: $storage.haccp.oilPolarAttentionLimit, unit: "%")
@@ -47,23 +47,23 @@ struct HACCPSettingsView: View {
                 }
 
                 Toggle("Foto obbligatoria per non conformità olio", isOn: $storage.haccp.oilNonCompliancePhotoRequired)
-                    .foregroundColor(.white)
+                    .foregroundStyle(ThemeManager.shared.colorTextPrimary)
             }
             .padding()
-            .background(Color.white.opacity(0.05))
+            .background(ThemeManager.shared.colorSurface)
             .cornerRadius(16)
             
             VStack(alignment: .leading, spacing: 20) {
                 Text("Operatività")
                     .font(.headline)
-                    .foregroundColor(.white)
+                    .foregroundStyle(ThemeManager.shared.colorTextPrimary)
                 
                 Stepper(value: $storage.haccp.productExpiryThreshold, in: 1...15) {
                     HStack {
                         Image(systemName: "clock.badge.exclamationmark")
-                            .foregroundColor(.orange)
+                            .foregroundStyle(ThemeManager.shared.colorWarning)
                         Text("Soglia Scadenza: \(storage.haccp.productExpiryThreshold) giorni")
-                            .foregroundColor(.white)
+                            .foregroundStyle(ThemeManager.shared.colorTextPrimary)
                     }
                 }
                 
@@ -72,12 +72,12 @@ struct HACCPSettingsView: View {
                         Image(systemName: "archivebox.fill")
                             .foregroundColor(.blue)
                         Text("Conservazione Dati: \(storage.haccp.storageDurationYears) anni")
-                            .foregroundColor(.white)
+                            .foregroundStyle(ThemeManager.shared.colorTextPrimary)
                     }
                 }
             }
             .padding()
-            .background(Color.white.opacity(0.05))
+            .background(ThemeManager.shared.colorSurface)
             .cornerRadius(16)
             .onChange(of: storage.haccp.fridgeMaxTemp) { storage.saveAll() }
             .onChange(of: storage.haccp.productExpiryThreshold) { storage.saveAll() }
@@ -98,19 +98,19 @@ struct TempConfigBox: View {
             Text(title)
                 .font(.caption2)
                 .fontWeight(.bold)
-                .foregroundColor(.gray)
+                .foregroundStyle(ThemeManager.shared.colorTextSecondary)
             
             HStack {
                 TextField("", value: $value, format: .number)
                     .keyboardType(.decimalPad)
                     .font(.title3)
                     .fontWeight(.bold)
-                    .foregroundColor(.white)
+                    .foregroundStyle(ThemeManager.shared.colorTextPrimary)
                 Text(unit)
                     .foregroundColor(.red)
             }
             .padding()
-            .background(Color.black.opacity(0.3))
+            .background(ThemeManager.shared.colorSurfaceElevated)
             .cornerRadius(12)
         }
         .frame(maxWidth: .infinity)

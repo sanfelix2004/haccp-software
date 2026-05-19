@@ -12,7 +12,7 @@ struct MasterCreationSuccessView: View {
     
     var body: some View {
         ZStack {
-            Color.black.ignoresSafeArea()
+            ThemeManager.shared.colorBackground.ignoresSafeArea()
             
             // Golden Vortex Background
             ZStack {
@@ -48,20 +48,20 @@ struct MasterCreationSuccessView: View {
                     VStack(spacing: 20) {
                         Image(systemName: "crown.fill")
                             .font(.system(size: 80))
-                            .foregroundColor(.yellow)
+                            .foregroundStyle(ThemeManager.shared.colorWarning)
                             .shadow(color: .orange, radius: 20)
                             .transition(.scale.combined(with: .opacity))
                         
                         Text("Benvenuto, MASTER")
                             .font(.system(size: 40, weight: .black, design: .rounded))
-                            .foregroundColor(.white)
+                            .foregroundStyle(ThemeManager.shared.colorTextPrimary)
                             .shadow(color: .yellow.opacity(0.5), radius: 10)
                             .transition(.move(edge: .top).combined(with: .opacity))
                         
                         Text("HACCP Manager ti aiuta a controllare utenti, procedure, temperature, etichette, pulizie e attività giornaliere del ristorante in modo semplice, sicuro e professionale.")
                             .font(.title3)
                             .multilineTextAlignment(.center)
-                            .foregroundColor(.gray)
+                            .foregroundStyle(ThemeManager.shared.colorTextSecondary)
                             .padding(.horizontal, 60)
                             .transition(.move(edge: .bottom).combined(with: .opacity))
                     }
@@ -76,7 +76,7 @@ struct MasterCreationSuccessView: View {
                         Text("Inizia")
                             .font(.headline)
                             .fontWeight(.bold)
-                            .foregroundColor(.black)
+                            .foregroundStyle(ThemeManager.shared.colorTextPrimary)
                             .frame(maxWidth: 200)
                             .padding()
                             .background(Color.yellow)

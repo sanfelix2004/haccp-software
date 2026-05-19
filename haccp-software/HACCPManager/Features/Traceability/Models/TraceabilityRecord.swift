@@ -64,6 +64,8 @@ final class TraceabilityRecord {
     var operatorSignature: String?
     var nonComplianceResolvedAt: Date?
     var nonComplianceResolvedByNameSnapshot: String?
+    var isArchived: Bool = false
+    var archivedAt: Date?
 
     init(
         id: UUID = UUID(),
@@ -128,6 +130,8 @@ final class ProductImage {
     var createdAt: Date
     var createdByUserId: UUID = UUID()
     var createdByNameSnapshot: String = ""
+    var isArchived: Bool = false
+    var archivedAt: Date?
 
     init(
         id: UUID = UUID(),

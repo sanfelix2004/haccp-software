@@ -34,15 +34,15 @@ struct RecentActivityView: View {
                             HStack {
                                 Image(systemName: "clock.arrow.circlepath").foregroundColor(.red)
                                 VStack(alignment: .leading) {
-                                    Text(row.title).foregroundColor(.white)
+                                    Text(row.title).foregroundStyle(ThemeManager.shared.colorTextPrimary)
                                     Text(row.date.formatted(date: .abbreviated, time: .shortened))
                                         .font(.caption)
-                                        .foregroundColor(.gray)
+                                        .foregroundStyle(ThemeManager.shared.colorTextSecondary)
                                 }
                                 Spacer()
                             }
                             .padding(10)
-                            .background(Color.white.opacity(0.05))
+                            .background(ThemeManager.shared.colorSurface)
                             .cornerRadius(10)
                         }
                     }

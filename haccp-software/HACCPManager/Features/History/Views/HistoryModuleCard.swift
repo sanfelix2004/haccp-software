@@ -22,34 +22,33 @@ struct HistoryModuleCard: View {
                 if criticalCount > 0 {
                     Text("\(criticalCount)")
                         .font(.caption.bold())
-                        .foregroundColor(.white)
+                        .foregroundStyle(ThemeManager.shared.colorTextOnPrimary)
                         .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(Color.red)
+                        .padding(.vertical, 4).background(Color.red)
                         .cornerRadius(10)
                 }
             }
 
             Text(module.rawValue)
                 .font(.headline)
-                .foregroundColor(.white)
+                .foregroundStyle(ThemeManager.shared.colorTextPrimary)
                 .lineLimit(2)
 
             Text("\(entries.count) registrazioni")
                 .font(.title3.bold())
-                .foregroundColor(.white)
+                .foregroundStyle(ThemeManager.shared.colorTextPrimary)
 
             Text(lastEntry.map { "Ultima: \($0.date.formatted(date: .abbreviated, time: .shortened))" } ?? "Nessuna registrazione disponibile")
                 .font(.caption)
-                .foregroundColor(.gray)
+                .foregroundStyle(ThemeManager.shared.colorTextSecondary)
                 .lineLimit(2)
         }
         .frame(maxWidth: .infinity, minHeight: 150, alignment: .topLeading)
         .padding(14)
-        .background(Color.white.opacity(0.06))
+        .background(ThemeManager.shared.colorSurfaceElevated)
         .overlay(
             RoundedRectangle(cornerRadius: 16)
-                .stroke(Color.white.opacity(0.1), lineWidth: 1)
+                .stroke(ThemeManager.shared.colorDivider, lineWidth: 1)
         )
         .cornerRadius(16)
     }

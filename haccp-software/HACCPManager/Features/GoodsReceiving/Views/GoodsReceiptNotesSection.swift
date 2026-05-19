@@ -6,7 +6,7 @@ struct GoodsReceiptNotesSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Appunti").font(.headline).foregroundColor(.white)
+            Text("Appunti").font(.headline).foregroundStyle(ThemeManager.shared.colorTextPrimary)
             TextField("Note ricezione / anomalie", text: $notes, axis: .vertical)
                 .lineLimit(3...5)
                 .textFieldStyle(.roundedBorder)

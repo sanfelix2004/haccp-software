@@ -19,15 +19,15 @@ struct BlastChillingHistoryView: View {
                                 VStack(alignment: .leading, spacing: 3) {
                                     Text(record.productionNameSnapshot)
                                         .font(.headline)
-                                        .foregroundColor(.white)
+                                        .foregroundStyle(ThemeManager.shared.colorTextPrimary)
                                     Text(record.productionCategorySnapshot)
                                         .font(.caption)
-                                        .foregroundColor(.gray)
+                                        .foregroundStyle(ThemeManager.shared.colorTextSecondary)
                                 }
                                 Spacer()
                                 Text(record.status.label)
                                     .font(.caption.bold())
-                                    .foregroundColor(.white)
+                                    .foregroundStyle(ThemeManager.shared.colorTextPrimary)
                                     .padding(.horizontal, 8)
                                     .padding(.vertical, 4)
                                     .background(record.status == .conforme ? Color.green.opacity(0.75) : Color.orange.opacity(0.85))
@@ -41,20 +41,20 @@ struct BlastChillingHistoryView: View {
                                 Text("Operatore: \(record.createdByNameSnapshot)")
                             }
                             .font(.caption2)
-                            .foregroundColor(.gray)
+                            .foregroundStyle(ThemeManager.shared.colorTextSecondary)
                             if let notes = record.notes, !notes.isEmpty {
                                 Text("Note: \(notes)")
                                     .font(.caption2)
-                                    .foregroundColor(.gray)
+                                    .foregroundStyle(ThemeManager.shared.colorTextSecondary)
                             }
                             if let action = record.correctiveAction, !action.isEmpty {
                                 Text("Azione correttiva: \(action)")
                                     .font(.caption2)
-                                    .foregroundColor(.orange)
+                                    .foregroundStyle(ThemeManager.shared.colorWarning)
                             }
                         }
                         .padding(10)
-                        .background(Color.white.opacity(0.05))
+                        .background(ThemeManager.shared.colorSurface)
                         .cornerRadius(10)
                     }
                 }

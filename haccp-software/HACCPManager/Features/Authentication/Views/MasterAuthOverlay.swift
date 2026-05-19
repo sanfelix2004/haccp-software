@@ -14,7 +14,7 @@ struct MasterAuthOverlay<Content: View>: View {
     var body: some View {
         ZStack {
             // Full Screen Background (Solid Black for max depth)
-            Color.black.ignoresSafeArea()
+            ThemeManager.shared.colorBackground.ignoresSafeArea()
             
             VStack(spacing: 0) {
                 Spacer()
@@ -31,7 +31,7 @@ struct MasterAuthOverlay<Content: View>: View {
                 // Subtle Operation Reason
                 Text(operation.localizedReason.uppercased())
                     .font(.system(size: 10, weight: .black))
-                    .foregroundColor(.white.opacity(0.2))
+                    .foregroundStyle(ThemeManager.shared.colorDivider)
                     .tracking(3)
                     .padding(.top, 40)
                 

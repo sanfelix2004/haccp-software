@@ -36,14 +36,14 @@ struct UserProfileView: View {
                                 
                                 Text(String(user.name.prefix(1)).uppercased())
                                     .font(.system(size: 60, weight: .bold, design: .rounded))
-                                    .foregroundColor(.white)
+                                    .foregroundStyle(ThemeManager.shared.colorTextPrimary)
                             }
                             
                             VStack(spacing: 8) {
                                 Text(user.name)
                                     .font(.title)
                                     .fontWeight(.bold)
-                                    .foregroundColor(.white)
+                                    .foregroundStyle(ThemeManager.shared.colorTextPrimary)
                                 
                                 Text(user.role.rawValue.uppercased())
                                     .font(.headline)
@@ -60,7 +60,7 @@ struct UserProfileView: View {
                                         }
                                     }
                                     .font(.caption)
-                                    .foregroundColor(.gray)
+                                    .foregroundStyle(ThemeManager.shared.colorTextSecondary)
                                     .padding(.top, 4)
                                 }
                             }
@@ -70,17 +70,17 @@ struct UserProfileView: View {
                         // Details Card
                         VStack(spacing: 0) {
                             DetailRow(title: "Ruolo", value: user.role.rawValue)
-                            Divider().background(Color.white.opacity(0.1))
+                            Divider().background(ThemeManager.shared.colorDivider)
                             
                             DetailRow(title: "Data di Nascita", value: user.dateOfBirth?.formatted(date: .abbreviated, time: .omitted) ?? "Non impostata")
-                            Divider().background(Color.white.opacity(0.1))
+                            Divider().background(ThemeManager.shared.colorDivider)
                             
                             DetailRow(title: "Note", value: user.notes ?? "-")
-                            Divider().background(Color.white.opacity(0.1))
+                            Divider().background(ThemeManager.shared.colorDivider)
                             
                             DetailRow(title: "Data Creazione", value: user.creationDate?.formatted(date: .abbreviated, time: .omitted) ?? "-")
                         }
-                        .background(Color.white.opacity(0.05))
+                        .background(ThemeManager.shared.colorSurface)
                         .cornerRadius(20)
                         .padding(.horizontal, 40)
                         
@@ -89,17 +89,17 @@ struct UserProfileView: View {
                             Button(action: { showEditProfile = true }) {
                                 Text("Modifica Profilo")
                                     .font(.headline)
-                                    .foregroundColor(.white)
+                                    .foregroundStyle(ThemeManager.shared.colorTextPrimary)
                                     .frame(maxWidth: .infinity)
                                     .padding()
-                                    .background(Color.white.opacity(0.1))
+                                    .background(ThemeManager.shared.colorDivider)
                                     .cornerRadius(12)
                             }
                             
                             Button(action: { showChangePin = true }) {
                                 Text("Cambia PIN")
                                     .font(.headline)
-                                    .foregroundColor(.white)
+                                    .foregroundStyle(ThemeManager.shared.colorTextPrimary)
                                     .frame(maxWidth: .infinity)
                                     .padding()
                                     .background(Color(hex: "#E63946"))
@@ -122,7 +122,7 @@ struct UserProfileView: View {
                                         Text("Reset Completo Sistema")
                                     }
                                     .font(.headline)
-                                    .foregroundColor(.white)
+                                    .foregroundStyle(ThemeManager.shared.colorTextPrimary)
                                     .frame(maxWidth: .infinity)
                                     .padding()
                                     .background(Color.red.opacity(0.8))
@@ -132,7 +132,7 @@ struct UserProfileView: View {
                                 
                                 Text("Questa azione cancellerà TUTTI gli account (incluso il MASTER) e tutti i dati. Non può essere annullata.")
                                     .font(.caption)
-                                    .foregroundColor(.gray)
+                                    .foregroundStyle(ThemeManager.shared.colorTextSecondary)
                                     .multilineTextAlignment(.center)
                                     .padding(.horizontal, 40)
                             }
@@ -160,7 +160,6 @@ struct UserProfileView: View {
                 .zIndex(50)
             }
         }
-        .preferredColorScheme(.dark)
         .navigationTitle("Il Mio Profilo")
         .sheet(isPresented: $showEditProfile) {
             if let user = currentUser {
@@ -202,11 +201,11 @@ struct DetailRow: View {
     var body: some View {
         HStack {
             Text(title)
-                .foregroundColor(.gray)
+                .foregroundStyle(ThemeManager.shared.colorTextSecondary)
                 .font(.subheadline)
             Spacer()
             Text(value)
-                .foregroundColor(.white)
+                .foregroundStyle(ThemeManager.shared.colorTextPrimary)
                 .font(.body)
                 .fontWeight(.medium)
         }

@@ -16,6 +16,9 @@ struct HACCPManagerApp: App {
     private var container: ModelContainer
     
     init() {
+        // Tema/layout da UserDefaults prima del primo frame (evita flash nero).
+        ThemeManager.shared.loadSavedTheme()
+
         do {
             container = try ModelContainer(
                 for: LocalUser.self,
@@ -72,11 +75,19 @@ struct HACCPManagerApp: App {
         .onChange(of: scenePhase) { _, newPhase in
             guard newPhase == .active || newPhase == .background else { return }
             let context = container.mainContext
-            if let all = try? context.fetch(FetchDescriptor<TraceabilityRecord>()) {
-                _ = expiryService.refreshStatuses(records: all, modelContext: context)
-            }
-            if newPhase == .active {
-                Task { @MainActor in
+            Task { @MainActor in
+                var descriptor = FetchDescriptor<TraceabilityRecord>(
+                    predicate: #Predicate { !$0.isArchived },
+                    sortBy: [SortDescriptor(\TraceabilityRecord.expiryDate)]
+                )
+                descriptor.fetchLimit = 2_000
+                if let activeRecords = try? context.fetch(descriptor) {
+                    _ = expiryService.refreshStatuses(records: activeRecords, modelContext: context)
+                }
+                if newPhase == .active {
+                    if let restaurantId = appState.activeRestaurantId {
+                        await DataArchiveService.runIfNeeded(context: context, restaurantId: restaurantId)
+                    }
                     await tickReportEngine(modelContext: context)
                 }
             }

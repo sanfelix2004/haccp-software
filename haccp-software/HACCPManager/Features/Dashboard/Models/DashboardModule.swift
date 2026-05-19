@@ -7,7 +7,7 @@ enum DashboardModuleState: String {
 
     var tint: Color {
         switch self {
-        case .configure: return Color.white.opacity(0.75)
+        case .configure: return ThemeManager.shared.colorTextSecondary
         case .open: return .red
         }
     }

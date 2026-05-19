@@ -1,25 +1,41 @@
 import Foundation
 
+/// Versione app: file `VERSION` in bundle (sincronizzato da root in build) + Info.plist.
 public struct AppVersionService {
-    public static var currentVersion: String {
-        // 1. Try to read from Info.plist (Marketing Version)
-        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String
-        
-        // 2. Try to read from embedded VERSION file as fallback
-        let fileVersion: String? = {
-            if let path = Bundle.main.path(forResource: "VERSION", ofType: nil),
-               let content = try? String(contentsOfFile: path, encoding: .utf8) {
-                return content.trimmingCharacters(in: .whitespacesAndNewlines)
-            }
-            return nil
-        }()
-        
-        let finalVersion = version ?? fileVersion ?? "1.0.0"
-        let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "1"
-        return "Versione \(finalVersion) (Build \(build))"
+
+    private static let versionResourceName = "VERSION"
+
+    /// Numero versione marketing (es. 1.1.8).
+    public static var marketingVersion: String {
+        readBundledVersionFile() ?? plistString("CFBundleShortVersionString") ?? "1.0.0"
     }
-    
+
+    /// Build number da Info.plist.
+    public static var buildNumber: String {
+        plistString("CFBundleVersion") ?? "1"
+    }
+
+    /// Testo formattato per UI (Impostazioni, Info app, splash).
+    public static var currentVersion: String {
+        "Versione \(marketingVersion) (Build \(buildNumber))"
+    }
+
     public static var appName: String {
-        return Bundle.main.infoDictionary?["CFBundleDisplayName"] as? String ?? "HACCP Manager"
+        plistString("CFBundleDisplayName") ?? "HACCP Manager"
+    }
+
+    // MARK: - Private
+
+    private static func readBundledVersionFile() -> String? {
+        guard let path = Bundle.main.path(forResource: versionResourceName, ofType: nil),
+              let content = try? String(contentsOfFile: path, encoding: .utf8) else {
+            return nil
+        }
+        let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    private static func plistString(_ key: String) -> String? {
+        Bundle.main.infoDictionary?[key] as? String
     }
 }

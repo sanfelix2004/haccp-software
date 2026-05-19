@@ -128,6 +128,8 @@ final class CleaningRecord {
     var notes: String?
     var correctiveAction: String?
     var operatorSignature: String?
+    var isArchived: Bool = false
+    var archivedAt: Date?
 
     init(
         id: UUID = UUID(),

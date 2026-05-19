@@ -2,45 +2,46 @@ import SwiftUI
 
 struct LoadingOverlay: View {
     let message: String
-    
+
+    @Environment(\.theme) private var theme
     @State private var rotation: Double = 0
     @State private var pulse: CGFloat = 1.0
-    
+
     var body: some View {
         ZStack {
-            // Blurred background
             Rectangle()
-                .fill(Color.black.opacity(0.8))
+                .fill(theme.colorScrim)
                 .ignoresSafeArea()
-            
+
             VStack(spacing: 30) {
-                // Animated Logo / Loader
                 ZStack {
-                    // Outer spinning ring
                     Circle()
                         .stroke(
-                            LinearGradient(colors: [.red, .clear, .red.opacity(0.3)], startPoint: .top, endPoint: .bottom),
+                            LinearGradient(
+                                colors: [theme.colorPrimary, .clear, theme.colorPrimary.opacity(0.3)],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            ),
                             lineWidth: 4
                         )
                         .frame(width: 120, height: 120)
                         .rotationEffect(.degrees(rotation))
-                    
-                    // Inner pulsing logo
+
                     Image(systemName: "house.fill")
                         .font(.system(size: 40))
-                        .foregroundColor(.red)
+                        .foregroundStyle(theme.colorPrimary)
                         .scaleEffect(pulse)
                 }
-                
+
                 VStack(spacing: 8) {
                     Text(message.uppercased())
                         .font(.system(size: 14, weight: .black))
-                        .foregroundColor(.white)
+                        .foregroundStyle(theme.colorTextPrimary)
                         .tracking(4)
-                    
+
                     Text("Configurazione in corso...")
                         .font(.caption)
-                        .foregroundColor(.gray)
+                        .foregroundStyle(theme.colorTextSecondary)
                 }
             }
         }
@@ -54,8 +55,4 @@ struct LoadingOverlay: View {
         }
         .transition(.opacity.combined(with: .scale(scale: 1.1)))
     }
-}
-
-#Preview {
-    LoadingOverlay(message: "Cambio Ristorante")
 }

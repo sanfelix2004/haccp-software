@@ -7,9 +7,9 @@ struct GoodsReceiptMomentSection: View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Momento")
                 .font(.headline)
-                .foregroundColor(.white)
+                .foregroundStyle(ThemeManager.shared.colorTextPrimary)
             DatePicker("Data e ora ricezione", selection: $receivedAt)
-                .foregroundColor(.white)
+                .foregroundStyle(ThemeManager.shared.colorTextPrimary)
         }
     }
 }

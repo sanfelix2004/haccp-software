@@ -36,7 +36,7 @@ struct RestaurantSettingsView: View {
                 Text("Gestione Ristoranti")
                     .font(.title2)
                     .fontWeight(.bold)
-                    .foregroundColor(.white)
+                    .foregroundStyle(ThemeManager.shared.colorTextPrimary)
                 
                 Spacer()
                 
@@ -44,10 +44,9 @@ struct RestaurantSettingsView: View {
                     Button(action: { showingAddSheet = true }) {
                         Label("Aggiungi Locale", systemImage: "plus.circle.fill")
                             .fontWeight(.bold)
-                            .foregroundColor(.white)
+                            .foregroundStyle(ThemeManager.shared.colorTextOnPrimary)
                             .padding(.horizontal, 16)
-                            .padding(.vertical, 8)
-                            .background(Color.red)
+                            .padding(.vertical, 8).background(Color.red)
                             .cornerRadius(10)
                     }
                 }
@@ -57,15 +56,15 @@ struct RestaurantSettingsView: View {
                 VStack(spacing: 20) {
                     Image(systemName: "house.slash")
                         .font(.system(size: 60))
-                        .foregroundColor(.gray)
+                        .foregroundStyle(ThemeManager.shared.colorTextSecondary)
                     Text("Nessun ristorante configurato.")
-                        .foregroundColor(.gray)
+                        .foregroundStyle(ThemeManager.shared.colorTextSecondary)
                 }
                 .frame(maxWidth: .infinity, minHeight: 200)
             } else {
                 Text("Modalita singolo ristorante attiva: e consentita una sola scheda ristorante su questo iPad.")
                     .font(.caption)
-                    .foregroundColor(.gray)
+                    .foregroundStyle(ThemeManager.shared.colorTextSecondary)
 
                 LazyVStack(spacing: 16) {
                     ForEach(restaurants) { restaurant in
@@ -100,7 +99,7 @@ struct RestaurantSettingsView: View {
                 HStack {
                     Text(restaurant.name)
                         .font(.headline)
-                        .foregroundColor(.white)
+                        .foregroundStyle(ThemeManager.shared.colorTextPrimary)
                     
                     if isActive {
                         Text("ATTIVO")
@@ -108,14 +107,14 @@ struct RestaurantSettingsView: View {
                             .padding(.horizontal, 6)
                             .padding(.vertical, 2)
                             .background(Color.green)
-                            .foregroundColor(.white)
+                            .foregroundStyle(ThemeManager.shared.colorTextPrimary)
                             .cornerRadius(4)
                     }
                 }
                 
                 Text("\(restaurant.city), \(restaurant.address)")
                     .font(.subheadline)
-                    .foregroundColor(.gray)
+                    .foregroundStyle(ThemeManager.shared.colorTextSecondary)
                 
                 Text("Resp: \(restaurant.haccpManager)")
                     .font(.caption)
@@ -158,7 +157,7 @@ struct RestaurantSettingsView: View {
             }
         }
         .padding()
-        .background(Color.white.opacity(0.05))
+        .background(ThemeManager.shared.colorSurface)
         .cornerRadius(16)
         .overlay(
             RoundedRectangle(cornerRadius: 16)
@@ -208,7 +207,7 @@ struct RestaurantEditSheet: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                Color(hex: "#0F0F0F").ignoresSafeArea()
+                ThemeManager.shared.colorBackground.ignoresSafeArea()
                 
                 Form {
                     Section("Branding") {
@@ -221,9 +220,9 @@ struct RestaurantEditSheet: View {
                                     .clipShape(RoundedRectangle(cornerRadius: 12))
                             } else {
                                 RoundedRectangle(cornerRadius: 12)
-                                    .fill(Color.white.opacity(0.05))
+                                    .fill(ThemeManager.shared.colorSurface)
                                     .frame(width: 100, height: 100)
-                                    .overlay(Image(systemName: "photo").foregroundColor(.gray))
+                                    .overlay(Image(systemName: "photo").foregroundStyle(ThemeManager.shared.colorTextSecondary))
                             }
                             
                             PhotosPicker(selection: $logoItem, matching: .images) {
@@ -277,7 +276,7 @@ struct RestaurantEditSheet: View {
                             }
                         Text("Il PIN ristorante viene salvato in forma hashata.")
                             .font(.caption)
-                            .foregroundColor(.gray)
+                            .foregroundStyle(ThemeManager.shared.colorTextSecondary)
                     }
                 }
                 .scrollContentBackground(.hidden)

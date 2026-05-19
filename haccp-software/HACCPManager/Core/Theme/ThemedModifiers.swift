@@ -93,13 +93,14 @@ private struct AnimatedAuroraBackground: View {
                 .offset(x: 160 + 50 * cos(phase * 1.1),
                         y:  260 + 35 * sin(phase * 0.9))
         }
-        .compositingGroup()
+        .drawingGroup(opaque: false)
         .onAppear {
-            withAnimation(.linear(duration: 18).repeatForever(autoreverses: true)) {
+            withAnimation(.linear(duration: 24).repeatForever(autoreverses: true)) {
                 phase = .pi * 2
             }
         }
         .allowsHitTesting(false)
+        .accessibilityHidden(true)
     }
 }
 

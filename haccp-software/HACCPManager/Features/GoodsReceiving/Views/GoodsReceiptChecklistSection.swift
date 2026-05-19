@@ -5,10 +5,10 @@ struct GoodsReceiptChecklistSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Lista di controllo").font(.headline).foregroundColor(.white)
+            Text("Lista di controllo").font(.headline).foregroundStyle(ThemeManager.shared.colorTextPrimary)
             ForEach($checklistResults) { $item in
                 VStack(alignment: .leading, spacing: 8) {
-                    Text(item.item.rawValue).foregroundColor(.white)
+                    Text(item.item.rawValue).foregroundStyle(ThemeManager.shared.colorTextPrimary)
                     HStack {
                         pickerButton(title: "OK", value: .ok, item: $item)
                         pickerButton(title: "NON OK", value: .notOk, item: $item)
@@ -20,7 +20,7 @@ struct GoodsReceiptChecklistSection: View {
                     }
                 }
                 .padding(10)
-                .background(Color.white.opacity(0.06))
+                .background(ThemeManager.shared.colorSurfaceElevated)
                 .cornerRadius(10)
             }
         }
@@ -35,7 +35,7 @@ struct GoodsReceiptChecklistSection: View {
                 .foregroundColor(item.wrappedValue.value == value ? .white : .gray)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 6)
-                .background(item.wrappedValue.value == value ? Color.red.opacity(0.65) : Color.white.opacity(0.08))
+                .background(item.wrappedValue.value == value ? Color.red.opacity(0.65) : ThemeManager.shared.colorDivider)
                 .cornerRadius(8)
         }
         .buttonStyle(.plain)

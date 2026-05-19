@@ -15,20 +15,20 @@ struct ProductSelectionGridView: View {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(product.name)
                             .font(.headline)
-                            .foregroundColor(.white)
+                            .foregroundStyle(ThemeManager.shared.colorTextPrimary)
                             .lineLimit(2)
                         Text(product.category.rawValue)
                             .font(.caption2)
-                            .foregroundColor(.gray)
+                            .foregroundStyle(ThemeManager.shared.colorTextSecondary)
                     }
                     .frame(maxWidth: .infinity, minHeight: 92, alignment: .topLeading)
                     .padding(10)
-                    .background(Color.white.opacity(0.06))
+                    .background(ThemeManager.shared.colorSurfaceElevated)
                     .overlay(
                         RoundedRectangle(cornerRadius: 12)
                             .stroke(
                                 selectedProductId == product.id ? Color.red :
-                                Color.white.opacity(0.08),
+                                ThemeManager.shared.colorDivider,
                                 lineWidth: selectedProductId == product.id ? 2 : 1
                             )
                     )

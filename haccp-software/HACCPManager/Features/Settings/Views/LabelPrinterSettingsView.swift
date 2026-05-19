@@ -18,7 +18,7 @@ struct LabelPrinterSettingsView: View {
                         .font(.headline)
                     Text("Connetti una stampante termica Bluetooth o Wi-Fi per stampare le etichette di tracciabilità.")
                         .font(.caption)
-                        .foregroundColor(.gray)
+                        .foregroundStyle(ThemeManager.shared.colorTextSecondary)
                         .multilineTextAlignment(.center)
                         .padding(.horizontal, 40)
                 }
@@ -28,13 +28,13 @@ struct LabelPrinterSettingsView: View {
                         .fontWeight(.bold)
                         .padding(.horizontal, 30)
                         .padding(.vertical, 12)
-                        .background(Color.white.opacity(0.1))
+                        .background(ThemeManager.shared.colorDivider)
                         .cornerRadius(10)
                 }
             }
             .padding(.vertical, 40)
             .frame(maxWidth: .infinity)
-            .background(Color.white.opacity(0.02))
+            .background(ThemeManager.shared.colorSurface)
             .cornerRadius(20)
             
             VStack(alignment: .leading, spacing: 20) {
@@ -49,10 +49,10 @@ struct LabelPrinterSettingsView: View {
                     Toggle("Nome Operatore", isOn: $storage.printer.showOperatorName)
                     Toggle("Avvisi Allergeni", isOn: $storage.printer.showAllergenWarning)
                 }
-                .foregroundColor(.white)
+                .foregroundStyle(ThemeManager.shared.colorTextPrimary)
             }
             .padding()
-            .background(Color.white.opacity(0.05))
+            .background(ThemeManager.shared.colorSurface)
             .cornerRadius(16)
             .onChange(of: storage.printer.showProductName) { storage.saveAll() }
         }

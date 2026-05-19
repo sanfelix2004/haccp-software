@@ -6,65 +6,97 @@ import Observation
 @MainActor
 final class SettingsStorageService {
     static let shared = SettingsStorageService()
-    
-    private init() {}
-    
+
     private var modelContext: ModelContext?
     private var dataStore: AppDataStore?
-    
+    private(set) var isHydratedFromSwiftData = false
+
     var restaurant = RestaurantSettings()
     var haccp = HACCPSettings()
     var security = SecuritySettings()
     var notifications = NotificationSettings()
     var appearance = AppearanceSettings()
     var printer = LabelPrinterSettings()
-    
+
+    private init() {
+        bootstrapAppearanceFromDisk()
+    }
+
+    /// Carica tema/layout da UserDefaults prima del primo render (sincrono).
+    func bootstrapAppearanceFromDisk() {
+        if ThemeStorage.shared.hasPersistedAppearance {
+            appearance = ThemeStorage.shared.restoreAppearance()
+        } else {
+            appearance = AppearanceSettings()
+            appearance.normalizeStoredPreferences()
+            ThemeStorage.shared.mirror(appearance)
+        }
+    }
+
+    /// Chiamare appena `ModelContext` è disponibile (ContentView / App), non solo da Impostazioni.
     func setup(with context: ModelContext) {
-        self.modelContext = context
+        guard modelContext == nil || modelContext !== context else {
+            if !isHydratedFromSwiftData {
+                fetchOrCreateStore()
+            }
+            return
+        }
+        modelContext = context
         fetchOrCreateStore()
     }
-    
+
     private func fetchOrCreateStore() {
         guard let context = modelContext else { return }
-        
+
         let descriptor = FetchDescriptor<AppDataStore>(predicate: #Predicate { $0.id == "GLOBAL_SETTINGS" })
-        
+
         if let existing = try? context.fetch(descriptor).first {
-            self.dataStore = existing
+            dataStore = existing
             loadFromStore(existing)
         } else {
             let newStore = AppDataStore()
             context.insert(newStore)
-            self.dataStore = newStore
+            dataStore = newStore
             saveAll()
         }
+        isHydratedFromSwiftData = true
     }
-    
+
     private func loadFromStore(_ store: AppDataStore) {
         let decoder = JSONDecoder()
-        
+
         if let data = store.restaurantData { restaurant = (try? decoder.decode(RestaurantSettings.self, from: data)) ?? restaurant }
         if let data = store.haccpData { haccp = (try? decoder.decode(HACCPSettings.self, from: data)) ?? haccp }
         if let data = store.securityData { security = (try? decoder.decode(SecuritySettings.self, from: data)) ?? security }
         if let data = store.notificationData { notifications = (try? decoder.decode(NotificationSettings.self, from: data)) ?? notifications }
         if let data = store.printerData { printer = (try? decoder.decode(LabelPrinterSettings.self, from: data)) ?? printer }
-        if let data = store.appearanceData { appearance = (try? decoder.decode(AppearanceSettings.self, from: data)) ?? appearance }
+
+        if let data = store.appearanceData,
+           let decoded = try? decoder.decode(AppearanceSettings.self, from: data) {
+            appearance = decoded
+        }
+
+        appearance.normalizeStoredPreferences()
+        ThemeStorage.shared.mirror(appearance)
     }
-    
+
     func saveAll() {
+        appearance.normalizeStoredPreferences()
+        ThemeStorage.shared.mirror(appearance)
+
         guard let store = dataStore else { return }
         let encoder = JSONEncoder()
-        
+
         store.restaurantData = try? encoder.encode(restaurant)
         store.haccpData = try? encoder.encode(haccp)
         store.securityData = try? encoder.encode(security)
         store.notificationData = try? encoder.encode(notifications)
         store.printerData = try? encoder.encode(printer)
         store.appearanceData = try? encoder.encode(appearance)
-        
+
         try? modelContext?.save()
     }
-    
+
     func wipe() {
         restaurant = RestaurantSettings()
         haccp = HACCPSettings()
@@ -73,5 +105,7 @@ final class SettingsStorageService {
         appearance = AppearanceSettings()
         printer = LabelPrinterSettings()
         dataStore = nil
+        isHydratedFromSwiftData = false
+        ThemeStorage.shared.mirror(appearance)
     }
 }

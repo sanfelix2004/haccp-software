@@ -16,24 +16,24 @@ struct ProductionGrid: View {
                     VStack(alignment: .leading, spacing: 6) {
                         Text(production.name)
                             .font(.headline)
-                            .foregroundColor(.white)
+                            .foregroundStyle(ThemeManager.shared.colorTextPrimary)
                             .lineLimit(2)
                         Text(production.categoryNameSnapshot)
                             .font(.caption2)
-                            .foregroundColor(.gray)
+                            .foregroundStyle(ThemeManager.shared.colorTextSecondary)
                     }
                     .frame(maxWidth: .infinity, minHeight: 88, alignment: .topLeading)
                     .padding(10)
-                    .background(Color.white.opacity(0.06))
+                    .background(ThemeManager.shared.colorSurfaceElevated)
                     .overlay(
                         RoundedRectangle(cornerRadius: 12)
-                            .stroke(selectedProductionIds.contains(production.id) ? Color.red : Color.white.opacity(0.1), lineWidth: selectedProductionIds.contains(production.id) ? 2 : 1)
+                            .stroke(selectedProductionIds.contains(production.id) ? Color.red : ThemeManager.shared.colorDivider, lineWidth: selectedProductionIds.contains(production.id) ? 2 : 1)
                     )
                     .cornerRadius(12)
                     .overlay(alignment: .topTrailing) {
                         if selectedProductionIds.contains(production.id) {
                             Image(systemName: "checkmark.circle.fill")
-                                .foregroundColor(.green)
+                                .foregroundStyle(ThemeManager.shared.colorSuccess)
                                 .padding(8)
                         }
                     }

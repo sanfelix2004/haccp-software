@@ -24,16 +24,16 @@ struct OilHistoryView: View {
                             VStack(alignment: .leading, spacing: 5) {
                                 Text(record.oilPointNameSnapshot)
                                     .font(.headline)
-                                    .foregroundColor(.white)
+                                    .foregroundStyle(ThemeManager.shared.colorTextPrimary)
                                 Text(record.checkedAt.formatted(date: .abbreviated, time: .shortened))
                                     .font(.caption)
-                                    .foregroundColor(.gray)
+                                    .foregroundStyle(ThemeManager.shared.colorTextSecondary)
                                 Text("\(record.oilStatus.label) · \(record.oilAction.label)")
                                     .font(.caption)
                                     .foregroundColor(color(for: record.oilStatus))
                                 Text("Valore: \(polarText(record)) · Temperatura: \(temperatureText(record)) · Operatore: \(record.createdByNameSnapshot)")
                                     .font(.caption2)
-                                    .foregroundColor(.gray)
+                                    .foregroundStyle(ThemeManager.shared.colorTextSecondary)
                                 if let notes = record.notes, !notes.isEmpty {
                                     Text("Note: \(notes)")
                                         .font(.caption2)
@@ -49,7 +49,7 @@ struct OilHistoryView: View {
                             }
                         }
                         .padding(10)
-                        .background(Color.white.opacity(0.05))
+                        .background(ThemeManager.shared.colorSurface)
                         .cornerRadius(12)
                     }
                 }

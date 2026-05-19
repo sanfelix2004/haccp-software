@@ -122,16 +122,16 @@ struct HACCPModulesView: View {
                 .foregroundColor(.red)
             Text(module.name)
                 .font(.headline)
-                .foregroundColor(.white)
+                .foregroundStyle(ThemeManager.shared.colorTextPrimary)
             Text(module.description)
                 .font(.subheadline)
-                .foregroundColor(Color.white.opacity(0.72))
+                .foregroundColor(ThemeManager.shared.colorTextSecondary)
                 .lineLimit(2)
         }
         .frame(maxWidth: .infinity, minHeight: 150, alignment: .topLeading)
         .padding(14)
-        .background(Color.white.opacity(0.05))
-        .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.white.opacity(0.08), lineWidth: 1))
+        .background(ThemeManager.shared.colorSurface)
+        .overlay(RoundedRectangle(cornerRadius: 14).stroke(ThemeManager.shared.colorDivider, lineWidth: 1))
         .clipShape(RoundedRectangle(cornerRadius: 14))
     }
 }

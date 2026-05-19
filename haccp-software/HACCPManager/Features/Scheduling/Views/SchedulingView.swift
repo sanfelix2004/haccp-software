@@ -25,8 +25,8 @@ struct SchedulingView: View {
                         ForEach(scopedTasks.prefix(30)) { task in
                             HStack {
                                 VStack(alignment: .leading, spacing: 2) {
-                                    Text(task.title).foregroundColor(.white)
-                                    Text(task.frequency.rawValue).font(.caption).foregroundColor(.gray)
+                                    Text(task.title).foregroundStyle(ThemeManager.shared.colorTextPrimary)
+                                    Text(task.frequency.rawValue).font(.caption).foregroundStyle(ThemeManager.shared.colorTextSecondary)
                                 }
                                 Spacer()
                                 Text(task.isCompleted ? "Completata" : "Da fare")
@@ -34,7 +34,7 @@ struct SchedulingView: View {
                                     .foregroundColor(task.isCompleted ? .green : .yellow)
                             }
                             .padding(10)
-                            .background(Color.white.opacity(0.05))
+                            .background(ThemeManager.shared.colorSurface)
                             .cornerRadius(10)
                         }
                     }

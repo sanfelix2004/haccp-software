@@ -22,11 +22,11 @@ public struct PickRestaurantView: View {
                     
                     Text("Seleziona Ristorante")
                         .font(.system(size: 44, weight: .black, design: .rounded))
-                        .foregroundColor(.white)
+                        .foregroundStyle(ThemeManager.shared.colorTextPrimary)
                     
                     Text("Scegli l'unità operativa su cui lavorare oggi.")
                         .font(.title3)
-                        .foregroundColor(.gray)
+                        .foregroundStyle(ThemeManager.shared.colorTextSecondary)
                 }
                 .padding(.top, 40)
                 
@@ -67,7 +67,7 @@ struct RestaurantCard: View {
                             .clipShape(RoundedRectangle(cornerRadius: 12))
                     } else {
                         RoundedRectangle(cornerRadius: 12)
-                            .fill(Color.white.opacity(0.05))
+                            .fill(ThemeManager.shared.colorSurface)
                             .frame(width: 80, height: 80)
                         
                         Image(systemName: "house.fill")
@@ -79,11 +79,11 @@ struct RestaurantCard: View {
                 VStack(alignment: .leading, spacing: 6) {
                     Text(restaurant.name)
                         .font(.title2.bold())
-                        .foregroundColor(.white)
+                        .foregroundStyle(ThemeManager.shared.colorTextPrimary)
                     
                     Text(restaurant.city)
                         .font(.subheadline)
-                        .foregroundColor(.gray)
+                        .foregroundStyle(ThemeManager.shared.colorTextSecondary)
                     
                     Text("Resp: \(restaurant.haccpManager)")
                         .font(.caption)
@@ -98,11 +98,11 @@ struct RestaurantCard: View {
                     .font(.title3.bold())
             }
             .padding(24)
-            .background(Color.white.opacity(0.04))
+            .background(ThemeManager.shared.colorSurface)
             .cornerRadius(20)
             .overlay(
                 RoundedRectangle(cornerRadius: 20)
-                    .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                    .stroke(ThemeManager.shared.colorDivider, lineWidth: 1)
             )
         }
         .buttonStyle(.plain)

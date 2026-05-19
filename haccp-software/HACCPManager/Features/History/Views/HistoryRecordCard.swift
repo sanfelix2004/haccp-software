@@ -9,15 +9,15 @@ struct HistoryRecordCard: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(entry.title)
                         .font(.headline)
-                        .foregroundColor(.white)
+                        .foregroundStyle(ThemeManager.shared.colorTextPrimary)
                     Text("\(entry.status) · \(entry.operatorName)")
                         .font(.caption)
-                        .foregroundColor(entry.hasCriticality ? .orange : .gray)
+                        .foregroundStyle(entry.hasCriticality ? ThemeManager.shared.colorWarning : ThemeManager.shared.colorTextSecondary)
                 }
                 Spacer()
                 Text(entry.date.formatted(date: .omitted, time: .shortened))
                     .font(.caption)
-                    .foregroundColor(.gray)
+                    .foregroundStyle(ThemeManager.shared.colorTextSecondary)
             }
 
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 190), spacing: 8)], alignment: .leading, spacing: 8) {
@@ -25,24 +25,24 @@ struct HistoryRecordCard: View {
                     VStack(alignment: .leading, spacing: 3) {
                         Text(detail.label)
                             .font(.caption2.bold())
-                            .foregroundColor(.gray)
+                            .foregroundStyle(ThemeManager.shared.colorTextSecondary)
                         Text(detail.value)
                             .font(.caption)
-                            .foregroundColor(.white.opacity(0.9))
+                            .foregroundStyle(ThemeManager.shared.colorTextPrimary)
                             .lineLimit(3)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(8)
-                    .background(Color.black.opacity(0.2))
+                    .background(ThemeManager.shared.colorSurfaceElevated)
                     .cornerRadius(8)
                 }
             }
         }
         .padding(12)
-        .background(entry.hasCriticality ? Color.red.opacity(0.12) : Color.white.opacity(0.05))
+        .background(entry.hasCriticality ? Color.red.opacity(0.12) : ThemeManager.shared.colorSurface)
         .overlay(
             RoundedRectangle(cornerRadius: 12)
-                .stroke(entry.hasCriticality ? Color.red.opacity(0.35) : Color.white.opacity(0.08), lineWidth: 1)
+                .stroke(entry.hasCriticality ? Color.red.opacity(0.35) : ThemeManager.shared.colorDivider, lineWidth: 1)
         )
         .cornerRadius(12)
     }

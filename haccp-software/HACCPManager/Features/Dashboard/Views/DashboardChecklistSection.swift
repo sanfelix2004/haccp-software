@@ -21,14 +21,14 @@ struct DashboardChecklistSection: View {
                     ForEach(items) { item in
                         HStack {
                             Text(item.title)
-                                .foregroundColor(.white)
+                                .foregroundStyle(ThemeManager.shared.colorTextPrimary)
                             Spacer()
                             Text(item.subtitle)
-                                .foregroundColor(Color.white.opacity(0.72))
+                                .foregroundColor(ThemeManager.shared.colorTextSecondary)
                                 .font(.subheadline)
                         }
                         .padding(.vertical, 8)
-                        Divider().background(Color.white.opacity(0.1))
+                        Divider().background(ThemeManager.shared.colorDivider)
                     }
                 }
             }

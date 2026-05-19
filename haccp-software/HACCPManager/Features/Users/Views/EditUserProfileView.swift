@@ -41,22 +41,26 @@ struct EditUserProfileView: View {
         }
     }
     
+    @Environment(\.theme) private var theme
+
     var body: some View {
         NavigationStack {
             ZStack {
+                theme.colorBackground.ignoresSafeArea()
+
                 Form {
                     Section(header: Text("Informazioni Personali")) {
                         TextField("Nome Completo", text: $tempName)
-                            .foregroundColor(.white)
+                            .foregroundStyle(ThemeManager.shared.colorTextPrimary)
                         
                         if user.role == .master {
                             TextField("Email Professionale", text: $tempEmail)
-                                .foregroundColor(.white)
+                                .foregroundStyle(ThemeManager.shared.colorTextPrimary)
                                 .keyboardType(.emailAddress)
                                 .autocapitalization(.none)
                             
                             TextField("Telefono", text: $tempPhone)
-                                .foregroundColor(.white)
+                                .foregroundStyle(ThemeManager.shared.colorTextPrimary)
                                 .keyboardType(.phonePad)
                         }
                         
@@ -76,7 +80,7 @@ struct EditUserProfileView: View {
                                 }
                             }
                             .pickerStyle(.menu)
-                            .foregroundColor(.white)
+                            .foregroundStyle(ThemeManager.shared.colorTextPrimary)
                             
                             Button("Resetta PIN a '0000'") {
                                 showResetPin = true
@@ -87,10 +91,11 @@ struct EditUserProfileView: View {
                     
                     Section(header: Text("Note Professionali")) {
                         TextEditor(text: $tempNotes)
-                            .foregroundColor(.white)
+                            .foregroundStyle(ThemeManager.shared.colorTextPrimary)
                             .frame(minHeight: 100)
                     }
                 }
+                .scrollContentBackground(.hidden)
                 .navigationTitle(user.id == appState.currentUserId ? "Mio Profilo" : "Modifica Utente")
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
@@ -137,9 +142,8 @@ struct EditUserProfileView: View {
                 }
             }
         }
-        .preferredColorScheme(.dark)
     }
-    
+
     private var requiresMasterAuthorization: Bool {
         currentSessionUser?.role == .master && user.id != appState.currentUserId
     }

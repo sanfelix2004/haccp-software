@@ -27,7 +27,7 @@ struct ChecklistRunView: View {
             ProgressView(value: run.progressPercentage, total: 100)
                 .tint(progressTint)
             Text("\(completedItems)/\(totalItems) completati · \(Int(run.progressPercentage))%")
-                .foregroundColor(.white)
+                .foregroundStyle(ThemeManager.shared.colorTextPrimary)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
             ScrollView {
@@ -82,7 +82,7 @@ private struct ChecklistRunItemCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(result.titleSnapshot).foregroundColor(.white).font(.headline)
+            Text(result.titleSnapshot).foregroundStyle(ThemeManager.shared.colorTextPrimary).font(.headline)
             Picker("Esito", selection: $selectedValue) {
                 Text(ChecklistItemResultValue.pass.label).tag(ChecklistItemResultValue.pass)
                 Text(ChecklistItemResultValue.fail.label).tag(ChecklistItemResultValue.fail)
@@ -92,7 +92,7 @@ private struct ChecklistRunItemCard: View {
             if selectedValue == .fail {
                 Text("Criticita")
                     .font(.caption2.bold())
-                    .foregroundColor(.white)
+                    .foregroundStyle(ThemeManager.shared.colorTextPrimary)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
                     .background(Color.red.opacity(0.3))
@@ -102,10 +102,10 @@ private struct ChecklistRunItemCard: View {
                 .textFieldStyle(.roundedBorder)
             Text("Autosalvataggio attivo")
                 .font(.caption2)
-                .foregroundColor(.gray)
+                .foregroundStyle(ThemeManager.shared.colorTextSecondary)
         }
         .padding(12)
-        .background(Color.white.opacity(0.05))
+        .background(ThemeManager.shared.colorSurface)
         .cornerRadius(12)
         .onAppear {
             selectedValue = result.result

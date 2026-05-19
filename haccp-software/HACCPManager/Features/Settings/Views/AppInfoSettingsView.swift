@@ -7,9 +7,8 @@ struct AppInfoSettingsView: View {
             VStack(spacing: 16) {
                 Image(systemName: "app.fill")
                     .font(.system(size: 44))
-                    .foregroundStyle(.white)
-                    .frame(width: 80, height: 80)
-                    .background(Color.red)
+                    .foregroundStyle(ThemeManager.shared.colorTextOnPrimary)
+                    .frame(width: 80, height: 80).background(Color.red)
                     .cornerRadius(18)
                 
                 VStack(spacing: 4) {
@@ -18,7 +17,7 @@ struct AppInfoSettingsView: View {
                         .fontWeight(.black)
                     Text(AppVersionService.currentVersion)
                         .font(.caption)
-                        .foregroundColor(.gray)
+                        .foregroundStyle(ThemeManager.shared.colorTextSecondary)
                 }
             }
             
@@ -29,7 +28,7 @@ struct AppInfoSettingsView: View {
                 InfoLinkRow(title: "Supporto Tecnico", icon: "lifepreserver.fill")
             }
             .padding()
-            .background(Color.white.opacity(0.05))
+            .background(ThemeManager.shared.colorSurface)
             .cornerRadius(16)
             
             VStack(alignment: .leading, spacing: 12) {
@@ -43,11 +42,11 @@ struct AppInfoSettingsView: View {
                 
                 Text("HACCP Manager salva tutti i dati critici esclusivamente nella memoria sicura del tuo iPad. Non inviamo log o temperature a server esterni per garantire la massima riservatezza del tuo locale.")
                     .font(.caption)
-                    .foregroundColor(.gray)
+                    .foregroundStyle(ThemeManager.shared.colorTextSecondary)
                     .lineSpacing(4)
             }
             .padding()
-            .background(Color.white.opacity(0.05))
+            .background(ThemeManager.shared.colorSurface)
             .cornerRadius(16)
         }
     }
@@ -61,14 +60,14 @@ struct InfoLinkRow: View {
         Button(action: {}) {
             HStack(spacing: 16) {
                 Image(systemName: icon)
-                    .foregroundColor(.gray)
+                    .foregroundStyle(ThemeManager.shared.colorTextSecondary)
                     .frame(width: 24)
                 Text(title)
-                    .foregroundColor(.white)
+                    .foregroundStyle(ThemeManager.shared.colorTextPrimary)
                 Spacer()
                 Image(systemName: "arrow.up.right")
                     .font(.caption2)
-                    .foregroundColor(.gray)
+                    .foregroundStyle(ThemeManager.shared.colorTextSecondary)
             }
         }
     }
