@@ -21,19 +21,21 @@ struct EmailVerificationView: View {
                     Text("Verifica Email")
                         .font(.title)
                         .fontWeight(.bold)
+                        .foregroundStyle(ThemeManager.shared.colorTextPrimary)
                     
                     Text("Per procedere con operazioni sensibili, inserisci il codice di sicurezza.")
                         .font(.subheadline)
-                        .foregroundColor(.gray)
+                        .foregroundStyle(ThemeManager.shared.colorTextSecondary)
                         .multilineTextAlignment(.center)
                     
                     Text("Verifica Identità")
                         .font(.title)
                         .fontWeight(.bold)
+                        .foregroundStyle(ThemeManager.shared.colorTextPrimary)
                     
                     Text("Per verificare l'email, inserisci il tuo PIN attuale.")
                         .font(.subheadline)
-                        .foregroundColor(.gray)
+                        .foregroundStyle(ThemeManager.shared.colorTextSecondary)
                         .multilineTextAlignment(.center)
                 }
                 .padding(.top, 40)
@@ -44,7 +46,7 @@ struct EmailVerificationView: View {
                         .multilineTextAlignment(.center)
                         .keyboardType(.numberPad)
                         .padding()
-                        .background(Color.white.opacity(0.1))
+                        .background(ThemeManager.shared.colorDivider)
                         .cornerRadius(12)
                         .onChange(of: pin) { newValue in
                             if newValue.count > 4 {
@@ -62,7 +64,7 @@ struct EmailVerificationView: View {
                         HStack {
                             if isVerifying {
                                 ProgressView()
-                                    .tint(.white)
+                                    .tint(ThemeManager.shared.colorPrimary)
                                     .padding(.trailing, 8)
                             }
                             Text("Conferma")
@@ -70,8 +72,8 @@ struct EmailVerificationView: View {
                         }
                         .frame(maxWidth: .infinity)
                         .padding()
-                        .background(pin.count == 4 ? Color.red : Color.gray)
-                        .foregroundColor(.white)
+                        .background(pin.count == 4 ? ThemeManager.shared.colorPrimary : ThemeManager.shared.colorDivider)
+                        .foregroundStyle(pin.count == 4 ? ThemeManager.shared.colorTextOnPrimary : ThemeManager.shared.colorTextSecondary)
                         .cornerRadius(12)
                     }
                     .disabled(pin.count != 4 || isVerifying)
@@ -82,14 +84,13 @@ struct EmailVerificationView: View {
                 
                 Spacer()
             }
-            .background(Color.black.ignoresSafeArea())
+            .background(ThemeManager.shared.colorBackground.ignoresSafeArea())
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Chiudi") { dismiss() }
                 }
             }
         }
-        .preferredColorScheme(.dark)
     }
     
     private func verifyPin() {

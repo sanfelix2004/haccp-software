@@ -4,6 +4,7 @@ import SwiftData
 struct UsersManagementView: View {
     @Environment(\.modelContext) private var modelContext
     @EnvironmentObject var appState: AppState
+    @Environment(\.theme) private var theme
     @Query(sort: \LocalUser.name) private var users: [LocalUser]
     
     @State private var showCreateUser = false
@@ -27,7 +28,7 @@ struct UsersManagementView: View {
     
     var body: some View {
         ZStack {
-            ThemeManager.shared.colorBackground.ignoresSafeArea()
+            theme.colorBackground.ignoresSafeArea()
             
             VStack(spacing: 0) {
                 // --- ACTUAL LIST ---
@@ -36,7 +37,7 @@ struct UsersManagementView: View {
                         ForEach(filteredUsers) { user in
                             UserRow(user: user)
                                 .contentShape(Rectangle())
-                                .listRowBackground(Color.white.opacity(0.05))
+                                .listRowBackground(theme.colorSurface)
                                 .onTapGesture {
                                     if user.role == .master {
                                         // Do nothing or show a haptic feedback
@@ -54,23 +55,23 @@ struct UsersManagementView: View {
                         Text("Membri del Team")
                             .font(.caption)
                             .fontWeight(.bold)
-                            .foregroundColor(.gray)
+                            .foregroundStyle(theme.colorTextSecondary)
                     }
                 }
                 .listStyle(.insetGrouped)
                 .scrollContentBackground(.hidden)
                 .searchable(text: $searchText, prompt: "Cerca collaboratore...")
-                .foregroundStyle(.white)
-                .background(Color.black)
+                .foregroundStyle(theme.colorTextPrimary)
+                .background(theme.colorBackground)
                 
                 // SWIPE HINT
                 HStack(spacing: 8) {
                     Image(systemName: "hand.draw.fill")
-                        .foregroundColor(.red)
+                        .foregroundStyle(theme.colorPrimary)
                     Text("Scorri a sinistra per eliminare (escluso MASTER)")
                         .font(.caption)
                         .fontWeight(.bold)
-                        .foregroundColor(.gray)
+                        .foregroundStyle(theme.colorTextSecondary)
                 }
                 .padding(.bottom, 16)
             }
@@ -90,11 +91,15 @@ struct UsersManagementView: View {
                             .padding(.horizontal, 24)
                             .padding(.vertical, 16)
                             .background(
-                                LinearGradient(colors: [.red, Color(hex: "#E63946")], startPoint: .topLeading, endPoint: .bottomTrailing)
+                                LinearGradient(
+                                    colors: [theme.colorPrimary, theme.colorPrimary.opacity(0.85)],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
                             )
-                            .foregroundColor(.white)
+                            .foregroundStyle(theme.colorTextOnPrimary)
                             .cornerRadius(30)
-                            .shadow(color: .red.opacity(0.4), radius: 20, x: 0, y: 10)
+                            .shadow(color: theme.colorPrimary.opacity(0.35), radius: 20, x: 0, y: 10)
                         }
                         .padding(.trailing, 30)
                         .padding(.bottom, 30)
@@ -194,7 +199,7 @@ struct UsersManagementView: View {
                 
                 Text("Inizia a costruire il tuo team per gestire i controlli HACCP del ristorante in modo granulare.")
                     .multilineTextAlignment(.center)
-                    .foregroundColor(.gray)
+                    .foregroundStyle(ThemeManager.shared.colorTextSecondary)
                     .padding(.horizontal, 40)
             }
             
@@ -204,7 +209,7 @@ struct UsersManagementView: View {
                     .padding(.horizontal, 40)
                     .padding(.vertical, 16)
                     .background(Color.white)
-                    .foregroundColor(.black)
+                    .foregroundStyle(ThemeManager.shared.colorTextPrimary)
                     .cornerRadius(12)
             }
             
@@ -232,7 +237,8 @@ struct UsersManagementView: View {
 
 struct UserRow: View {
     let user: LocalUser
-    
+    @Environment(\.theme) private var theme
+
     var body: some View {
         HStack(spacing: 16) {
             // Avatar
@@ -249,7 +255,7 @@ struct UserRow: View {
                         .frame(width: 48, height: 48)
                     
                     Text(String(user.name.prefix(1)).uppercased())
-                        .foregroundColor(.white)
+                        .foregroundStyle(theme.colorTextOnPrimary)
                         .font(.headline.bold())
                 }
             }
@@ -258,7 +264,7 @@ struct UserRow: View {
                 HStack(spacing: 8) {
                     Text(user.name)
                         .font(.headline)
-                        .foregroundColor(.white)
+                        .foregroundStyle(theme.colorTextPrimary)
                     
                     if user.role == .master {
                         HStack(spacing: 4) {
@@ -270,7 +276,7 @@ struct UserRow: View {
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
                         .background(LinearGradient(colors: [Color(hex: "#FFD700"), Color(hex: "#D4AF37")], startPoint: .topLeading, endPoint: .bottomTrailing))
-                        .foregroundColor(.black)
+                        .foregroundStyle(theme.isDark ? theme.colorTextPrimary : Color(hex: "#1A1D21"))
                         .clipShape(Capsule())
                     }
                 }
@@ -279,12 +285,12 @@ struct UserRow: View {
                     Text("Account protetto")
                         .font(.caption)
                         .fontWeight(.bold)
-                        .foregroundColor(.gray)
+                        .foregroundStyle(theme.colorTextSecondary)
                         .italic()
                 } else {
                     Text(user.role.rawValue)
                         .font(.caption)
-                        .foregroundColor(.red.opacity(0.8))
+                        .foregroundStyle(theme.colorPrimary)
                         .fontWeight(.bold)
                         .tracking(1)
                 }
@@ -295,11 +301,11 @@ struct UserRow: View {
             if user.role != .master {
                 Image(systemName: "chevron.right")
                     .font(.caption)
-                    .foregroundColor(.gray.opacity(0.5))
+                    .foregroundStyle(theme.colorTextSecondary)
             } else {
                 Image(systemName: "lock.fill")
                     .font(.caption2)
-                    .foregroundColor(.gray.opacity(0.3))
+                    .foregroundStyle(theme.colorTextSecondary.opacity(0.5))
             }
         }
         .padding(.vertical, 8)

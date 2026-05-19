@@ -6,15 +6,17 @@ import Observation
 struct ContentView: View {
     @EnvironmentObject var appState: AppState
     @Environment(\.scenePhase) private var scenePhase
-    
+    @Environment(\.modelContext) private var modelContext
+
     @Query private var users: [LocalUser]
     @Query private var restaurants: [Restaurant]
     @Query private var stores: [AppDataStore]
-    
+
     @State private var lastActivity = Date()
     @State private var themeManager = ThemeManager.shared
     @State private var settingsStorage = SettingsStorageService.shared
-    
+    @State private var didAttachSwiftDataSettings = false
+
     var body: some View {
         Group {
             if appState.showSplash {
@@ -42,10 +44,13 @@ struct ContentView: View {
             }
         }
         .onAppear {
-            // Auto-selection logic for single restaurant
+            attachSettingsStorageIfNeeded()
             if appState.isAuthenticated && restaurants.count == 1 {
                 appState.activeRestaurantId = restaurants.first?.id
             }
+        }
+        .task {
+            attachSettingsStorageIfNeeded()
         }
         .onChange(of: appState.isAuthenticated) { _, authenticated in
             if authenticated && restaurants.count == 1 {
@@ -56,21 +61,12 @@ struct ContentView: View {
             lastActivity = Date()
         }
         .themeProvider(themeManager)
+        .tint(themeManager.colorPrimary)
         .preferredColorScheme(themeManager.preferredColorScheme)
-        .environment(\.dynamicTypeSize, .medium)
-        // Background applicato a livello root, segue lo style scelto (solid/gradient/animated...).
         .background(
             ThemedRootBackground(manager: themeManager)
                 .ignoresSafeArea()
         )
-        // Animazioni globali ai cambi tema/layout, regolate dal motion level.
-        .animation(themeManager.motion.standard, value: settingsStorage.appearance.themePresetID)
-        .animation(themeManager.motion.standard, value: settingsStorage.appearance.layoutModeRaw)
-        .animation(themeManager.motion.standard, value: settingsStorage.appearance.dashboardStyleRaw)
-        .animation(themeManager.motion.standard, value: settingsStorage.appearance.sidebarStyleRaw)
-        .animation(themeManager.motion.standard, value: settingsStorage.appearance.backgroundStyleRaw)
-        .animation(themeManager.motion.standard, value: settingsStorage.appearance.animationLevelRaw)
-        .animation(themeManager.motion.standard, value: settingsStorage.appearance.followsSystemAppearance)
         .onChange(of: scenePhase) { _, newPhase in
             if newPhase == .active && appState.isAuthenticated {
                 SecurityService.shared.checkInactivity(lastActivity: lastActivity) {
@@ -91,6 +87,12 @@ struct ContentView: View {
             guard let user = users.first(where: { $0.id == currentUserId }), user.role == .master else { return }
             appState.evaluateMasterFirstAccess(masterId: user.id)
         }
+    }
+
+    private func attachSettingsStorageIfNeeded() {
+        guard !didAttachSwiftDataSettings else { return }
+        settingsStorage.setup(with: modelContext)
+        didAttachSwiftDataSettings = true
     }
 }
 

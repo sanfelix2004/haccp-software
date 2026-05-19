@@ -16,7 +16,7 @@ struct OilPointGridView: View {
                         HStack {
                             Text(point.name)
                                 .font(.headline)
-                                .foregroundColor(.white)
+                                .foregroundStyle(ThemeManager.shared.colorTextPrimary)
                                 .lineLimit(2)
                             Spacer()
                             Image(systemName: "drop.fill")
@@ -28,19 +28,19 @@ struct OilPointGridView: View {
                                 .foregroundColor(statusColor(for: point))
                             Text(last.checkedAt.formatted(date: .abbreviated, time: .shortened))
                                 .font(.caption2)
-                                .foregroundColor(.gray)
+                                .foregroundStyle(ThemeManager.shared.colorTextSecondary)
                         } else {
                             Text("Nessun controllo")
                                 .font(.caption)
-                                .foregroundColor(.gray)
+                                .foregroundStyle(ThemeManager.shared.colorTextSecondary)
                         }
                     }
                     .frame(maxWidth: .infinity, minHeight: 104, alignment: .topLeading)
                     .padding(12)
-                    .background(Color.white.opacity(0.06))
+                    .background(ThemeManager.shared.colorSurfaceElevated)
                     .overlay(
                         RoundedRectangle(cornerRadius: 14)
-                            .stroke(selectedPointId == point.id ? Color.green : Color.white.opacity(0.1), lineWidth: selectedPointId == point.id ? 2 : 1)
+                            .stroke(selectedPointId == point.id ? Color.green : ThemeManager.shared.colorDivider, lineWidth: selectedPointId == point.id ? 2 : 1)
                     )
                     .cornerRadius(14)
                 }

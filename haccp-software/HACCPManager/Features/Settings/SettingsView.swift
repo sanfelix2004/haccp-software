@@ -58,7 +58,7 @@ struct SettingsView: View {
                         VStack(spacing: 6) {
                             Text("HACCP Manager Premium Edition")
                                 .font(.headline)
-                            Text("Versione 1.0.0 (Build 2026.04)")
+                            Text(AppVersionService.currentVersion)
                                 .font(.caption)
                             Text("© 2026 Romanazzi IT Solutions. All rights reserved.")
                                 .font(.caption2)
@@ -75,15 +75,17 @@ struct SettingsView: View {
             // Detail Navigation (Using a custom modal-like overlay for premium feel on iPad)
             if let section = viewModel.selectedSection {
                 ZStack {
-                    Color.black.opacity(0.85).ignoresSafeArea()
+                    ThemeManager.shared.colorBackground.opacity(0.92)
+                        .ignoresSafeArea()
                         .onTapGesture { viewModel.selectedSection = nil }
-                    
+
                     SettingsDetailContainer(section: section, currentUser: currentUser) {
                         viewModel.selectedSection = nil
                     }
                     .transition(.move(edge: .trailing).combined(with: .opacity))
                 }
                 .zIndex(100)
+                .allowsHitTesting(true)
             }
         }
         .onAppear {
@@ -162,7 +164,7 @@ struct SettingsDetailContainer: View {
         .frame(maxHeight: 900)
         .background(ThemeManager.shared.colorSurface)
         .cornerRadius(32)
-        .shadow(color: .black.opacity(0.6), radius: 40)
+        .shadow(color: ThemeManager.shared.shadows.elevated.color, radius: 40)
         .padding(40)
     }
     

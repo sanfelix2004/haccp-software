@@ -151,14 +151,14 @@ struct OilControlView: View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title)
                 .font(.caption)
-                .foregroundColor(.gray)
+                .foregroundStyle(ThemeManager.shared.colorTextSecondary)
             Text(value)
                 .font(.title3.bold())
-                .foregroundColor(.white)
+                .foregroundStyle(ThemeManager.shared.colorTextPrimary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(10)
-        .background(Color.white.opacity(0.06))
+        .background(ThemeManager.shared.colorSurfaceElevated)
         .cornerRadius(12)
     }
 
@@ -171,7 +171,7 @@ struct OilControlView: View {
                 showMasterAuth = true
             }
             .buttonStyle(.bordered)
-            .tint(.white)
+            .tint(ThemeManager.shared.colorPrimary)
 
             Button("Modifica") {
                 guard let selected = vm.selectedPoint else {
@@ -184,7 +184,7 @@ struct OilControlView: View {
                 showMasterAuth = true
             }
             .buttonStyle(.bordered)
-            .tint(.white)
+            .tint(ThemeManager.shared.colorPrimary)
             .disabled(vm.selectedPoint == nil)
 
             Button("Elimina", role: .destructive) {
@@ -238,7 +238,7 @@ struct OilControlView: View {
                 }
                 .pickerStyle(.menu)
             }
-            .foregroundColor(.white)
+            .foregroundStyle(ThemeManager.shared.colorTextPrimary)
         }
     }
 

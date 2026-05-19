@@ -33,16 +33,16 @@ struct ProfileSettingsView: View {
                                 .overlay(
                                     Text(String(user.name.prefix(1)).uppercased())
                                         .font(.system(size: 60, weight: .black, design: .rounded))
-                                        .foregroundColor(.white)
+                                        .foregroundStyle(ThemeManager.shared.colorTextPrimary)
                                 )
                         }
                         
                         // Edit Overlay
                         PhotosPicker(selection: $selectedItem, matching: .images) {
                             Circle()
-                                .fill(Color.black.opacity(0.5))
+                                .fill(ThemeManager.shared.colorScrim)
                                 .frame(width: 40, height: 40)
-                                .overlay(Image(systemName: "camera.fill").foregroundColor(.white))
+                                .overlay(Image(systemName: "camera.fill").foregroundStyle(ThemeManager.shared.colorTextPrimary))
                         }
                         .offset(x: 45, y: 45)
                     }
@@ -80,18 +80,18 @@ struct ProfileSettingsView: View {
                         showingNameEdit = true
                     }
                     
-                    Divider().background(Color.white.opacity(0.1))
+                    Divider().background(ThemeManager.shared.colorDivider)
                     
                     StaticSettingRow(title: "Ruolo", value: user.role.rawValue, icon: "shield.fill")
                     
                     if user.role == .master {
-                        Divider().background(Color.white.opacity(0.1))
+                        Divider().background(ThemeManager.shared.colorDivider)
                         EditableSettingRow(title: "Email Professionale", value: user.email ?? "Non configurata") {
                             tempValue = user.email ?? ""
                             editField = .email
                             showingDetailEdit = true
                         }
-                        Divider().background(Color.white.opacity(0.1))
+                        Divider().background(ThemeManager.shared.colorDivider)
                         EditableSettingRow(title: "Telefono", value: user.phoneNumber ?? "Non configurato") {
                             tempValue = user.phoneNumber ?? ""
                             editField = .phone
@@ -99,7 +99,7 @@ struct ProfileSettingsView: View {
                         }
                     }
                 }
-                .background(Color.white.opacity(0.05))
+                .background(ThemeManager.shared.colorSurface)
                 .cornerRadius(20)
                 
                 // Actions
@@ -109,7 +109,7 @@ struct ProfileSettingsView: View {
                             .font(.headline)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 18)
-                            .background(Color.white.opacity(0.1))
+                            .background(ThemeManager.shared.colorDivider)
                             .cornerRadius(16)
                     }
                     
@@ -175,17 +175,17 @@ struct StaticSettingRow: View {
         HStack(spacing: 20) {
             Image(systemName: icon)
                 .font(.title3)
-                .foregroundColor(.gray)
+                .foregroundStyle(ThemeManager.shared.colorTextSecondary)
                 .frame(width: 30)
             
             VStack(alignment: .leading, spacing: 4) {
                 Text(title.uppercased())
                     .font(.system(size: 10, weight: .black))
-                    .foregroundColor(.gray)
+                    .foregroundStyle(ThemeManager.shared.colorTextSecondary)
                     .tracking(1)
                 Text(value)
                     .font(.body)
-                    .foregroundColor(.white)
+                    .foregroundStyle(ThemeManager.shared.colorTextPrimary)
             }
             Spacer()
         }
@@ -213,12 +213,12 @@ struct EditableSettingRow: View {
                         .tracking(1)
                     Text(value)
                         .font(.body)
-                        .foregroundColor(.white)
+                        .foregroundStyle(ThemeManager.shared.colorTextPrimary)
                 }
                 Spacer()
                 Image(systemName: "chevron.right")
                     .font(.caption)
-                    .foregroundColor(.white.opacity(0.3))
+                    .foregroundStyle(ThemeManager.shared.colorDivider)
             }
             .padding(20)
         }
@@ -245,11 +245,10 @@ struct NameEditSheet: View {
                         
                         TextField("Nome", text: $name)
                             .padding()
-                            .background(Color.white.opacity(0.1))
+                            .background(ThemeManager.shared.colorDivider)
                             .cornerRadius(12)
                             .font(.title3)
-                            .foregroundColor(.white)
-                            .colorScheme(.dark)
+                            .foregroundStyle(ThemeManager.shared.colorTextPrimary)
                     }
                     
                     Spacer()
@@ -257,10 +256,9 @@ struct NameEditSheet: View {
                     Button(action: onSave) {
                         Text("SALVA MODIFICHE")
                             .font(.headline)
-                            .foregroundColor(.white)
+                            .foregroundStyle(ThemeManager.shared.colorTextOnPrimary)
                             .padding()
-                            .frame(maxWidth: .infinity)
-                            .background(Color.red)
+                            .frame(maxWidth: .infinity).background(Color.red)
                             .cornerRadius(12)
                     }
                 }
@@ -312,10 +310,9 @@ struct PinChangeSheet: View {
                         Button(action: savePin) {
                             Text("AGGIORNA PIN")
                                 .font(.headline)
-                                .foregroundColor(.white)
+                                .foregroundStyle(ThemeManager.shared.colorTextOnPrimary)
                                 .padding()
-                                .frame(maxWidth: .infinity)
-                                .background(Color.red)
+                                .frame(maxWidth: .infinity).background(Color.red)
                                 .cornerRadius(12)
                         }
                         .disabled(newPin.count != 4 || newPin != confirmPin)
@@ -377,13 +374,12 @@ struct DetailEditSheet: View {
                         
                         TextField(field.rawValue, text: $value)
                             .padding()
-                            .background(Color.white.opacity(0.1))
+                            .background(ThemeManager.shared.colorDivider)
                             .cornerRadius(12)
                             .font(.title3)
-                            .foregroundColor(.white)
+                            .foregroundStyle(ThemeManager.shared.colorTextPrimary)
                             .keyboardType(field == ProfileSettingsView.EditField.email ? .emailAddress : .phonePad)
                             .autocapitalization(.none)
-                            .colorScheme(.dark)
                     }
                     
                     Spacer()
@@ -391,10 +387,9 @@ struct DetailEditSheet: View {
                     Button(action: onSave) {
                         Text("AGGIORNA")
                             .font(.headline)
-                            .foregroundColor(.white)
+                            .foregroundStyle(ThemeManager.shared.colorTextOnPrimary)
                             .padding()
-                            .frame(maxWidth: .infinity)
-                            .background(Color.red)
+                            .frame(maxWidth: .infinity).background(Color.red)
                             .cornerRadius(12)
                     }
                 }
@@ -426,10 +421,9 @@ struct SecureFieldRow: View {
             SecureField("****", text: $text)
                 .keyboardType(.numberPad)
                 .padding()
-                .background(Color.white.opacity(0.1))
+                .background(ThemeManager.shared.colorDivider)
                 .cornerRadius(12)
-                .foregroundColor(.white)
-                .colorScheme(.dark)
+                .foregroundStyle(ThemeManager.shared.colorTextPrimary)
                 .onChange(of: text) { newValue in
                     if newValue.count > 4 {
                         text = String(newValue.prefix(4))

@@ -214,7 +214,7 @@ struct BlastChillingView: View {
                 .foregroundColor(vm.selectedCategoryId == id ? .white : .gray)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
-                .background(vm.selectedCategoryId == id ? Color.red.opacity(0.65) : Color.white.opacity(0.08))
+                .background(vm.selectedCategoryId == id ? Color.red.opacity(0.65) : ThemeManager.shared.colorDivider)
                 .cornerRadius(10)
         }
         .buttonStyle(.plain)
@@ -241,14 +241,14 @@ struct BlastChillingView: View {
                 vm.showAddProductionSheet = true
             }
             .buttonStyle(.bordered)
-            .tint(.white)
+            .tint(ThemeManager.shared.colorPrimary)
 
             Button("Modifica") {
                 guard vm.selectedProduction != nil else { return }
                 showMasterEditAuth = true
             }
             .buttonStyle(.bordered)
-            .tint(.white)
+            .tint(ThemeManager.shared.colorPrimary)
             .disabled(vm.selectedProduction == nil)
 
             Button("Elimina", role: .destructive) {
@@ -265,7 +265,7 @@ struct BlastChillingView: View {
                 vm.selectedProduction = nil
             }
             .buttonStyle(.bordered)
-            .tint(.white)
+            .tint(ThemeManager.shared.colorPrimary)
 
             Button(selectedInProgressRecord == nil ? "Inizia abbattimento" : "Termina abbattimento") {
                 if let inProgress = selectedInProgressRecord {
@@ -296,10 +296,10 @@ struct BlastChillingView: View {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(record.productionNameSnapshot)
                                     .font(.headline)
-                                    .foregroundColor(.white)
+                                    .foregroundStyle(ThemeManager.shared.colorTextPrimary)
                                 Text("\(record.productionCategorySnapshot) · Inizio \(record.startedAt.formatted(date: .abbreviated, time: .shortened)) · \(record.initialTemperature, specifier: "%.1f") °C")
                                     .font(.caption)
-                                    .foregroundColor(.gray)
+                                    .foregroundStyle(ThemeManager.shared.colorTextSecondary)
                             }
                             Spacer()
                             Button("Termina") {
@@ -311,7 +311,7 @@ struct BlastChillingView: View {
                             .tint(.orange)
                         }
                         .padding(10)
-                        .background(Color.white.opacity(0.05))
+                        .background(ThemeManager.shared.colorSurface)
                         .cornerRadius(10)
                     }
                 }
@@ -354,7 +354,7 @@ struct BlastChillingView: View {
                 DatePicker("Dal", selection: $vm.historyStartDate, displayedComponents: .date)
                 DatePicker("Al", selection: $vm.historyEndDate, displayedComponents: .date)
             }
-            .foregroundColor(.white)
+            .foregroundStyle(ThemeManager.shared.colorTextPrimary)
         }
     }
 

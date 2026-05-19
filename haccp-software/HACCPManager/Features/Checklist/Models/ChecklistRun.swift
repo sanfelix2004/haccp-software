@@ -16,6 +16,7 @@ final class ChecklistRun {
     var progressPercentage: Double
     var notes: String?
     var isArchived: Bool
+    var archivedAt: Date? = nil
     var createdAt: Date
 
     var status: ChecklistRunStatus {

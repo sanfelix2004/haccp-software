@@ -19,6 +19,8 @@ final class OilControlRecord {
     var createdByUserId: UUID
     var createdByNameSnapshot: String
     var nonCompliancePhotoData: Data?
+    var isArchived: Bool = false
+    var archivedAt: Date?
 
     var oilStatus: OilStatus {
         get {

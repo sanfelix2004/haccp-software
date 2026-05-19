@@ -17,10 +17,10 @@ struct DashboardRecentActivitySection: View {
                 ForEach(activities) { activity in
                     HStack {
                         Text(activity.userName)
-                            .foregroundColor(.white)
+                            .foregroundStyle(ThemeManager.shared.colorTextPrimary)
                         Spacer()
                         Text(activity.action)
-                            .foregroundColor(Color.white.opacity(0.72))
+                            .foregroundColor(ThemeManager.shared.colorTextSecondary)
                     }
                 }
             }

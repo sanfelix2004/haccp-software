@@ -80,94 +80,108 @@ extension AppTheme {
 
     /// Identificativi stabili delle preset. Usati per persistenza.
     enum PresetID {
+        static let darkPremium   = "dark_premium"
+        static let lightPremium  = "light_premium"
+        static let midnight      = "midnight"
+        static let haccpRed      = "haccp_red"
+        static let minimalWhite  = "minimal_white"
+        // Legacy IDs (migrazione automatica)
         static let haccpDarkPro  = "haccp_dark_pro"
         static let haccpLightPro = "haccp_light_pro"
         static let midnightBlue  = "midnight_blue"
-        static let graphite      = "graphite"
         static let kitchenNeon   = "kitchen_neon"
         static let cleanWhite    = "clean_white"
     }
 
-    /// Tutti i preset esposti all'utente.
+    /// Preset selezionabili in Impostazioni → Aspetto.
     static let allPresets: [AppTheme] = [
-        .haccpDarkPro,
-        .haccpLightPro,
-        .midnightBlue,
-        .graphite,
-        .kitchenNeon,
-        .cleanWhite
+        .darkPremium,
+        .lightPremium,
+        .midnight,
+        .haccpRed,
+        .minimalWhite
     ]
 
     /// Preset di default in caso di prima esecuzione o ID non riconosciuto.
-    static let defaultPreset: AppTheme = .haccpDarkPro
+    static let defaultPreset: AppTheme = .darkPremium
 
     static func preset(forID id: String) -> AppTheme {
-        allPresets.first(where: { $0.id == id }) ?? defaultPreset
+        let migrated: String = {
+            switch id {
+            case PresetID.haccpDarkPro: return PresetID.darkPremium
+            case PresetID.haccpLightPro: return PresetID.lightPremium
+            case PresetID.midnightBlue: return PresetID.midnight
+            case PresetID.kitchenNeon: return PresetID.haccpRed
+            case PresetID.cleanWhite: return PresetID.minimalWhite
+            default: return id
+            }
+        }()
+        return allPresets.first(where: { $0.id == migrated }) ?? defaultPreset
     }
 
     // MARK: Preset definitions
 
-    static let haccpDarkPro = AppTheme(
-        id: PresetID.haccpDarkPro,
-        name: "HACCP Dark Pro",
-        descriptionText: "Nero profondo, rosso brand HACCP e vetro blur premium.",
+    static let darkPremium = AppTheme(
+        id: PresetID.darkPremium,
+        name: "Dark Premium",
+        descriptionText: "Nero profondo, rosso HACCP premium e profondità enterprise.",
         isLight: false,
         backgroundHex:        "#0A0A0A",
         backgroundEndHex:     "#141414",
-        surfaceHex:           "#161616",
-        surfaceElevatedHex:   "#1F1F1F",
+        surfaceHex:           "#141414",
+        surfaceElevatedHex:   "#1E1E1E",
         dividerHex:           "#2A2A2A",
-        primaryHex:           "#E63946",
-        accentHex:            "#FFD700",
-        secondaryHex:         "#3A86FF",
-        textPrimaryHex:       "#FFFFFF",
-        textSecondaryHex:     "#9CA3AF",
+        primaryHex:           "#FF4D4D",
+        accentHex:            "#FF6B6B",
+        secondaryHex:         "#5B8DEF",
+        textPrimaryHex:       "#F5F5F5",
+        textSecondaryHex:     "#A3A3A3",
         textOnPrimaryHex:     "#FFFFFF",
         successHex:           "#34C759",
-        warningHex:           "#FFCC00",
-        errorHex:             "#FF3B30",
+        warningHex:           "#FF9F43",
+        errorHex:             "#FF4D4D",
         infoHex:              "#5AC8FA",
-        borderHex:            "#2D2D2D",
-        glowAccentHex:        nil,
-        defaultDashboardStyle: .cardsClassic,
-        defaultSidebarStyle:   .full,
+        borderHex:            "#333333",
+        glowAccentHex:        "#FF4D4D",
+        defaultDashboardStyle: .enterprise,
+        defaultSidebarStyle:   .floating,
         defaultBackgroundStyle: .gradient,
-        cornerRadiusBase: 16,
+        cornerRadiusBase: 18,
         prefersDarkColorScheme: true
     )
 
-    static let haccpLightPro = AppTheme(
-        id: PresetID.haccpLightPro,
-        name: "HACCP Light Pro",
-        descriptionText: "Bianco e grigio chiaro con accenti rosso HACCP. Look pulito.",
+    static let lightPremium = AppTheme(
+        id: PresetID.lightPremium,
+        name: "Light Premium",
+        descriptionText: "Bianco caldo, rosso elegante — ideale in cucina illuminata.",
         isLight: true,
-        backgroundHex:        "#F5F5F7",
+        backgroundHex:        "#F5F5F5",
         backgroundEndHex:     "#FFFFFF",
         surfaceHex:           "#FFFFFF",
-        surfaceElevatedHex:   "#FFFFFF",
-        dividerHex:           "#E5E5EA",
-        primaryHex:           "#D62828",
-        accentHex:            "#B7791F",
-        secondaryHex:         "#0A66C2",
-        textPrimaryHex:       "#11181C",
-        textSecondaryHex:     "#6B7280",
+        surfaceElevatedHex:   "#FAFAFA",
+        dividerHex:           "#E5E5E5",
+        primaryHex:           "#FF4D4D",
+        accentHex:            "#E63946",
+        secondaryHex:         "#2563EB",
+        textPrimaryHex:       "#0A0A0A",
+        textSecondaryHex:     "#525252",
         textOnPrimaryHex:     "#FFFFFF",
-        successHex:           "#1F8A4C",
-        warningHex:           "#B45309",
-        errorHex:             "#B91C1C",
-        infoHex:              "#0A66C2",
-        borderHex:            "#D1D5DB",
+        successHex:           "#16A34A",
+        warningHex:           "#EA580C",
+        errorHex:             "#DC2626",
+        infoHex:              "#2563EB",
+        borderHex:            "#E0E0E0",
         glowAccentHex:        nil,
         defaultDashboardStyle: .cardsClassic,
-        defaultSidebarStyle:   .full,
+        defaultSidebarStyle:   .blur,
         defaultBackgroundStyle: .minimal,
-        cornerRadiusBase: 14,
+        cornerRadiusBase: 16,
         prefersDarkColorScheme: false
     )
 
-    static let midnightBlue = AppTheme(
-        id: PresetID.midnightBlue,
-        name: "Midnight Blue",
+    static let midnight = AppTheme(
+        id: PresetID.midnight,
+        name: "Midnight",
         descriptionText: "Blu notte e ciano luminoso. Eleganza serale.",
         isLight: false,
         backgroundHex:        "#0B1220",
@@ -194,67 +208,38 @@ extension AppTheme {
         prefersDarkColorScheme: true
     )
 
-    static let graphite = AppTheme(
-        id: PresetID.graphite,
-        name: "Graphite",
-        descriptionText: "Grigio carbone, sobrio ed enterprise. Massima leggibilità.",
+    static let haccpRed = AppTheme(
+        id: PresetID.haccpRed,
+        name: "HACCP Red",
+        descriptionText: "Rosso brand dominante, nero profondo — identità HACCP forte.",
         isLight: false,
-        backgroundHex:        "#1C1C1E",
-        backgroundEndHex:     "#2C2C2E",
-        surfaceHex:           "#2C2C2E",
-        surfaceElevatedHex:   "#3A3A3C",
-        dividerHex:           "#48484A",
-        primaryHex:           "#8E8E93",
-        accentHex:            "#FFFFFF",
-        secondaryHex:         "#AEAEB2",
-        textPrimaryHex:       "#F2F2F7",
-        textSecondaryHex:     "#C7C7CC",
-        textOnPrimaryHex:     "#1C1C1E",
-        successHex:           "#30D158",
-        warningHex:           "#FFD60A",
-        errorHex:             "#FF453A",
-        infoHex:              "#64D2FF",
-        borderHex:            "#48484A",
-        glowAccentHex:        nil,
-        defaultDashboardStyle: .enterprise,
-        defaultSidebarStyle:   .solid,
-        defaultBackgroundStyle: .solid,
-        cornerRadiusBase: 10,
-        prefersDarkColorScheme: true
-    )
-
-    static let kitchenNeon = AppTheme(
-        id: PresetID.kitchenNeon,
-        name: "Kitchen Neon",
-        descriptionText: "Nero assoluto con rosso acceso e glow neon. High-tech.",
-        isLight: false,
-        backgroundHex:        "#000000",
-        backgroundEndHex:     "#0D0306",
-        surfaceHex:           "#0F0F12",
-        surfaceElevatedHex:   "#16161B",
-        dividerHex:           "#2A1014",
-        primaryHex:           "#FF1744",
-        accentHex:            "#FF4081",
-        secondaryHex:         "#00E5FF",
-        textPrimaryHex:       "#FFFFFF",
-        textSecondaryHex:     "#A1A1AA",
+        backgroundHex:        "#0A0A0A",
+        backgroundEndHex:     "#1A0505",
+        surfaceHex:           "#141010",
+        surfaceElevatedHex:   "#1E1414",
+        dividerHex:           "#3D2020",
+        primaryHex:           "#FF4D4D",
+        accentHex:            "#FF8080",
+        secondaryHex:         "#C41E2A",
+        textPrimaryHex:       "#F5F5F5",
+        textSecondaryHex:     "#B3A3A3",
         textOnPrimaryHex:     "#FFFFFF",
-        successHex:           "#39FF14",
-        warningHex:           "#FFEA00",
-        errorHex:             "#FF1744",
-        infoHex:              "#00E5FF",
-        borderHex:            "#FF174433",
-        glowAccentHex:        "#FF1744",
+        successHex:           "#34C759",
+        warningHex:           "#FF9F43",
+        errorHex:             "#FF4D4D",
+        infoHex:              "#5AC8FA",
+        borderHex:            "#4D2828",
+        glowAccentHex:        "#FF4D4D",
         defaultDashboardStyle: .modernNeon,
         defaultSidebarStyle:   .floating,
-        defaultBackgroundStyle: .animated,
-        cornerRadiusBase: 14,
+        defaultBackgroundStyle: .gradient,
+        cornerRadiusBase: 16,
         prefersDarkColorScheme: true
     )
 
-    static let cleanWhite = AppTheme(
-        id: PresetID.cleanWhite,
-        name: "Clean White",
+    static let minimalWhite = AppTheme(
+        id: PresetID.minimalWhite,
+        name: "Minimal White",
         descriptionText: "Ultra minimal bianco puro. Look studio HACCP, asciutto e netto.",
         isLight: true,
         backgroundHex:        "#FFFFFF",
@@ -277,7 +262,14 @@ extension AppTheme {
         defaultDashboardStyle: .minimalFlat,
         defaultSidebarStyle:   .compact,
         defaultBackgroundStyle: .solid,
-        cornerRadiusBase: 8,
+        cornerRadiusBase: 12,
         prefersDarkColorScheme: false
     )
+
+    // Alias legacy (compatibilità codice interno)
+    static var haccpDarkPro: AppTheme { darkPremium }
+    static var haccpLightPro: AppTheme { lightPremium }
+    static var midnightBlue: AppTheme { midnight }
+    static var kitchenNeon: AppTheme { haccpRed }
+    static var cleanWhite: AppTheme { minimalWhite }
 }

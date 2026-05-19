@@ -36,7 +36,7 @@ struct ChecklistTemplatesView: View {
                     }
                 }
                 .buttonStyle(.bordered)
-                .tint(.white)
+                .tint(ThemeManager.shared.colorPrimary)
 
                 Menu("Frequenza") {
                     Button("Tutte") { frequencyFilter = nil }
@@ -45,7 +45,7 @@ struct ChecklistTemplatesView: View {
                     }
                 }
                 .buttonStyle(.bordered)
-                .tint(.white)
+                .tint(ThemeManager.shared.colorPrimary)
 
                 Spacer()
 
@@ -69,9 +69,9 @@ struct ChecklistTemplatesView: View {
                         ForEach(filtered) { template in
                             HStack {
                                 VStack(alignment: .leading, spacing: 4) {
-                                    Text(template.title).foregroundColor(.white).font(.headline)
+                                    Text(template.title).foregroundStyle(ThemeManager.shared.colorTextPrimary).font(.headline)
                                     Text("\(template.category.label) - \(template.frequency.label)")
-                                        .foregroundColor(.gray)
+                                        .foregroundStyle(ThemeManager.shared.colorTextSecondary)
                                         .font(.caption)
                                 }
                                 Spacer()
@@ -94,7 +94,7 @@ struct ChecklistTemplatesView: View {
                                 }
                             }
                             .padding(12)
-                            .background(Color.white.opacity(0.05))
+                            .background(ThemeManager.shared.colorSurface)
                             .cornerRadius(12)
                         }
                     }

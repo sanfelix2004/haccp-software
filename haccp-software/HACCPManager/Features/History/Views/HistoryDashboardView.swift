@@ -13,7 +13,7 @@ struct HistoryDashboardView: View {
                 VStack(alignment: .leading, spacing: 14) {
                     Text("Archivio centrale HACCP")
                         .font(.subheadline)
-                        .foregroundColor(.gray)
+                        .foregroundStyle(ThemeManager.shared.colorTextSecondary)
 
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 220), spacing: 12)], spacing: 12) {
                         ForEach(HistoryModule.dashboardModules) { module in

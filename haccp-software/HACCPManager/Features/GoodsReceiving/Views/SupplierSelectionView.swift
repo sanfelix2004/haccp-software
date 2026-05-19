@@ -13,11 +13,11 @@ struct SupplierSelectionView: View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Scelta del fornitore")
                 .font(.title3.bold())
-                .foregroundColor(.white)
+                .foregroundStyle(ThemeManager.shared.colorTextPrimary)
             if suppliers.isEmpty {
                 Text("Nessun fornitore configurato")
                     .font(.subheadline)
-                    .foregroundColor(.gray)
+                    .foregroundStyle(ThemeManager.shared.colorTextSecondary)
                 Text("Aggiungi un fornitore per poter salvare la ricezione. Puoi comunque scegliere il prodotto dall’elenco sotto.")
                     .font(.caption)
                     .foregroundColor(.gray.opacity(0.9))
@@ -29,13 +29,13 @@ struct SupplierSelectionView: View {
                     } label: {
                         Text(supplier.name)
                             .font(.headline)
-                            .foregroundColor(.white)
+                            .foregroundStyle(ThemeManager.shared.colorTextPrimary)
                             .frame(maxWidth: .infinity, minHeight: 82)
                             .padding(8)
-                            .background(selectedSupplierId == supplier.id ? Color.red.opacity(0.25) : Color.white.opacity(0.06))
+                            .background(selectedSupplierId == supplier.id ? Color.red.opacity(0.25) : ThemeManager.shared.colorSurfaceElevated)
                             .overlay(
                                 RoundedRectangle(cornerRadius: 12)
-                                    .stroke(selectedSupplierId == supplier.id ? Color.red : Color.white.opacity(0.1), lineWidth: 1)
+                                    .stroke(selectedSupplierId == supplier.id ? Color.red : ThemeManager.shared.colorDivider, lineWidth: 1)
                             )
                             .cornerRadius(12)
                     }
@@ -52,7 +52,7 @@ struct SupplierSelectionView: View {
                     .disabled(!canEditSupplier || selectedSupplierId == nil)
                     .opacity((canEditSupplier && selectedSupplierId != nil) ? 1 : 0.4)
             }
-            .tint(.white)
+            .tint(ThemeManager.shared.colorPrimary)
         }
     }
 }

@@ -21,10 +21,10 @@ struct TemperatureDevicePicker: View {
                 Image(systemName: "chevron.down")
                     .font(.caption2)
             }
-            .foregroundColor(.white)
+            .foregroundStyle(ThemeManager.shared.colorTextPrimary)
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
-            .background(Color.white.opacity(0.08))
+            .background(ThemeManager.shared.colorDivider)
             .cornerRadius(10)
         }
     }

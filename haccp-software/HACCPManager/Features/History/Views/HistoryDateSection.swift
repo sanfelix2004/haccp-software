@@ -8,7 +8,7 @@ struct HistoryDateSection: View {
         VStack(alignment: .leading, spacing: 10) {
             Text(title(for: date))
                 .font(.headline)
-                .foregroundColor(.white)
+                .foregroundStyle(ThemeManager.shared.colorTextPrimary)
                 .padding(.top, 8)
 
             ForEach(entries) { entry in

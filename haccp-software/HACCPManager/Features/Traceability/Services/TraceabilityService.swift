@@ -32,7 +32,7 @@ struct TraceabilityService {
             receivedAt: receivedAt,
             expiryDate: expiryDate,
             productionReference: productionReference?.trimmingCharacters(in: .whitespacesAndNewlines),
-            photoData: photoData,
+            photoData: StoredImageCompression.preparedForStorage(photoData),
             createdByUserId: user.id,
             createdByNameSnapshot: user.name,
             notes: notes?.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -84,7 +84,7 @@ struct TraceabilityService {
         modelContext.insert(
             ProductImage(
                 receivedItemId: record.id,
-                imageData: imageData,
+                imageData: StoredImageCompression.preparedForStorage(imageData),
                 localPath: nil,
                 type: .nonComplianceRequired,
                 createdByUserId: user.id,
@@ -146,7 +146,7 @@ struct TraceabilityService {
         modelContext.insert(
             ProductImage(
                 receivedItemId: record.id,
-                imageData: imageData,
+                imageData: StoredImageCompression.preparedForStorage(imageData),
                 localPath: nil,
                 type: type,
                 createdByUserId: user.id,

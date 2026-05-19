@@ -17,9 +17,9 @@ struct DashboardAlertsSection: View {
                 ForEach(alerts) { alert in
                     VStack(alignment: .leading, spacing: 4) {
                         Text(alert.title)
-                            .foregroundColor(.white)
+                            .foregroundStyle(ThemeManager.shared.colorTextPrimary)
                         Text(alert.detail)
-                            .foregroundColor(Color.white.opacity(0.72))
+                            .foregroundColor(ThemeManager.shared.colorTextSecondary)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.vertical, 6)

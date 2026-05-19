@@ -23,11 +23,11 @@ struct CreateMasterAccountView: View {
                         VStack(spacing: 12) {
                             Text(AppVersionService.appName)
                                 .font(.system(size: 32, weight: .bold, design: .rounded))
-                                .foregroundColor(.white)
+                                .foregroundStyle(ThemeManager.shared.colorTextPrimary)
                             
                             Text("Configurazione Primo Avvio")
                                 .font(.title3)
-                                .foregroundColor(.gray)
+                                .foregroundStyle(ThemeManager.shared.colorTextSecondary)
                         }
                         .padding(.top, 40)
                         
@@ -37,35 +37,35 @@ struct CreateMasterAccountView: View {
                                 Text("NOME ACCOUNT MASTER")
                                     .font(.caption)
                                     .fontWeight(.bold)
-                                    .foregroundColor(.gray)
+                                    .foregroundStyle(ThemeManager.shared.colorTextSecondary)
                                 
                                 TextField("Inserisci il tuo nome", text: $name)
                                     .padding()
-                                    .background(Color.white.opacity(0.1))
+                                    .background(ThemeManager.shared.colorDivider)
                                     .cornerRadius(12)
-                                    .foregroundColor(.white)
+                                    .foregroundStyle(ThemeManager.shared.colorTextPrimary)
                             }
                             
                             // Email & Phone (MASTER ONLY)
                             HStack(spacing: 16) {
                                 VStack(alignment: .leading, spacing: 8) {
                                     Text("EMAIL MASTER")
-                                        .font(.caption).fontWeight(.bold).foregroundColor(.gray)
+                                        .font(.caption).fontWeight(.bold).foregroundStyle(ThemeManager.shared.colorTextSecondary)
                                     TextField("email@esempio.it", text: $email)
                                         .padding()
-                                        .background(Color.white.opacity(0.1))
+                                        .background(ThemeManager.shared.colorDivider)
                                         .cornerRadius(12)
-                                        .foregroundColor(.white)
+                                        .foregroundStyle(ThemeManager.shared.colorTextPrimary)
                                 }
                                 
                                 VStack(alignment: .leading, spacing: 8) {
                                     Text("TELEFONO")
-                                        .font(.caption).fontWeight(.bold).foregroundColor(.gray)
+                                        .font(.caption).fontWeight(.bold).foregroundStyle(ThemeManager.shared.colorTextSecondary)
                                     TextField("333 0000000", text: $phoneNumber)
                                         .padding()
-                                        .background(Color.white.opacity(0.1))
+                                        .background(ThemeManager.shared.colorDivider)
                                         .cornerRadius(12)
-                                        .foregroundColor(.white)
+                                        .foregroundStyle(ThemeManager.shared.colorTextPrimary)
                                 }
                             }
                             
@@ -74,14 +74,14 @@ struct CreateMasterAccountView: View {
                                 Text("PIN DI ACCESSO (4-6 CIFRE)")
                                     .font(.caption)
                                     .fontWeight(.bold)
-                                    .foregroundColor(.gray)
+                                    .foregroundStyle(ThemeManager.shared.colorTextSecondary)
                                 
                                 SecureField("0000", text: $pin)
                                     .keyboardType(.numberPad)
                                     .padding()
-                                    .background(Color.white.opacity(0.1))
+                                    .background(ThemeManager.shared.colorDivider)
                                     .cornerRadius(12)
-                                    .foregroundColor(.white)
+                                    .foregroundStyle(ThemeManager.shared.colorTextPrimary)
                                     .onChange(of: pin) { oldValue, newValue in
                                         if newValue.count > 6 { pin = String(newValue.prefix(6)) }
                                     }
@@ -91,14 +91,14 @@ struct CreateMasterAccountView: View {
                                 Text("CONFERMA PIN")
                                     .font(.caption)
                                     .fontWeight(.bold)
-                                    .foregroundColor(.gray)
+                                    .foregroundStyle(ThemeManager.shared.colorTextSecondary)
                                 
                                 SecureField("0000", text: $confirmPin)
                                     .keyboardType(.numberPad)
                                     .padding()
-                                    .background(Color.white.opacity(0.1))
+                                    .background(ThemeManager.shared.colorDivider)
                                     .cornerRadius(12)
-                                    .foregroundColor(.white)
+                                    .foregroundStyle(ThemeManager.shared.colorTextPrimary)
                                     .onChange(of: confirmPin) { oldValue, newValue in
                                         if newValue.count > 6 { confirmPin = String(newValue.prefix(6)) }
                                     }
@@ -109,7 +109,7 @@ struct CreateMasterAccountView: View {
                                 Text("COLORE AVATAR")
                                     .font(.caption)
                                     .fontWeight(.bold)
-                                    .foregroundColor(.gray)
+                                    .foregroundStyle(ThemeManager.shared.colorTextSecondary)
                                 
                                 HStack(spacing: 16) {
                                     ForEach(avatarColors, id: \.self) { hex in
@@ -138,10 +138,9 @@ struct CreateMasterAccountView: View {
                             Button(action: handleCreateMaster) {
                                 Text("Crea Account Master")
                                     .font(.headline)
-                                    .foregroundColor(.white)
+                                    .foregroundStyle(ThemeManager.shared.colorTextOnPrimary)
                                     .frame(maxWidth: .infinity)
-                                    .padding()
-                                    .background(Color.red)
+                                    .padding().background(Color.red)
                                     .cornerRadius(12)
                                     .shadow(color: .red.opacity(0.3), radius: 10, y: 5)
                             }
@@ -158,7 +157,7 @@ struct CreateMasterAccountView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(
-            LinearGradient(colors: [Color.black, Color(hex: "#1A0000")], startPoint: .topLeading, endPoint: .bottomTrailing)
+            ThemeManager.shared.colorBackground
                 .ignoresSafeArea()
         )
     }

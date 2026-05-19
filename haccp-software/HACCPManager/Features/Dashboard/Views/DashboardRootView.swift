@@ -61,11 +61,6 @@ struct DashboardRootView: View {
     @Query private var users: [LocalUser]
     @Query private var restaurants: [Restaurant]
     @Query private var stores: [AppDataStore]
-    @Query private var documentFolders: [DocumentFolder]
-    @Query private var documentItems: [DocumentItem]
-    @Query private var productionCategories: [ProductionCategory]
-    @Query private var productions: [Production]
-    @Query private var oilPoints: [OilPoint]
     
     @State private var selectedItem: SidebarItem? = .dashboard
     @State private var columnVisibility = NavigationSplitViewVisibility.all
@@ -86,140 +81,58 @@ struct DashboardRootView: View {
         return restaurants.first
     }
     
+    @Environment(\.theme) private var theme
+
     var body: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
-            VStack(spacing: 0) {
-                // Restaurant Header in Sidebar
-                VStack(alignment: .leading, spacing: 12) {
-                    HStack(spacing: 16) {
-                        if let logoData = activeRestaurant?.logoData, let uiImage = UIImage(data: logoData) {
-                            Image(uiImage: uiImage)
-                                .resizable()
-                                .scaledToFill()
-                                .frame(width: 54, height: 54)
-                                .clipShape(RoundedRectangle(cornerRadius: 12))
-                        } else {
-                            RoundedRectangle(cornerRadius: 12)
-                                .fill(ThemeManager.shared.colorPrimary.opacity(0.12))
-                                .frame(width: 54, height: 54)
-                                .overlay(
-                                    Image(systemName: "house.fill")
-                                        .foregroundColor(ThemeManager.shared.colorPrimary)
-                                )
-                        }
-                        
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(activeRestaurant?.name ?? "HACCP")
-                                .font(.headline)
-                                .foregroundColor(ThemeManager.shared.colorTextPrimary)
-                            Text(activeRestaurant?.city ?? "Manager")
-                                .font(.caption2)
-                                .fontWeight(.bold)
-                                .foregroundColor(ThemeManager.shared.colorTextSecondary)
-                                .tracking(1)
-                        }
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.top, 20)
-                    .onTapGesture {
-                        if restaurants.count > 1 {
-                            HapticManager.shared.selection()
-                            withAnimation { appState.activeRestaurantId = nil }
-                        }
-                    }
-                    
-                    Divider().background(ThemeManager.shared.colorDivider)
-                        .padding(.top, 8)
+            PremiumSidebarView(
+                selectedItem: $selectedItem,
+                activeRestaurant: activeRestaurant,
+                restaurantsCount: restaurants.count,
+                isMaster: currentUser?.role == .master,
+                onSwitchRestaurant: {
+                    withAnimation(theme.spring) { appState.activeRestaurantId = nil }
+                },
+                onLogout: { appState.logout() }
+            )
+            .padding(floatingSidebarPadding)
+            .background {
+                if theme.sidebarStyle == .floating {
+                    RoundedRectangle(cornerRadius: theme.spacing.cornerXL, style: .continuous)
+                        .fill(theme.colorSurface)
+                        .shadow(
+                            color: theme.shadows.elevated.color,
+                            radius: theme.shadows.elevated.radius,
+                            y: theme.shadows.elevated.y
+                        )
                 }
-                .background(ThemeManager.shared.surface)
-                
-                List(selection: $selectedItem) {
-                    Section {
-                        NavigationLink(value: SidebarItem.dashboard) {
-                            Label(SidebarItem.dashboard.rawValue, systemImage: SidebarItem.dashboard.icon)
-                        }
-                    } header: {
-                        Text("Dashboard")
-                            .font(.system(size: 12, weight: .black))
-                            .foregroundColor(ThemeManager.shared.colorTextSecondary)
-                    }
-
-                    Section {
-                        ForEach(SidebarItem.haccpModulesInOrder) { item in
-                            NavigationLink(value: item) {
-                                Label(item.rawValue, systemImage: item.icon)
-                            }
-                        }
-                    } header: {
-                        Text("Moduli HACCP")
-                            .font(.system(size: 12, weight: .black))
-                            .foregroundColor(ThemeManager.shared.colorTextSecondary)
-                    }
-
-                    Section {
-                        ForEach(SidebarItem.toolsInOrder) { item in
-                            if item == .users {
-                                if currentUser?.role == .master {
-                                    NavigationLink(value: item) {
-                                        Label(item.rawValue, systemImage: item.icon)
-                                    }
-                                }
-                            } else {
-                                NavigationLink(value: item) {
-                                    Label(item.rawValue, systemImage: item.icon)
-                                }
-                            }
-                        }
-                    } header: {
-                        Text("Sistema e archivi")
-                            .font(.system(size: 12, weight: .black))
-                            .foregroundColor(ThemeManager.shared.colorTextSecondary)
-                    }
-                }
-                .listStyle(.sidebar)
-                .scrollContentBackground(.hidden)
-                
-                // Native Logout Button at the bottom
-                VStack(spacing: 0) {
-                    Divider().background(ThemeManager.shared.colorDivider)
-                    Button(action: { appState.logout() }) {
-                        HStack {
-                            Image(systemName: "rectangle.portrait.and.arrow.right")
-                            Text("Esci dal sistema")
-                                .fontWeight(.bold)
-                        }
-                        .foregroundColor(ThemeManager.shared.colorPrimary)
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(ThemeManager.shared.colorPrimary.opacity(0.12))
-                        .cornerRadius(12)
-                    }
-                    .padding(16)
-                }
-                .background(ThemeManager.shared.surface)
             }
-            .background(ThemeManager.shared.surface)
-            .navigationTitle(activeRestaurant?.name ?? AppVersionService.appName)
+            .navigationTitle("")
         } detail: {
             ZStack {
-                ThemeManager.shared.background.ignoresSafeArea()
-                
+                theme.colorBackground.ignoresSafeArea()
+
                 if let selectedItem = selectedItem {
                     NavigationStack {
                         detailView(for: selectedItem)
-                            .id(selectedItem.id) // Force refresh for transition
+                            .id(selectedItem.id)
                             .transition(.asymmetric(
                                 insertion: .opacity.combined(with: .scale(scale: 0.98)),
                                 removal: .opacity
                             ))
-                            .background(ThemeManager.shared.background)
                             .scrollContentBackground(.hidden)
                     }
-                    .animation(.spring(response: 0.4, dampingFraction: 0.8), value: selectedItem)
+                    .animation(theme.spring, value: selectedItem)
                 } else {
-                    Text("Seleziona una voce dal menu")
-                        .foregroundColor(ThemeManager.shared.textSecondary)
-                        .transition(.opacity)
+                    VStack(spacing: theme.spacing.lg) {
+                        Image(systemName: "sidebar.left")
+                            .font(.system(size: 48, weight: .light))
+                            .foregroundStyle(theme.colorTextSecondary)
+                        Text("Seleziona un modulo")
+                            .font(theme.typography.title3)
+                            .foregroundStyle(theme.colorTextPrimary)
+                    }
+                    .transition(.opacity)
                 }
             }
         }
@@ -260,31 +173,70 @@ struct DashboardRootView: View {
         }
     }
 
+    private var floatingSidebarPadding: EdgeInsets {
+        theme.sidebarStyle == .floating
+            ? EdgeInsets(top: 12, leading: 12, bottom: 12, trailing: 0)
+            : EdgeInsets()
+    }
+
     private func ensureRestaurantDefaults() {
         guard
             let rid = appState.activeRestaurantId,
             let user = currentUser
         else { return }
-        let scoped = documentFolders.filter { $0.restaurantId == rid }
-        documentsService.ensureDefaultFolders(
-            restaurantId: rid,
-            user: user,
-            existingFolders: scoped,
-            existingItems: documentItems.filter { $0.restaurantId == rid },
-            modelContext: modelContext
-        )
-        productionLibraryService.ensureDefaults(
-            restaurantId: rid,
-            categories: productionCategories,
-            productions: productions,
-            modelContext: modelContext
-        )
-        oilControlService.ensureDefaultPoints(
-            restaurantId: rid,
-            user: user,
-            existingPoints: oilPoints,
-            modelContext: modelContext
-        )
+
+        Task { @MainActor in
+            let ridCapture = rid
+            var folderDescriptor = FetchDescriptor<DocumentFolder>(
+                predicate: #Predicate { $0.restaurantId == ridCapture }
+            )
+            folderDescriptor.fetchLimit = 200
+            let folders = (try? modelContext.fetch(folderDescriptor)) ?? []
+
+            var itemDescriptor = FetchDescriptor<DocumentItem>(
+                predicate: #Predicate { $0.restaurantId == ridCapture }
+            )
+            itemDescriptor.fetchLimit = 500
+            let items = (try? modelContext.fetch(itemDescriptor)) ?? []
+
+            var categoryDescriptor = FetchDescriptor<ProductionCategory>(
+                predicate: #Predicate { $0.restaurantId == ridCapture }
+            )
+            categoryDescriptor.fetchLimit = 100
+            let categories = (try? modelContext.fetch(categoryDescriptor)) ?? []
+
+            var productionDescriptor = FetchDescriptor<Production>(
+                predicate: #Predicate { $0.restaurantId == ridCapture }
+            )
+            productionDescriptor.fetchLimit = 300
+            let productions = (try? modelContext.fetch(productionDescriptor)) ?? []
+
+            var oilDescriptor = FetchDescriptor<OilPoint>(
+                predicate: #Predicate { $0.restaurantId == ridCapture }
+            )
+            oilDescriptor.fetchLimit = 50
+            let oilPoints = (try? modelContext.fetch(oilDescriptor)) ?? []
+
+            documentsService.ensureDefaultFolders(
+                restaurantId: rid,
+                user: user,
+                existingFolders: folders,
+                existingItems: items,
+                modelContext: modelContext
+            )
+            productionLibraryService.ensureDefaults(
+                restaurantId: rid,
+                categories: categories,
+                productions: productions,
+                modelContext: modelContext
+            )
+            oilControlService.ensureDefaultPoints(
+                restaurantId: rid,
+                user: user,
+                existingPoints: oilPoints,
+                modelContext: modelContext
+            )
+        }
     }
     
     @ViewBuilder
@@ -332,7 +284,7 @@ struct DashboardRootView: View {
                         .font(.title)
                         .fontWeight(.bold)
                     Text("Solo il MASTER può accedere alla gestione collaboratori.")
-                        .foregroundColor(.gray)
+                        .foregroundStyle(ThemeManager.shared.colorTextSecondary)
                 }
                 .navigationTitle("Gestione Staff")
             }

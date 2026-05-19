@@ -31,8 +31,8 @@ struct DocumentsView: View {
     @State private var regenerateError: String?
     @State private var isRefreshingArchive = false
     @State private var isPreparingCloudBackup = false
-    @State private var lastArchiveRefreshAt: Date?
-    @State private var lastArchiveRestaurantId: UUID?
+    @State private var lastFullArchiveRefreshAt: Date?
+    @State private var lastFullArchiveRestaurantId: UUID?
 
     private var currentUser: LocalUser? {
         users.first(where: { $0.id == appState.currentUserId })
@@ -144,7 +144,7 @@ struct DocumentsView: View {
                                 VStack(alignment: .leading, spacing: 8) {
                                     Text("Sottocartelle")
                                         .font(.subheadline.bold())
-                                        .foregroundColor(.white.opacity(0.9))
+                                        .foregroundStyle(ThemeManager.shared.colorTextPrimary)
                                     folderGrid(folders: childFolders)
                                 }
                             }
@@ -152,7 +152,7 @@ struct DocumentsView: View {
                             VStack(alignment: .leading, spacing: 8) {
                                 Text("Registri generati")
                                     .font(.subheadline.bold())
-                                    .foregroundColor(.white.opacity(0.9))
+                                    .foregroundStyle(ThemeManager.shared.colorTextPrimary)
                                 if visibleItems.isEmpty {
                                     DashboardEmptyStateView(state: .init(
                                         title: "Nessun documento",
@@ -176,10 +176,10 @@ struct DocumentsView: View {
         .background(ThemeManager.shared.colorBackground.ignoresSafeArea())
         .navigationTitle("Documenti")
         .onAppear {
-            refreshArchive()
+            refreshArchiveLight()
         }
         .onChange(of: appState.activeRestaurantId) { _, _ in
-            refreshArchive()
+            refreshArchiveLight()
         }
         .sheet(item: $documentPreviewItem) { item in
             QuickLookPreviewRepresentable(url: item.url)
@@ -220,11 +220,11 @@ struct DocumentsView: View {
                 Label("Indietro", systemImage: "chevron.left")
             }
             .buttonStyle(.bordered)
-            .tint(.white)
+            .tint(ThemeManager.shared.colorPrimary)
 
             Text(currentFolder?.name ?? "Documenti")
                 .font(.headline)
-                .foregroundColor(.white)
+                .foregroundStyle(ThemeManager.shared.colorTextPrimary)
             Spacer()
             Picker("Periodo", selection: $vm.selectedPeriodFilter) {
                 ForEach(DocumentsViewModel.PeriodFilter.allCases) { filter in
@@ -254,7 +254,7 @@ struct DocumentsView: View {
                 }
             ) { EmptyView() }
         } else {
-            Color.black.ignoresSafeArea().onAppear { showMasterAuthDelete = false }
+            ThemeManager.shared.colorBackground.ignoresSafeArea().onAppear { showMasterAuthDelete = false }
         }
     }
 
@@ -277,7 +277,7 @@ struct DocumentsView: View {
                 }
             ) { EmptyView() }
         } else {
-            Color.black.ignoresSafeArea().onAppear { showMasterAuthRegenerate = false }
+            ThemeManager.shared.colorBackground.ignoresSafeArea().onAppear { showMasterAuthRegenerate = false }
         }
     }
 
@@ -296,7 +296,7 @@ struct DocumentsView: View {
                 }
             ) { EmptyView() }
         } else {
-            Color.black.ignoresSafeArea().onAppear { showMasterAuthArchive = false }
+            ThemeManager.shared.colorBackground.ignoresSafeArea().onAppear { showMasterAuthArchive = false }
         }
     }
 
@@ -304,26 +304,26 @@ struct DocumentsView: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
                 Image(systemName: "icloud")
-                    .foregroundColor(.cyan)
+                    .foregroundStyle(ThemeManager.shared.colorInfo)
                 Text("Backup cloud (iCloud Drive via File)")
                     .font(.subheadline.bold())
-                    .foregroundColor(.white.opacity(0.95))
+                    .foregroundStyle(ThemeManager.shared.colorTextPrimary)
                 Spacer()
                 if isRefreshingArchive {
                     ProgressView()
-                        .tint(.white)
+                        .tint(ThemeManager.shared.colorPrimary)
                         .scaleEffect(0.8)
                 }
             }
             Text("PDF sincronizzati: \(syncedPdfCount) · in attesa: \(pendingPdfCount)")
                 .font(.caption)
-                .foregroundColor(.gray)
+                .foregroundStyle(ThemeManager.shared.colorTextSecondary)
             Text("Premi «Backup archivio su iCloud Drive» per salvare tutti i PDF direttamente in File/iCloud Drive senza account developer.")
                 .font(.caption2)
-                .foregroundColor(.gray)
+                .foregroundStyle(ThemeManager.shared.colorTextSecondary)
         }
         .padding(10)
-        .background(Color.white.opacity(0.05))
+        .background(ThemeManager.shared.colorSurface)
         .cornerRadius(10)
     }
 
@@ -331,7 +331,7 @@ struct DocumentsView: View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Archivio completo")
                 .font(.subheadline.bold())
-                .foregroundColor(.white.opacity(0.9))
+                .foregroundStyle(ThemeManager.shared.colorTextPrimary)
             Button {
                 guard !isPreparingCloudBackup else { return }
                 showMasterAuthArchive = true
@@ -343,11 +343,11 @@ struct DocumentsView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             .buttonStyle(.bordered)
-            .tint(.white)
+            .tint(ThemeManager.shared.colorPrimary)
             .disabled(isPreparingCloudBackup)
             Text("Solo il MASTER può eliminare, rigenerare ed esportare l'archivio completo. Le copie temporanee in Esporta vengono rimosse dopo 10 giorni.")
                 .font(.caption2)
-                .foregroundColor(.gray)
+                .foregroundStyle(ThemeManager.shared.colorTextSecondary)
         }
         .padding(.top, 4)
     }
@@ -365,16 +365,12 @@ struct DocumentsView: View {
         return "\(gen) · \(size) · \(exported) · \(sync) · \(checksum) · \(fileState)"
     }
 
-    private func refreshArchive() {
+    /// Sincronizzazione leggera all'apertura: cartelle + statistiche, senza rigenerare tutti i PDF.
+    private func refreshArchiveLight() {
         guard let restaurant = activeRestaurant, let currentUser else { return }
         if isRefreshingArchive { return }
-        if lastArchiveRestaurantId == restaurant.id,
-           let last = lastArchiveRefreshAt,
-           Date().timeIntervalSince(last) < 120 {
-            return
-        }
+        let runFullArchive = shouldRunBackgroundFullArchive(for: restaurant.id)
         isRefreshingArchive = true
-        lastArchiveRestaurantId = restaurant.id
         Task { @MainActor in
             await Task.yield()
             vm.service.ensureDefaultFolders(
@@ -384,17 +380,34 @@ struct DocumentsView: View {
                 existingItems: scopedItems,
                 modelContext: modelContext
             )
-            await HACCPReportEngine.shared.runFullArchive(
-                restaurant: restaurant,
-                user: currentUser,
-                in: modelContext
-            )
             HACCPReportEngine.shared.refreshStats(restaurantId: restaurant.id, in: modelContext)
             if let selected = vm.selectedFolderId, !scopedFolders.contains(where: { $0.id == selected }) {
                 vm.selectedFolderId = nil
             }
-            lastArchiveRefreshAt = Date()
             isRefreshingArchive = false
+
+            if runFullArchive {
+                refreshArchiveFull(restaurant: restaurant, user: currentUser)
+            }
+        }
+    }
+
+    private func shouldRunBackgroundFullArchive(for restaurantId: UUID) -> Bool {
+        guard lastFullArchiveRestaurantId == restaurantId,
+              let last = lastFullArchiveRefreshAt else { return true }
+        return Date().timeIntervalSince(last) >= PerformanceConfig.documentsAutoArchiveInterval
+    }
+
+    private func refreshArchiveFull(restaurant: Restaurant, user: LocalUser) {
+        lastFullArchiveRestaurantId = restaurant.id
+        Task { @MainActor in
+            await HACCPReportEngine.shared.runFullArchive(
+                restaurant: restaurant,
+                user: user,
+                in: modelContext
+            )
+            HACCPReportEngine.shared.refreshStats(restaurantId: restaurant.id, in: modelContext)
+            lastFullArchiveRefreshAt = Date()
         }
     }
 
@@ -430,27 +443,26 @@ struct DocumentsView: View {
                             if hasNew {
                                 Text("NUOVO")
                                     .font(.caption2.bold())
-                                    .foregroundColor(.white)
+                                    .foregroundStyle(ThemeManager.shared.colorTextOnPrimary)
                                     .padding(.horizontal, 8)
-                                    .padding(.vertical, 4)
-                                    .background(Color.red)
+                                    .padding(.vertical, 4).background(Color.red)
                                     .cornerRadius(8)
                             }
                         }
                         Text(folder.name)
                             .font(.headline)
-                            .foregroundColor(.white)
+                            .foregroundStyle(ThemeManager.shared.colorTextPrimary)
                             .multilineTextAlignment(.leading)
                         Text(count == 0 ? "Nessun documento" : "\(count) documenti")
                             .font(.caption)
-                            .foregroundColor(.gray)
+                            .foregroundStyle(ThemeManager.shared.colorTextSecondary)
                         Text("Aggiornata: \(latest?.formatted(date: .abbreviated, time: .shortened) ?? "—")")
                             .font(.caption2)
-                            .foregroundColor(.gray)
+                            .foregroundStyle(ThemeManager.shared.colorTextSecondary)
                     }
                     .padding(12)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color.white.opacity(0.05))
+                    .background(ThemeManager.shared.colorSurface)
                     .cornerRadius(12)
                 }
                 .buttonStyle(.plain)
@@ -467,23 +479,23 @@ struct DocumentsView: View {
 
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: "doc.fill")
-                .foregroundColor(.white.opacity(0.85))
+                .foregroundStyle(ThemeManager.shared.colorTextSecondary)
             VStack(alignment: .leading, spacing: 4) {
                 Text(doc.title.isEmpty ? doc.fileName : doc.title)
-                    .foregroundColor(.white)
+                    .foregroundStyle(ThemeManager.shared.colorTextPrimary)
                 Text(doc.fileName)
                     .font(.caption2)
-                    .foregroundColor(.gray)
+                    .foregroundStyle(ThemeManager.shared.colorTextSecondary)
                 Text("\(doc.module.label) · \(doc.type.label) · \(doc.format.label)")
                     .font(.caption2)
-                    .foregroundColor(.gray)
+                    .foregroundStyle(ThemeManager.shared.colorTextSecondary)
                 Text(exportSyncSummary(for: doc))
                     .font(.caption2)
-                    .foregroundColor(.gray)
+                    .foregroundStyle(ThemeManager.shared.colorTextSecondary)
                 if doc.status == .fallito {
                     Text("Generazione fallita — il MASTER può rigenerare.")
                         .font(.caption2)
-                        .foregroundColor(.orange)
+                        .foregroundStyle(ThemeManager.shared.colorWarning)
                 }
             }
             Spacer()
@@ -493,7 +505,7 @@ struct DocumentsView: View {
                     documentPreviewItem = DocumentPreviewSheetItem(url: fileURL)
                 }
                 .buttonStyle(.bordered)
-                .tint(.white)
+                .tint(ThemeManager.shared.colorPrimary)
                 .disabled(!pdfExists)
 
                 if pdfExists {
@@ -501,20 +513,20 @@ struct DocumentsView: View {
                         Text("Condividi PDF")
                     }
                     .buttonStyle(.bordered)
-                    .tint(.white)
+                    .tint(ThemeManager.shared.colorPrimary)
                 }
 
                 Button("CSV") {
                     exportCSV(doc)
                 }
                 .buttonStyle(.bordered)
-                .tint(.white)
+                .tint(ThemeManager.shared.colorPrimary)
 
                 Button("Esporta copia") {
                     exportTemporaryCopy(doc)
                 }
                 .buttonStyle(.bordered)
-                .tint(.white)
+                .tint(ThemeManager.shared.colorPrimary)
 
                 if isMaster {
                     Button("Rigenera") {
@@ -533,7 +545,7 @@ struct DocumentsView: View {
             }
         }
         .padding(10)
-        .background(Color.white.opacity(0.05))
+        .background(ThemeManager.shared.colorSurface)
         .cornerRadius(10)
     }
 

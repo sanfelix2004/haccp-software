@@ -91,7 +91,7 @@ struct ProductionSelectionView: View {
                         vm.showAddSheet = true
                     }
                     .buttonStyle(.bordered)
-                    .tint(.white)
+                    .tint(ThemeManager.shared.colorPrimary)
                     Button("Modifica") {
                         guard let selected = selectedSingleProduction else {
                             vm.errorMessage = "Seleziona una sola produzione da modificare."
@@ -101,7 +101,7 @@ struct ProductionSelectionView: View {
                         showMasterAuthForEdit = true
                     }
                         .buttonStyle(.bordered)
-                        .tint(.white)
+                        .tint(ThemeManager.shared.colorPrimary)
                         .disabled(selectedSingleProduction == nil)
                     Button("Elimina", role: .destructive) {
                         guard let selected = selectedSingleProduction else {
@@ -116,7 +116,7 @@ struct ProductionSelectionView: View {
                     Spacer()
                     Button("Annullare", action: onCancel)
                         .buttonStyle(.bordered)
-                        .tint(.white)
+                        .tint(ThemeManager.shared.colorPrimary)
                     Button("Ho finito") {
                         let selected = scopedProductions.filter { vm.selectedProductionIds.contains($0.id) }
                         onConfirm(selected)
@@ -224,10 +224,10 @@ struct ProductionSelectionView: View {
         } label: {
             Text(title)
                 .font(.subheadline.weight(.semibold))
-                .foregroundColor(vm.selectedCategoryId == id ? .white : .gray)
+                .foregroundStyle(vm.selectedCategoryId == id ? ThemeManager.shared.colorTextOnPrimary : ThemeManager.shared.colorTextPrimary)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
-                .background(vm.selectedCategoryId == id ? Color.red.opacity(0.65) : Color.white.opacity(0.08))
+                .background(vm.selectedCategoryId == id ? ThemeManager.shared.colorPrimary : ThemeManager.shared.colorDivider)
                 .cornerRadius(10)
         }
         .buttonStyle(.plain)

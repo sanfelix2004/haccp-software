@@ -52,7 +52,7 @@ struct DataBackupSettingsView: View {
                             .font(.subheadline)
                         Text("SwiftData Encrypted Storage")
                             .font(.caption)
-                            .foregroundColor(.gray)
+                            .foregroundStyle(ThemeManager.shared.colorTextSecondary)
                     }
                     Spacer()
                     Text("1.2 MB")
@@ -65,11 +65,11 @@ struct DataBackupSettingsView: View {
                         .font(.subheadline)
                     Spacer()
                     Text("Mai")
-                        .foregroundColor(.gray)
+                        .foregroundStyle(ThemeManager.shared.colorTextSecondary)
                 }
             }
             .padding()
-            .background(Color.white.opacity(0.05))
+            .background(ThemeManager.shared.colorSurface)
             .cornerRadius(16)
             
             VStack(alignment: .leading, spacing: 20) {
@@ -90,14 +90,14 @@ struct DataBackupSettingsView: View {
                                     .foregroundColor(iCloudSync.isUbiquityContainerAvailable ? .green : .orange)
                                 Text(pendingLine)
                                     .font(.caption)
-                                    .foregroundColor(.gray)
+                                    .foregroundStyle(ThemeManager.shared.colorTextSecondary)
                             }
                             Spacer(minLength: 0)
                         }
 
                         Text(iCloudSync.connectionExplanation)
                             .font(.caption)
-                            .foregroundColor(.white.opacity(0.85))
+                            .foregroundStyle(ThemeManager.shared.colorTextSecondary)
                             .fixedSize(horizontal: false, vertical: true)
 
                         if let d = iCloudSync.lastSyncActivityDate, !iCloudSync.lastSyncActivity.isEmpty {
@@ -117,7 +117,7 @@ struct DataBackupSettingsView: View {
 
                         Text("I dati operativi restano sul dispositivo (SwiftData). Solo i PDF in Documenti vengono copiati nel container iCloud.")
                             .font(.caption2)
-                            .foregroundColor(.gray)
+                            .foregroundStyle(ThemeManager.shared.colorTextSecondary)
 
                         Toggle(isOn: $iCloudPDFSyncEnabled) {
                             Text("Copia automatica dei PDF su iCloud dopo la generazione")
@@ -141,7 +141,7 @@ struct DataBackupSettingsView: View {
                 }
 
                 if isMaster {
-                    Divider().background(Color.white.opacity(0.1))
+                    Divider().background(ThemeManager.shared.colorDivider)
                     
                     Button(action: { showResetConfirm = true }) {
                         HStack {
@@ -209,7 +209,7 @@ struct SettingsActionButton: View {
             }
         }
         .padding()
-        .background(Color.white.opacity(0.05))
+        .background(ThemeManager.shared.colorSurface)
         .cornerRadius(12)
         .foregroundColor(isFuture ? .gray : .white)
     }

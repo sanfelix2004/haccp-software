@@ -23,7 +23,7 @@ struct CreateUserView: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                Color.black.ignoresSafeArea()
+                ThemeManager.shared.colorBackground.ignoresSafeArea()
                 
                 VStack(spacing: 0) {
                     // Refined compact header
@@ -37,24 +37,24 @@ struct CreateUserView: View {
                             
                             Text(name.isEmpty ? "?" : String(name.prefix(1)).uppercased())
                                 .font(.system(size: 40, weight: .black))
-                                .foregroundColor(.white)
+                                .foregroundStyle(ThemeManager.shared.colorTextPrimary)
                         }
                         
                         VStack(alignment: .leading, spacing: 4) {
                             Text(name.isEmpty ? "NOME COLLABORATORE" : name.uppercased())
                                 .font(.title3)
                                 .fontWeight(.bold)
-                                .foregroundColor(.white)
+                                .foregroundStyle(ThemeManager.shared.colorTextPrimary)
                             
                             Text(role.rawValue)
                                 .font(.subheadline)
-                                .foregroundColor(.gray)
+                                .foregroundStyle(ThemeManager.shared.colorTextSecondary)
                         }
                         
                         Spacer()
                     }
                     .padding(32)
-                    .background(Color.white.opacity(0.03))
+                    .background(ThemeManager.shared.colorSurface)
                     
                     ScrollView {
                         VStack(spacing: 40) {
@@ -65,17 +65,16 @@ struct CreateUserView: View {
                                 
                                 TextField("Nome Utente", text: $name)
                                     .font(.title3)
-                                    .foregroundColor(.white)
-                                    .colorScheme(.dark)
+                                    .foregroundStyle(ThemeManager.shared.colorTextPrimary)
                                     .padding(.vertical, 18)
                                     .padding(.horizontal, 24)
-                                    .background(Color.white.opacity(0.05))
+                                    .background(ThemeManager.shared.colorSurface)
                                     .cornerRadius(16)
-                                    .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.white.opacity(0.1), lineWidth: 1))
+                                    .overlay(RoundedRectangle(cornerRadius: 16).stroke(ThemeManager.shared.colorDivider, lineWidth: 1))
                                 
                                 VStack(alignment: .leading, spacing: 12) {
                                     Text("RUOLO AZIENDALE")
-                                        .font(.caption2).fontWeight(.bold).foregroundColor(.gray)
+                                        .font(.caption2).fontWeight(.bold).foregroundStyle(ThemeManager.shared.colorTextSecondary)
                                     
                                     Picker("Ruolo", selection: $role) {
                                         ForEach(UserRole.allCases.filter { $0 != .master }, id: \.self) { r in
@@ -84,7 +83,7 @@ struct CreateUserView: View {
                                     }
                                     .pickerStyle(.segmented)
                                     .padding(4)
-                                    .background(Color.white.opacity(0.05))
+                                    .background(ThemeManager.shared.colorSurface)
                                     .cornerRadius(12)
                                 }
                             }
@@ -92,7 +91,7 @@ struct CreateUserView: View {
                             // Section: Optional Info
                             VStack(alignment: .leading, spacing: 20) {
                                 Label("DETTAGLI AGGIUNTIVI", systemImage: "plus.circle")
-                                    .font(.caption).fontWeight(.black).foregroundColor(.gray).tracking(1)
+                                    .font(.caption).fontWeight(.black).foregroundStyle(ThemeManager.shared.colorTextSecondary).tracking(1)
                                 
                                 VStack(spacing: 1) {
                                     HStack {
@@ -100,24 +99,23 @@ struct CreateUserView: View {
                                             .foregroundColor(.red)
                                         Toggle("Data di nascita", isOn: $hasDateOfBirth)
                                             .tint(.red)
-                                            .foregroundColor(.white)
+                                            .foregroundStyle(ThemeManager.shared.colorTextPrimary)
                                     }
                                     .padding(20)
-                                    .background(Color.white.opacity(0.05))
+                                    .background(ThemeManager.shared.colorSurface)
                                     
                                     if hasDateOfBirth {
                                         DatePicker("Seleziona data", selection: $dateOfBirth, displayedComponents: .date)
                                             .padding(20)
-                                            .background(Color.white.opacity(0.05))
-                                            .foregroundColor(.white)
-                                            .colorScheme(.dark)
+                                            .background(ThemeManager.shared.colorSurface)
+                                            .foregroundStyle(ThemeManager.shared.colorTextPrimary)
                                             .transition(.move(edge: .top).combined(with: .opacity))
                                     }
                                     
                                     TextField("Note / Ruolo specifico / Squadra", text: $notes)
-                                        .foregroundColor(.white)
+                                        .foregroundStyle(ThemeManager.shared.colorTextPrimary)
                                         .padding(20)
-                                        .background(Color.white.opacity(0.05))
+                                        .background(ThemeManager.shared.colorSurface)
                                 }
                                 .cornerRadius(16)
                                 .clipped()
@@ -126,7 +124,7 @@ struct CreateUserView: View {
                             // Color Selector
                             VStack(alignment: .leading, spacing: 16) {
                                 Text("COLORE IDENTIFICATIVO")
-                                    .font(.caption2).fontWeight(.bold).foregroundColor(.gray)
+                                    .font(.caption2).fontWeight(.bold).foregroundStyle(ThemeManager.shared.colorTextSecondary)
                                 
                                 ScrollView(.horizontal, showsIndicators: false) {
                                     HStack(spacing: 16) {
@@ -165,7 +163,7 @@ struct CreateUserView: View {
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, 20)
                                 .background(name.isEmpty ? Color.gray.opacity(0.3) : Color.red)
-                                .foregroundColor(name.isEmpty ? .white.opacity(0.5) : .white)
+                                .foregroundStyle(name.isEmpty ? ThemeManager.shared.colorTextSecondary : ThemeManager.shared.colorTextOnPrimary)
                                 .cornerRadius(16)
                                 .shadow(color: name.isEmpty ? .clear : .red.opacity(0.3), radius: 15)
                             }

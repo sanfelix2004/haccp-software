@@ -116,12 +116,12 @@ struct GoodsReceivingView: View {
                         HStack(spacing: 10) {
                             Button("Aggiungere") { showAddSupplier = true }
                                 .buttonStyle(.bordered)
-                                .tint(.white)
+                                .tint(ThemeManager.shared.colorPrimary)
                                 .disabled(appState.activeRestaurantId == nil)
                                 .opacity(appState.activeRestaurantId != nil ? 1 : 0.4)
                             Button("Modifica") {}
                                 .buttonStyle(.bordered)
-                                .tint(.white)
+                                .tint(ThemeManager.shared.colorPrimary)
                                 .disabled(!isMaster || vm.selectedProduct == nil)
                                 .opacity((isMaster && vm.selectedProduct != nil) ? 1 : 0.4)
                             Spacer()
@@ -130,7 +130,7 @@ struct GoodsReceivingView: View {
                                 vm.selectedCategory = .all
                             }
                             .buttonStyle(.bordered)
-                            .tint(.white)
+                            .tint(ThemeManager.shared.colorPrimary)
                             Button("Ho finito") {
                                 guard vm.selectedSupplier != nil else {
                                     vm.errorMessage = "Seleziona o aggiungi un fornitore prima di confermare la ricezione."
@@ -164,18 +164,18 @@ struct GoodsReceivingView: View {
                                                 .scaledToFill()
                                                 .frame(width: 54, height: 54)
                                                 .clipShape(RoundedRectangle(cornerRadius: 8))
-                                                .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.white.opacity(0.15), lineWidth: 1))
+                                                .overlay(RoundedRectangle(cornerRadius: 8).stroke(ThemeManager.shared.colorDivider, lineWidth: 1))
                                         } else {
                                             RoundedRectangle(cornerRadius: 8)
-                                                .fill(Color.white.opacity(0.05))
+                                                .fill(ThemeManager.shared.colorSurface)
                                                 .frame(width: 54, height: 54)
-                                                .overlay(Image(systemName: "photo").foregroundColor(.gray))
+                                                .overlay(Image(systemName: "photo").foregroundStyle(ThemeManager.shared.colorTextSecondary))
                                         }
                                         VStack(alignment: .leading, spacing: 3) {
-                                            Text(record.productNameSnapshot).foregroundColor(.white)
+                                            Text(record.productNameSnapshot).foregroundStyle(ThemeManager.shared.colorTextPrimary)
                                             Text("Fornitore: \(record.supplierNameSnapshot)")
                                                 .font(.caption)
-                                                .foregroundColor(.gray)
+                                                .foregroundStyle(ThemeManager.shared.colorTextSecondary)
                                         }
                                         Spacer()
                                         Text(record.status.label)
@@ -201,20 +201,20 @@ struct GoodsReceivingView: View {
                                         Text("Produzione: \(record.productionDate?.formatted(date: .abbreviated, time: .omitted) ?? "-")")
                                     }
                                     .font(.caption2)
-                                    .foregroundColor(.gray)
+                                    .foregroundStyle(ThemeManager.shared.colorTextSecondary)
 
                                     HStack(spacing: 10) {
                                         Text("Quantita: \(record.quantity.map { String(format: "%.2f", $0) } ?? "-") \(record.unit ?? "")")
                                         Text("Operatore: \(record.createdByNameSnapshot.isEmpty ? "-" : record.createdByNameSnapshot)")
                                     }
                                     .font(.caption2)
-                                    .foregroundColor(.gray)
+                                    .foregroundStyle(ThemeManager.shared.colorTextSecondary)
 
                                     if !record.checklistResults.isEmpty {
                                         VStack(alignment: .leading, spacing: 2) {
                                             Text("Checklist HACCP")
                                                 .font(.caption2.bold())
-                                                .foregroundColor(.white.opacity(0.85))
+                                                .foregroundStyle(ThemeManager.shared.colorTextSecondary)
                                             ForEach(record.checklistResults) { item in
                                                 let note = (item.note ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
                                                 Text("• \(item.item.rawValue): \(item.value.label)\(note.isEmpty ? "" : " (\(note))")")
@@ -227,12 +227,12 @@ struct GoodsReceivingView: View {
                                     if let notes = record.notes, !notes.isEmpty {
                                         Text("Note: \(notes)")
                                             .font(.caption2)
-                                            .foregroundColor(.gray)
+                                            .foregroundStyle(ThemeManager.shared.colorTextSecondary)
                                     }
                                     if let action = record.correctiveAction, !action.isEmpty {
                                         Text("Azione correttiva: \(action)")
                                             .font(.caption2)
-                                            .foregroundColor(.yellow)
+                                            .foregroundStyle(ThemeManager.shared.colorWarning)
                                     }
 
                                     HStack {
@@ -251,7 +251,7 @@ struct GoodsReceivingView: View {
                                             editCorrectiveAction = record.correctiveAction ?? ""
                                         }
                                         .buttonStyle(.bordered)
-                                        .tint(.white)
+                                        .tint(ThemeManager.shared.colorPrimary)
                                         if isMaster {
                                             Button("Elimina", role: .destructive) {
                                                 receiptPendingDeletion = record
@@ -266,7 +266,7 @@ struct GoodsReceivingView: View {
                                         .foregroundColor(.gray.opacity(0.8))
                                 }
                                 .padding(10)
-                                .background(Color.white.opacity(0.05))
+                                .background(ThemeManager.shared.colorSurface)
                                 .cornerRadius(10)
                             }
                         }
@@ -307,25 +307,25 @@ struct GoodsReceivingView: View {
                 VStack(spacing: 14) {
                     Text("Foto ricezione")
                         .font(.title3.bold())
-                        .foregroundColor(.white)
+                        .foregroundStyle(ThemeManager.shared.colorTextPrimary)
                     Text(pendingRequiresMandatoryPhoto
                          ? "Foto obbligatoria per non conformità."
                          : "Aggiungi foto (opzionale). Puoi salvare senza foto se tutti i controlli sono conformi.")
                         .font(.subheadline)
-                        .foregroundColor(.gray)
+                        .foregroundStyle(ThemeManager.shared.colorTextSecondary)
                         .multilineTextAlignment(.center)
                     RoundedRectangle(cornerRadius: 12)
-                        .fill(Color.black)
+                        .fill(ThemeManager.shared.colorCameraPreviewBackground)
                         .frame(height: pendingRequiresMandatoryPhoto ? 220 : 160)
                         .overlay(
                             Group {
                                 if finalizeCamera.authorizationDenied {
                                     VStack(spacing: 6) {
                                         Image(systemName: "camera.fill")
-                                            .foregroundColor(.gray)
+                                            .foregroundStyle(ThemeManager.shared.colorTextSecondary)
                                         Text("Accesso fotocamera negato")
                                             .font(.caption)
-                                            .foregroundColor(.gray)
+                                            .foregroundStyle(ThemeManager.shared.colorTextSecondary)
                                     }
                                 } else {
                                     FinalizeCameraSessionPreview(session: finalizeCamera.session)
@@ -335,7 +335,7 @@ struct GoodsReceivingView: View {
                         )
                         .overlay(
                             RoundedRectangle(cornerRadius: 12)
-                                .stroke(Color.white.opacity(0.1), lineWidth: 1)
+                                .stroke(ThemeManager.shared.colorDivider, lineWidth: 1)
                         )
 
                     HStack(spacing: 10) {
@@ -344,7 +344,7 @@ struct GoodsReceivingView: View {
                                 finalizeReceipt(photoData: nil)
                             }
                             .buttonStyle(.bordered)
-                            .tint(.white)
+                            .tint(ThemeManager.shared.colorPrimary)
                         }
                         Button("Scatta foto") {
                             awaitingFinalizeCapture = true
@@ -612,10 +612,10 @@ struct GoodsReceivingView: View {
     private func infoPill(_ title: String, _ value: String) -> some View {
         Text("\(title): \(value)")
             .font(.caption2)
-            .foregroundColor(.white.opacity(0.85))
+            .foregroundStyle(ThemeManager.shared.colorTextSecondary)
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
-            .background(Color.white.opacity(0.07))
+            .background(ThemeManager.shared.colorSurfaceElevated)
             .cornerRadius(8)
     }
 

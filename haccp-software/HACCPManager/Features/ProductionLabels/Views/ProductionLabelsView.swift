@@ -24,14 +24,14 @@ struct ProductionLabelsView: View {
                     VStack(spacing: 10) {
                         ForEach(scopedLabels.prefix(30)) { label in
                             VStack(alignment: .leading, spacing: 3) {
-                                Text(label.productName).foregroundColor(.white)
+                                Text(label.productName).foregroundStyle(ThemeManager.shared.colorTextPrimary)
                                 Text("Produzione: \(label.productionDate.formatted(date: .abbreviated, time: .omitted)) · Scadenza: \(label.expiryDate.formatted(date: .abbreviated, time: .omitted))")
                                     .font(.caption)
-                                    .foregroundColor(.gray)
+                                    .foregroundStyle(ThemeManager.shared.colorTextSecondary)
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(10)
-                            .background(Color.white.opacity(0.05))
+                            .background(ThemeManager.shared.colorSurface)
                             .cornerRadius(10)
                         }
                     }

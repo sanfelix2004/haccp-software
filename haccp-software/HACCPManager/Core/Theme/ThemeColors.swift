@@ -78,6 +78,6 @@ enum ThemeContrast {
         guard highContrast else { return theme.divider }
         return theme.isLight
             ? Color.black.opacity(0.35)
-            : Color.white.opacity(0.35)
+            : ThemeManager.shared.colorTextSecondary
     }
 }

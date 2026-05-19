@@ -21,6 +21,8 @@ final class BlastChillingRecord {
     var createdAt: Date
     var updatedAt: Date
     var operatorSignature: String?
+    var isArchived: Bool = false
+    var archivedAt: Date?
 
     init(
         id: UUID = UUID(),

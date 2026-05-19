@@ -36,25 +36,25 @@ struct BlastChillingRecordSheet: View {
                 VStack(alignment: .leading, spacing: 14) {
                     Text(isCompletion ? "Termina abbattimento: \(production.name)" : "Inizia abbattimento: \(production.name)")
                         .font(.title2.bold())
-                        .foregroundColor(.white)
+                        .foregroundStyle(ThemeManager.shared.colorTextPrimary)
                     Text("Categoria: \(production.categoryNameSnapshot) · Operatore: \(operatorName)")
                         .font(.caption)
-                        .foregroundColor(.gray)
+                        .foregroundStyle(ThemeManager.shared.colorTextSecondary)
 
                     HStack(spacing: 12) {
                         if let existingRecord {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text("Inizio registrato")
                                     .font(.caption)
-                                    .foregroundColor(.gray)
+                                    .foregroundStyle(ThemeManager.shared.colorTextSecondary)
                                 Text(existingRecord.startedAt.formatted(date: .abbreviated, time: .shortened))
-                                    .foregroundColor(.white)
+                                    .foregroundStyle(ThemeManager.shared.colorTextPrimary)
                             }
                             DatePicker("Fine", selection: $vm.endedAt)
-                                .foregroundColor(.white)
+                                .foregroundStyle(ThemeManager.shared.colorTextPrimary)
                         } else {
                             DatePicker("Inizio", selection: $vm.startedAt)
-                                .foregroundColor(.white)
+                                .foregroundStyle(ThemeManager.shared.colorTextPrimary)
                         }
                     }
 
@@ -63,14 +63,14 @@ struct BlastChillingRecordSheet: View {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text("Temperatura iniziale")
                                     .font(.caption)
-                                    .foregroundColor(.gray)
+                                    .foregroundStyle(ThemeManager.shared.colorTextSecondary)
                                 Text("\(existingRecord.initialTemperature, specifier: "%.1f") °C")
                                     .font(.title3.bold())
-                                    .foregroundColor(.white)
+                                    .foregroundStyle(ThemeManager.shared.colorTextPrimary)
                             }
                             .frame(maxWidth: .infinity, minHeight: 70, alignment: .leading)
                             .padding(10)
-                            .background(Color.white.opacity(0.06))
+                            .background(ThemeManager.shared.colorSurfaceElevated)
                             .cornerRadius(12)
                             temperatureField(title: "Temperatura finale", text: vm.finalTemperatureText, field: .final)
                         } else {
@@ -79,14 +79,14 @@ struct BlastChillingRecordSheet: View {
                         VStack(alignment: .leading, spacing: 4) {
                             Text("Soglia")
                                 .font(.caption)
-                                .foregroundColor(.gray)
+                                .foregroundStyle(ThemeManager.shared.colorTextSecondary)
                             Text("\((existingRecord?.targetTemperature ?? vm.targetTemperature), specifier: "%.1f") °C")
                                 .font(.title3.bold())
-                                .foregroundColor(.white)
+                                .foregroundStyle(ThemeManager.shared.colorTextPrimary)
                         }
                         .frame(maxWidth: .infinity, minHeight: 70, alignment: .leading)
                         .padding(10)
-                        .background(Color.white.opacity(0.06))
+                        .background(ThemeManager.shared.colorSurfaceElevated)
                         .cornerRadius(12)
                     }
 
@@ -98,7 +98,7 @@ struct BlastChillingRecordSheet: View {
                     if let message = validation.message {
                         Text(message)
                             .font(.caption)
-                            .foregroundColor(.orange)
+                            .foregroundStyle(ThemeManager.shared.colorWarning)
                     }
 
                     if isCompletion {
@@ -111,7 +111,7 @@ struct BlastChillingRecordSheet: View {
                         if validation.requiresCorrectiveAction {
                             Text("Nota e azione correttiva sono obbligatorie perché la temperatura finale supera la soglia.")
                                 .font(.caption2)
-                                .foregroundColor(.orange)
+                                .foregroundStyle(ThemeManager.shared.colorWarning)
                         }
                     }
                 }
@@ -153,14 +153,14 @@ struct BlastChillingRecordSheet: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(title)
                     .font(.caption)
-                    .foregroundColor(.gray)
+                    .foregroundStyle(ThemeManager.shared.colorTextSecondary)
                 Text(text.isEmpty ? "--.- °C" : "\(text) °C")
                     .font(.title3.bold())
-                    .foregroundColor(.white)
+                    .foregroundStyle(ThemeManager.shared.colorTextPrimary)
             }
             .frame(maxWidth: .infinity, minHeight: 70, alignment: .leading)
             .padding(10)
-            .background(vm.activeTemperatureField == field ? Color.red.opacity(0.35) : Color.white.opacity(0.06))
+            .background(vm.activeTemperatureField == field ? Color.red.opacity(0.35) : ThemeManager.shared.colorSurfaceElevated)
             .cornerRadius(12)
         }
         .buttonStyle(.plain)
@@ -183,9 +183,9 @@ struct BlastChillingRecordSheet: View {
                         } label: {
                             Text(key)
                                 .font(.title3.bold())
-                                .foregroundColor(.white)
+                                .foregroundStyle(ThemeManager.shared.colorTextPrimary)
                                 .frame(maxWidth: .infinity, minHeight: 48)
-                                .background(Color.white.opacity(0.08))
+                                .background(ThemeManager.shared.colorDivider)
                                 .cornerRadius(10)
                         }
                     }

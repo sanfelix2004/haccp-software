@@ -34,7 +34,7 @@ struct GoodsReceiptControlSheet: View {
                 VStack(spacing: 16) {
                     Text(product.name)
                         .font(.title3.bold())
-                        .foregroundColor(.white)
+                        .foregroundStyle(ThemeManager.shared.colorTextPrimary)
 
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 10) {
@@ -47,7 +47,7 @@ struct GoodsReceiptControlSheet: View {
                                         .foregroundColor(selectedTab == tab ? .white : .gray)
                                         .padding(.horizontal, 12)
                                         .padding(.vertical, 8)
-                                        .background(selectedTab == tab ? Color.red.opacity(0.65) : Color.white.opacity(0.08))
+                                        .background(selectedTab == tab ? Color.red.opacity(0.65) : ThemeManager.shared.colorDivider)
                                         .cornerRadius(10)
                                 }
                                 .buttonStyle(.plain)

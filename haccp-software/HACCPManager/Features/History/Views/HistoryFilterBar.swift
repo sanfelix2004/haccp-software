@@ -42,6 +42,6 @@ struct HistoryFilterBar: View {
                 .pickerStyle(.menu)
             }
         }
-        .foregroundColor(.white)
+        .foregroundStyle(ThemeManager.shared.colorTextPrimary)
     }
 }

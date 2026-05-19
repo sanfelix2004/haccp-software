@@ -146,9 +146,9 @@ struct TemperatureRootView: View {
             VStack(alignment: .leading, spacing: 6) {
                 Text("Controlli temperatura")
                     .font(.system(size: 34, weight: .black, design: .rounded))
-                    .foregroundColor(.white)
+                    .foregroundStyle(ThemeManager.shared.colorTextPrimary)
                 Text("Monitoraggio HACCP locale e tracciabile")
-                    .foregroundColor(.gray)
+                    .foregroundStyle(ThemeManager.shared.colorTextSecondary)
             }
             Spacer()
             Button {
@@ -157,10 +157,9 @@ struct TemperatureRootView: View {
             } label: {
                 Label("Nuova misurazione", systemImage: "plus")
                     .font(.headline)
-                    .foregroundColor(.white)
+                    .foregroundStyle(ThemeManager.shared.colorTextOnPrimary)
                     .padding(.horizontal, 16)
-                    .padding(.vertical, 12)
-                    .background(Color.red)
+                    .padding(.vertical, 12).background(Color.red)
                     .cornerRadius(12)
             }
             .disabled(scopedDevices.isEmpty)
@@ -186,26 +185,26 @@ struct TemperatureRootView: View {
                         } label: {
                             HStack {
                                 VStack(alignment: .leading, spacing: 6) {
-                                    Text(device.name).font(.headline).foregroundColor(.white)
-                                    Text(device.type.label).font(.caption).foregroundColor(.gray)
+                                    Text(device.name).font(.headline).foregroundStyle(ThemeManager.shared.colorTextPrimary)
+                                    Text(device.type.label).font(.caption).foregroundStyle(ThemeManager.shared.colorTextSecondary)
                                 }
                                 Spacer()
                                 if let status = problemMap[device.id] {
                                     Text(status.label)
                                         .font(.caption.bold())
-                                        .foregroundColor(.white)
+                                        .foregroundStyle(ThemeManager.shared.colorTextPrimary)
                                         .padding(.horizontal, 10)
                                         .padding(.vertical, 6)
                                         .background(status.color)
                                         .cornerRadius(10)
                                 } else {
                                     Text("Nessuna misurazione")
-                                        .foregroundColor(.gray)
+                                        .foregroundStyle(ThemeManager.shared.colorTextSecondary)
                                         .font(.caption)
                                 }
                             }
                             .padding(14)
-                            .background(Color.white.opacity(0.05))
+                            .background(ThemeManager.shared.colorSurface)
                             .cornerRadius(14)
                         }
                     }
@@ -213,13 +212,13 @@ struct TemperatureRootView: View {
 
                 if !activeAlerts.isEmpty {
                     VStack(alignment: .leading, spacing: 10) {
-                        Text("Dispositivi con problemi").foregroundColor(.white).font(.headline)
+                        Text("Dispositivi con problemi").foregroundStyle(ThemeManager.shared.colorTextPrimary).font(.headline)
                         ForEach(activeAlerts.prefix(5)) { alert in
                             HStack {
                                 Image(systemName: "exclamationmark.triangle.fill").foregroundColor(.red)
                                 VStack(alignment: .leading) {
-                                    Text(alert.deviceName).foregroundColor(.white)
-                                    Text(alert.message).font(.caption).foregroundColor(.gray)
+                                    Text(alert.deviceName).foregroundStyle(ThemeManager.shared.colorTextPrimary)
+                                    Text(alert.message).font(.caption).foregroundStyle(ThemeManager.shared.colorTextSecondary)
                                 }
                                 Spacer()
                             }
@@ -238,10 +237,10 @@ struct TemperatureRootView: View {
 
     private var reportCard: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Report Temperature").font(.headline).foregroundColor(.white)
+            Text("Report Temperature").font(.headline).foregroundStyle(ThemeManager.shared.colorTextPrimary)
             Text("Genera PDF/CSV del periodo selezionato. I record inclusi verranno marcati come archiviati.")
                 .font(.caption)
-                .foregroundColor(.gray)
+                .foregroundStyle(ThemeManager.shared.colorTextSecondary)
             HStack {
                 Button("Genera PDF") {
                     export(includeCSV: false)
@@ -253,29 +252,28 @@ struct TemperatureRootView: View {
                     export(includeCSV: true)
                 }
                 .buttonStyle(.bordered)
-                .tint(.white)
+                .tint(ThemeManager.shared.colorPrimary)
             }
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.white.opacity(0.05))
+        .background(ThemeManager.shared.colorSurface)
         .cornerRadius(14)
     }
 
     private var devicesContent: some View {
         VStack(spacing: 14) {
             HStack {
-                Text("Dispositivi").foregroundColor(.white).font(.title3.bold())
+                Text("Dispositivi").foregroundStyle(ThemeManager.shared.colorTextPrimary).font(.title3.bold())
                 Spacer()
                 if currentUser?.role == .master {
                     Button {
                         viewModel.showAddDeviceSheet = true
                     } label: {
                         Label("Aggiungi dispositivo", systemImage: "plus.circle.fill")
-                            .foregroundColor(.white)
+                            .foregroundStyle(ThemeManager.shared.colorTextOnPrimary)
                             .padding(.horizontal, 12)
-                            .padding(.vertical, 8)
-                            .background(Color.red)
+                            .padding(.vertical, 8).background(Color.red)
                             .cornerRadius(10)
                     }
                 }
@@ -283,7 +281,7 @@ struct TemperatureRootView: View {
             if currentUser?.role != .master {
                 Text("Solo il MASTER puo creare, modificare o eliminare dispositivi.")
                     .font(.caption)
-                    .foregroundColor(.gray)
+                    .foregroundStyle(ThemeManager.shared.colorTextSecondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             if scopedDevices.isEmpty {
@@ -297,8 +295,8 @@ struct TemperatureRootView: View {
                             } label: {
                                 HStack {
                                     VStack(alignment: .leading) {
-                                        Text(device.name).foregroundColor(.white).font(.headline)
-                                        Text(device.type.label).foregroundColor(.gray).font(.caption)
+                                        Text(device.name).foregroundStyle(ThemeManager.shared.colorTextPrimary).font(.headline)
+                                        Text(device.type.label).foregroundStyle(ThemeManager.shared.colorTextSecondary).font(.caption)
                                     }
                                     Spacer()
                                     if currentUser?.role == .master {
@@ -319,7 +317,7 @@ struct TemperatureRootView: View {
                                     }
                                 }
                                 .padding(12)
-                                .background(Color.white.opacity(0.05))
+                                .background(ThemeManager.shared.colorSurface)
                                 .cornerRadius(12)
                             }
                             .buttonStyle(.plain)
@@ -344,7 +342,7 @@ struct TemperatureRootView: View {
                     historyPage += 1
                 }
             }
-            .foregroundColor(.white)
+            .foregroundStyle(ThemeManager.shared.colorTextPrimary)
 
             let filtered = scopedRecords.filter { $0.measuredAt >= historyDateFilter }
             let page = viewModel.paginatedHistory(filtered, page: historyPage, pageSize: pageSize)
@@ -357,26 +355,26 @@ struct TemperatureRootView: View {
                         ForEach(page) { record in
                             VStack(alignment: .leading, spacing: 6) {
                                 HStack {
-                                    Text(record.deviceName).foregroundColor(.white).font(.headline)
+                                    Text(record.deviceName).foregroundStyle(ThemeManager.shared.colorTextPrimary).font(.headline)
                                     Spacer()
                                     Text("\(record.value, specifier: "%.1f") °C")
-                                        .foregroundColor(.white)
+                                        .foregroundStyle(ThemeManager.shared.colorTextPrimary)
                                         .padding(.horizontal, 10)
                                         .padding(.vertical, 4)
                                         .background(record.status.color)
                                         .cornerRadius(8)
                                 }
                                 Text("\(record.measuredByName) - \(record.measuredAt.formatted(date: .abbreviated, time: .shortened))")
-                                    .foregroundColor(.gray)
+                                    .foregroundStyle(ThemeManager.shared.colorTextSecondary)
                                     .font(.caption)
                                 if let corrective = record.correctiveAction, !corrective.isEmpty {
                                     Text("Azione: \(corrective)")
-                                        .foregroundColor(.orange)
+                                        .foregroundStyle(ThemeManager.shared.colorWarning)
                                         .font(.caption)
                                 }
                             }
                             .padding(12)
-                            .background(Color.white.opacity(0.05))
+                            .background(ThemeManager.shared.colorSurface)
                             .cornerRadius(12)
                         }
                     }
@@ -399,8 +397,8 @@ struct TemperatureRootView: View {
                         HStack(alignment: .top) {
                             Image(systemName: "exclamationmark.triangle.fill").foregroundColor(.red)
                             VStack(alignment: .leading, spacing: 6) {
-                                Text(alert.deviceName).foregroundColor(.white).font(.headline)
-                                Text(alert.message).foregroundColor(.gray).font(.caption)
+                                Text(alert.deviceName).foregroundStyle(ThemeManager.shared.colorTextPrimary).font(.headline)
+                                Text(alert.message).foregroundStyle(ThemeManager.shared.colorTextSecondary).font(.caption)
                                 Text(alert.createdAt.formatted(date: .abbreviated, time: .shortened))
                                     .foregroundColor(.gray.opacity(0.8))
                                     .font(.caption2)
@@ -422,20 +420,20 @@ struct TemperatureRootView: View {
 
     private func emptyCard(text: String) -> some View {
         Text(text)
-            .foregroundColor(.gray)
+            .foregroundStyle(ThemeManager.shared.colorTextSecondary)
             .frame(maxWidth: .infinity, minHeight: 160)
-            .background(Color.white.opacity(0.05))
+            .background(ThemeManager.shared.colorSurface)
             .cornerRadius(12)
     }
 
     private func metricCard(title: String, value: String) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(title).font(.caption).foregroundColor(.gray)
-            Text(value).font(.title2.bold()).foregroundColor(.white)
+            Text(title).font(.caption).foregroundStyle(ThemeManager.shared.colorTextSecondary)
+            Text(value).font(.title2.bold()).foregroundStyle(ThemeManager.shared.colorTextPrimary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(12)
-        .background(Color.white.opacity(0.05))
+        .background(ThemeManager.shared.colorSurface)
         .cornerRadius(12)
     }
 
@@ -497,21 +495,21 @@ struct TemperatureDeviceDetailView: View {
         let scoped = records.filter { $0.deviceId == device.id }.sorted(by: { $0.measuredAt > $1.measuredAt })
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
-                Text(device.name).font(.largeTitle.bold()).foregroundColor(.white)
-                Text(device.type.label).foregroundColor(.gray)
-                Divider().overlay(Color.white.opacity(0.1))
+                Text(device.name).font(.largeTitle.bold()).foregroundStyle(ThemeManager.shared.colorTextPrimary)
+                Text(device.type.label).foregroundStyle(ThemeManager.shared.colorTextSecondary)
+                Divider().overlay(ThemeManager.shared.colorDivider)
                 if scoped.isEmpty {
-                    Text("Nessuna misurazione registrata").foregroundColor(.gray)
+                    Text("Nessuna misurazione registrata").foregroundStyle(ThemeManager.shared.colorTextSecondary)
                 } else {
                     ForEach(scoped.prefix(100)) { record in
                         HStack {
                             Text(record.measuredAt.formatted(date: .abbreviated, time: .shortened))
-                                .foregroundColor(.gray).font(.caption)
+                                .foregroundStyle(ThemeManager.shared.colorTextSecondary).font(.caption)
                             Spacer()
-                            Text("\(record.value, specifier: "%.1f") °C").foregroundColor(.white)
+                            Text("\(record.value, specifier: "%.1f") °C").foregroundStyle(ThemeManager.shared.colorTextPrimary)
                             Text(record.status.label)
                                 .font(.caption.bold())
-                                .foregroundColor(.white)
+                                .foregroundStyle(ThemeManager.shared.colorTextPrimary)
                                 .padding(.horizontal, 8)
                                 .padding(.vertical, 4)
                                 .background(record.status.color)
@@ -685,20 +683,20 @@ struct AddTemperatureRecordView: View {
                     .padding(.horizontal, 8)
                     .padding(.vertical, 8)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color.white.opacity(0.08))
+                    .background(ThemeManager.shared.colorDivider)
                     .cornerRadius(12)
-                    .tint(.white)
+                    .tint(ThemeManager.shared.colorPrimary)
 
                     Text(selectedDevice?.name ?? "Dispositivo")
                         .font(.title3.bold())
-                        .foregroundColor(.white)
+                        .foregroundStyle(ThemeManager.shared.colorTextPrimary)
                     Text(selectedDevice?.type.label ?? "-")
-                        .foregroundColor(.gray)
+                        .foregroundStyle(ThemeManager.shared.colorTextSecondary)
                         .font(.caption)
 
                     Text(valueText.isEmpty ? "--.-" : valueText)
                         .font(.system(size: 52, weight: .black, design: .rounded))
-                        .foregroundColor(.white)
+                        .foregroundStyle(ThemeManager.shared.colorTextPrimary)
 
                     Text(validationMessage)
                         .foregroundColor(validationColor)
@@ -710,10 +708,10 @@ struct AddTemperatureRecordView: View {
                             HStack(spacing: 10) {
                                 Button("+/-") { toggleSign() }
                                     .buttonStyle(.bordered)
-                                    .tint(.white)
+                                    .tint(ThemeManager.shared.colorPrimary)
                                 Button("C") { clearAll() }
                                     .buttonStyle(.bordered)
-                                    .tint(.white)
+                                    .tint(ThemeManager.shared.colorPrimary)
                                 Spacer()
                             }
 
@@ -726,9 +724,9 @@ struct AddTemperatureRecordView: View {
                                             } label: {
                                                 Text(key)
                                                     .font(.title3.bold())
-                                                    .foregroundColor(.white)
+                                                    .foregroundStyle(ThemeManager.shared.colorTextPrimary)
                                                     .frame(maxWidth: .infinity, minHeight: keypadButtonHeight)
-                                                    .background(Color.white.opacity(0.08))
+                                                    .background(ThemeManager.shared.colorDivider)
                                                     .cornerRadius(10)
                                             }
                                         }
@@ -741,20 +739,20 @@ struct AddTemperatureRecordView: View {
                         VStack(alignment: .leading, spacing: 10) {
                             Text("Dettagli controllo")
                                 .font(.caption.bold())
-                                .foregroundColor(.gray)
+                                .foregroundStyle(ThemeManager.shared.colorTextSecondary)
                             TextField("Note (opzionale)", text: $notes)
                                 .textFieldStyle(.roundedBorder)
                             Text("Azione correttiva")
                                 .font(.caption)
-                                .foregroundColor(.gray)
+                                .foregroundStyle(ThemeManager.shared.colorTextSecondary)
                             TextEditor(text: $correctiveAction)
                                 .frame(minHeight: correctiveEditorHeight, maxHeight: correctiveEditorHeight)
                                 .scrollContentBackground(.hidden)
                                 .padding(8)
-                                .background(Color.white.opacity(0.06))
+                                .background(ThemeManager.shared.colorSurfaceElevated)
                                 .overlay(
                                     RoundedRectangle(cornerRadius: 10)
-                                        .stroke(requiresCorrectiveAction ? Color.orange : Color.white.opacity(0.12), lineWidth: 1)
+                                        .stroke(requiresCorrectiveAction ? Color.orange : ThemeManager.shared.colorDivider, lineWidth: 1)
                                 )
                                 .cornerRadius(10)
                             Text(requiresCorrectiveAction ? "Obbligatoria: inserisci azione per valori fuori range." : "Opzionale: utile per tracciabilita.")
@@ -768,7 +766,7 @@ struct AddTemperatureRecordView: View {
                     HStack(spacing: 12) {
                         Button("Annulla") { dismiss() }
                             .buttonStyle(.bordered)
-                            .tint(.white)
+                            .tint(ThemeManager.shared.colorPrimary)
                         Button("Conferma misurazione") {
                             save()
                         }

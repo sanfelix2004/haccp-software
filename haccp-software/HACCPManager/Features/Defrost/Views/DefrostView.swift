@@ -24,12 +24,12 @@ struct DefrostView: View {
                     VStack(spacing: 10) {
                         ForEach(scopedRecords.prefix(25)) { record in
                             VStack(alignment: .leading, spacing: 3) {
-                                Text(record.productName).foregroundColor(.white)
-                                Text("Metodo: \(record.method)").font(.caption).foregroundColor(.gray)
+                                Text(record.productName).foregroundStyle(ThemeManager.shared.colorTextPrimary)
+                                Text("Metodo: \(record.method)").font(.caption).foregroundStyle(ThemeManager.shared.colorTextSecondary)
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(10)
-                            .background(Color.white.opacity(0.05))
+                            .background(ThemeManager.shared.colorSurface)
                             .cornerRadius(10)
                         }
                     }

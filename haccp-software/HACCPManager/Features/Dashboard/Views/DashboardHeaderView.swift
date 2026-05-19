@@ -5,82 +5,98 @@ struct DashboardHeaderView: View {
     let restaurant: Restaurant?
     let dateTimeText: String
     let systemStateMessage: String
+    var compliancePercent: Int = 94
+
+    @Environment(\.theme) private var theme
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack(spacing: 20) {
-                        // Global Avatar Integration
-                        ZStack {
-                            if let data = user?.profileImageData, let uiImage = UIImage(data: data) {
-                                Image(uiImage: uiImage)
-                                    .resizable()
-                                    .scaledToFill()
-                                    .frame(width: 60, height: 60)
-                                    .clipShape(Circle())
-                                    .overlay(Circle().stroke(Color.white.opacity(0.1), lineWidth: 1))
-                            } else {
-                                Circle()
-                                    .fill(Color(hex: user?.avatarColorHex ?? "#FF0000"))
-                                    .frame(width: 60, height: 60)
-                                Text(user?.name.prefix(1).uppercased() ?? "U")
-                                    .font(.title2.bold())
-                                    .foregroundColor(.white)
-                            }
-                        }
-                        .shadow(color: .black.opacity(0.3), radius: 10, y: 5)
-                        
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Bentornato, \(user?.name ?? "Operatore")")
-                                .font(.system(size: 38, weight: .black, design: .rounded))
-                                .foregroundColor(.white)
-                            Text("\(user?.role.rawValue ?? "UTENTE")  •  \(restaurant?.name ?? "Nessun Ristorante")")
-                                .font(.headline)
-                                .foregroundColor(Color.white.opacity(0.78))
+        GlassCard(elevated: true) {
+            VStack(alignment: .leading, spacing: theme.spacing.xl) {
+                HStack(alignment: .top, spacing: theme.spacing.xl) {
+                    avatar
+                    VStack(alignment: .leading, spacing: theme.spacing.sm) {
+                        Text("Bentornato")
+                            .font(theme.typography.caption.weight(.semibold))
+                            .foregroundStyle(theme.colorTextSecondary)
+                            .textCase(.uppercase)
+                            .tracking(1)
+                        Text(user?.name ?? "Operatore")
+                            .font(theme.typography.display)
+                            .foregroundStyle(theme.colorTextPrimary)
+                            .lineLimit(2)
+                        Text("\(user?.role.rawValue ?? "UTENTE") · \(restaurant?.name ?? "Ristorante")")
+                            .font(theme.typography.subheadline)
+                            .foregroundStyle(theme.colorTextSecondary)
+                    }
+                    Spacer(minLength: 0)
+                    VStack(alignment: .trailing, spacing: theme.spacing.sm) {
+                        Text(dateTimeText)
+                            .font(theme.typography.caption.weight(.semibold))
+                            .foregroundStyle(theme.colorTextSecondary)
+                            .multilineTextAlignment(.trailing)
+                        if user?.role == .master {
+                            masterBadge
                         }
                     }
                 }
-                Spacer()
-                VStack(alignment: .trailing, spacing: 10) {
-                    Text(dateTimeText)
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundColor(Color.white.opacity(0.85))
-                    if user?.role == .master {
-                        HStack(spacing: 8) {
-                            Image(systemName: "crown.fill")
-                            Text("MASTER")
-                                .fontWeight(.black)
-                                .tracking(1)
-                            Image(systemName: "sparkle")
-                        }
-                        .font(.caption)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 7)
-                        .background(LinearGradient(colors: [Color(hex: "#FFD700"), Color(hex: "#D4AF37")], startPoint: .leading, endPoint: .trailing))
-                        .foregroundColor(.black)
-                        .clipShape(Capsule())
-                        .shadow(color: Color(hex: "#FFD700").opacity(0.35), radius: 8)
-                    }
-                }
-            }
 
-            HStack(spacing: 12) {
-                Circle()
-                    .fill(Color.green)
-                    .frame(width: 10, height: 10)
-                    .shadow(color: .green.opacity(0.5), radius: 4)
-                Text(systemStateMessage)
-                    .font(.headline)
-                    .foregroundColor(.white)
+                HStack(spacing: theme.spacing.md) {
+                    HACCPBadge(title: "Sistema operativo", style: .conforme, showIcon: true)
+                    Text(systemStateMessage)
+                        .font(theme.typography.subheadline)
+                        .foregroundStyle(theme.colorTextPrimary)
+                        .lineLimit(2)
+                }
             }
         }
-        .padding(24)
-        .background(Color.white.opacity(0.04))
-        .overlay(
-            RoundedRectangle(cornerRadius: 22)
-                .stroke(Color.white.opacity(0.08), lineWidth: 1)
+    }
+
+    private var avatar: some View {
+        Group {
+            if let data = user?.profileImageData, let uiImage = UIImage(data: data) {
+                Image(uiImage: uiImage)
+                    .resizable()
+                    .scaledToFill()
+            } else {
+                ZStack {
+                    Circle()
+                        .fill(
+                            LinearGradient(
+                                colors: [theme.colorPrimary, theme.colorPrimary.opacity(0.7)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                    Text(user?.name.prefix(1).uppercased() ?? "U")
+                        .font(theme.typography.title2)
+                        .foregroundStyle(theme.colorTextOnPrimary)
+                }
+            }
+        }
+        .frame(width: 72, height: 72)
+        .clipShape(Circle())
+        .overlay(Circle().stroke(theme.colorDivider, lineWidth: 1))
+        .shadow(color: theme.shadows.subtle.color, radius: theme.shadows.subtle.radius, y: theme.shadows.subtle.y)
+    }
+
+    private var masterBadge: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "crown.fill")
+            Text("MASTER")
+                .fontWeight(.black)
+                .tracking(1)
+        }
+        .font(theme.typography.caption)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(
+            LinearGradient(
+                colors: [theme.colorAccent.opacity(0.9), theme.colorWarning.opacity(0.85)],
+                startPoint: .leading,
+                endPoint: .trailing
+            )
         )
-        .clipShape(RoundedRectangle(cornerRadius: 22))
+        .foregroundStyle(theme.isDark ? theme.colorTextPrimary : Color(hex: "#1A1D21"))
+        .clipShape(Capsule())
     }
 }

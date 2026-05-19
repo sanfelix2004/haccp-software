@@ -10,7 +10,7 @@ struct MasterFirstAccessIntroView: View {
     
     var body: some View {
         ZStack {
-            Color.black.ignoresSafeArea()
+            ThemeManager.shared.colorBackground.ignoresSafeArea()
             
             // Golden Vortex Background
             ZStack {
@@ -47,14 +47,14 @@ struct MasterFirstAccessIntroView: View {
                     VStack(spacing: 24) {
                         Image(systemName: "crown.fill")
                             .font(.system(size: 100))
-                            .foregroundColor(.yellow)
+                            .foregroundStyle(ThemeManager.shared.colorWarning)
                             .shadow(color: .orange.opacity(0.6), radius: 30)
                             .transition(.scale.combined(with: .opacity))
                         
                         VStack(spacing: 8) {
                             Text("BENVENUTO, MASTER")
                                 .font(.system(size: 44, weight: .black, design: .rounded))
-                                .foregroundColor(.white)
+                                .foregroundStyle(ThemeManager.shared.colorTextPrimary)
                                 .shadow(color: .yellow.opacity(0.5), radius: 10)
                             
                             Text("Configurazione Completata")
@@ -68,7 +68,7 @@ struct MasterFirstAccessIntroView: View {
                         Text("HACCP Manager ti aiuta a controllare utenti, procedure, temperature, etichette, pulizie e attività giornaliere del ristorante in modo semplice, sicuro e professionale.")
                             .font(.title3)
                             .multilineTextAlignment(.center)
-                            .foregroundColor(.gray)
+                            .foregroundStyle(ThemeManager.shared.colorTextSecondary)
                             .lineSpacing(6)
                             .padding(.horizontal, 80)
                             .transition(.move(edge: .bottom).combined(with: .opacity))
@@ -82,7 +82,7 @@ struct MasterFirstAccessIntroView: View {
                         Text("Inizia ora")
                             .font(.title3)
                             .fontWeight(.black)
-                            .foregroundColor(.black)
+                            .foregroundStyle(ThemeManager.shared.colorTextPrimary)
                             .frame(maxWidth: 300)
                             .padding(.vertical, 20)
                             .background(

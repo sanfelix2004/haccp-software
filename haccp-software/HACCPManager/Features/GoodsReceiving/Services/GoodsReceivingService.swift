@@ -67,7 +67,7 @@ struct GoodsReceivingService {
             quantity: quantity,
             unit: unit,
             checklistResultsData: try? JSONEncoder().encode(checklistResults),
-            photoData: photoData,
+            photoData: StoredImageCompression.preparedForStorage(photoData),
             notes: notes,
             correctiveAction: correctiveAction,
             status: status,
@@ -76,11 +76,11 @@ struct GoodsReceivingService {
         )
         modelContext.insert(receipt)
         let trace = traceabilityService.createTraceabilityItem(receipt: receipt, modelContext: modelContext)
-        if let photoData, photoData.isEmpty == false {
+        if let compressed = StoredImageCompression.preparedForStorage(photoData), compressed.isEmpty == false {
             modelContext.insert(
                 ProductImage(
                     receivedItemId: trace.id,
-                    imageData: photoData,
+                    imageData: compressed,
                     localPath: nil,
                     type: hasNonOk ? .nonComplianceRequired : .receiptOptional,
                     createdByUserId: user.id,

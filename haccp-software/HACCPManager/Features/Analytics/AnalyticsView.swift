@@ -22,9 +22,9 @@ struct AnalyticsView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Grafici")
                         .font(.largeTitle.bold())
-                        .foregroundColor(.white)
+                        .foregroundStyle(ThemeManager.shared.colorTextPrimary)
                     Text("Analizza controlli, checklist e temperature del ristorante")
-                        .foregroundColor(.gray)
+                        .foregroundStyle(ThemeManager.shared.colorTextSecondary)
                 }
 
                 if let restaurantId {

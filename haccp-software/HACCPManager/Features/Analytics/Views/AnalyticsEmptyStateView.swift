@@ -8,18 +8,18 @@ struct AnalyticsEmptyStateView: View {
         VStack(spacing: 8) {
             Image(systemName: "chart.xyaxis.line")
                 .font(.title2)
-                .foregroundColor(.gray)
+                .foregroundStyle(ThemeManager.shared.colorTextSecondary)
             Text(title)
-                .foregroundColor(.white)
+                .foregroundStyle(ThemeManager.shared.colorTextPrimary)
                 .font(.headline)
             Text(message)
-                .foregroundColor(.gray)
+                .foregroundStyle(ThemeManager.shared.colorTextSecondary)
                 .font(.subheadline)
                 .multilineTextAlignment(.center)
         }
         .frame(maxWidth: .infinity)
         .padding(24)
-        .background(Color.white.opacity(0.04))
+        .background(ThemeManager.shared.colorSurface)
         .cornerRadius(12)
     }
 }

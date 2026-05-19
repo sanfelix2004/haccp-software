@@ -13,10 +13,10 @@ struct ChecklistEmptyStateView: View {
                 .foregroundColor(.red.opacity(0.9))
             Text(title)
                 .font(.title3.bold())
-                .foregroundColor(.white)
+                .foregroundStyle(ThemeManager.shared.colorTextPrimary)
             Text(message)
                 .multilineTextAlignment(.center)
-                .foregroundColor(.gray)
+                .foregroundStyle(ThemeManager.shared.colorTextSecondary)
                 .frame(maxWidth: 420)
             if let actionTitle, let action {
                 Button(actionTitle, action: action)
@@ -25,7 +25,7 @@ struct ChecklistEmptyStateView: View {
             }
         }
         .frame(maxWidth: .infinity, minHeight: 220)
-        .background(Color.white.opacity(0.04))
+        .background(ThemeManager.shared.colorSurface)
         .cornerRadius(14)
     }
 }

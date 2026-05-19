@@ -12,7 +12,7 @@ struct GoodsReceiptLotExpirySection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("N lotto / scadenza").font(.headline).foregroundColor(.white)
+            Text("N lotto / scadenza").font(.headline).foregroundStyle(ThemeManager.shared.colorTextPrimary)
 
             TextField("Numero lotto", text: $lotNumber)
                 .textFieldStyle(.roundedBorder)
@@ -20,7 +20,7 @@ struct GoodsReceiptLotExpirySection: View {
                 Toggle("Data scadenza", isOn: $includeExpiryDate).tint(.red)
                 if includeExpiryDate {
                     DatePicker("Scadenza", selection: $expiryDate, displayedComponents: .date)
-                        .foregroundColor(.white)
+                        .foregroundStyle(ThemeManager.shared.colorTextPrimary)
                 }
             }
 
@@ -28,7 +28,7 @@ struct GoodsReceiptLotExpirySection: View {
                 Toggle("Data produzione", isOn: $includeProductionDate).tint(.red)
                 if includeProductionDate {
                     DatePicker("Produzione", selection: $productionDate, displayedComponents: .date)
-                        .foregroundColor(.white)
+                        .foregroundStyle(ThemeManager.shared.colorTextPrimary)
                 }
             }
 

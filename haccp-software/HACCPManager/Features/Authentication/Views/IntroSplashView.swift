@@ -9,11 +9,8 @@ struct IntroSplashView: View {
     var body: some View {
         ZStack {
             // Elegant background
-            LinearGradient(
-                colors: [Color.black, Color(hex: "#1A0000")],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            ).ignoresSafeArea()
+            ThemeManager.shared.colorBackground
+                .ignoresSafeArea()
             
             VStack(spacing: 24) {
                 // Main Logo / Title
@@ -26,7 +23,7 @@ struct IntroSplashView: View {
                 // Subtitle
                 Text("DIGITAL FOOD SAFETY CONTROL")
                     .font(.system(size: 14, weight: .black, design: .rounded))
-                    .foregroundColor(.gray)
+                    .foregroundStyle(ThemeManager.shared.colorTextSecondary)
                     .tracking(8)
                     .padding(.top, 40)
                     .opacity(isActive ? 1 : 0)
@@ -54,6 +51,5 @@ struct IntroSplashView: View {
                 }
             }
         }
-        .preferredColorScheme(.dark)
     }
 }

@@ -14,12 +14,7 @@ struct TraceabilityView: View {
     @Environment(\.modelContext) private var modelContext
     @EnvironmentObject var appState: AppState
     @Query private var users: [LocalUser]
-    @Query private var records: [TraceabilityRecord]
-    @Query private var productions: [Production]
-    @Query private var links: [TraceabilityLink]
-    @Query private var logs: [TraceabilityLog]
-    @Query private var images: [ProductImage]
-    @Query private var goodsReceipts: [GoodsReceipt]
+    @StateObject private var dataStore = TraceabilityDataStore()
 
     @State private var selectedTraceabilityForProduction: TraceabilityRecord?
     @State private var showProductionSelection = false
@@ -43,8 +38,7 @@ struct TraceabilityView: View {
     private let service = TraceabilityService()
 
     private var scopedRecords: [TraceabilityRecord] {
-        guard let rid = appState.activeRestaurantId else { return [] }
-        return records.filter { $0.restaurantId == rid }.sorted(by: { $0.createdAt > $1.createdAt })
+        dataStore.records
     }
 
     private var filteredRecords: [TraceabilityRecord] {
@@ -70,8 +64,7 @@ struct TraceabilityView: View {
     private var isMaster: Bool { currentUser?.role == .master }
 
     private var scopedGoodsReceipts: [GoodsReceipt] {
-        guard let rid = appState.activeRestaurantId else { return [] }
-        return goodsReceipts.filter { $0.restaurantId == rid }
+        dataStore.goodsReceipts
     }
 
     var body: some View {
@@ -81,7 +74,7 @@ struct TraceabilityView: View {
                     VStack(spacing: 10) {
                         Text("Le modifiche al prodotto si effettuano da Ricezione merci.")
                             .font(.caption)
-                            .foregroundColor(.gray)
+                            .foregroundStyle(ThemeManager.shared.colorTextSecondary)
                             .frame(maxWidth: .infinity, alignment: .leading)
                         Button {
                             appState.navigateToGoodsReceiving = true
@@ -111,7 +104,7 @@ struct TraceabilityView: View {
                             .pickerStyle(.menu)
                             Button("Esporta CSV") { exportURL = buildExportFile() }
                                 .buttonStyle(.bordered)
-                                .tint(.white)
+                                .tint(ThemeManager.shared.colorPrimary)
                         }
                         if let exportURL {
                             HStack {
@@ -119,7 +112,7 @@ struct TraceabilityView: View {
                                 ShareLink(item: exportURL) {
                                     Label("Condividi export", systemImage: "square.and.arrow.up")
                                 }
-                                .foregroundColor(.white)
+                                .foregroundStyle(ThemeManager.shared.colorTextPrimary)
                             }
                         }
                     }
@@ -137,17 +130,17 @@ struct TraceabilityView: View {
                                     HStack {
                                         recordImagePreview(for: record)
                                         VStack(alignment: .leading, spacing: 3) {
-                                            Text(displayProductName(for: record)).foregroundColor(.white)
+                                            Text(displayProductName(for: record)).foregroundStyle(ThemeManager.shared.colorTextPrimary)
                                             Text("Lotto: \(displayLot(for: record))")
-                                                .font(.caption).foregroundColor(.gray)
+                                                .font(.caption).foregroundStyle(ThemeManager.shared.colorTextSecondary)
                                             Text("Fornitore: \(displaySupplier(for: record))")
-                                                .font(.caption).foregroundColor(.gray)
+                                                .font(.caption).foregroundStyle(ThemeManager.shared.colorTextSecondary)
                                             Text("Ricezione: \(displayReceivedAt(for: record).formatted(date: .abbreviated, time: .shortened))")
-                                                .font(.caption2).foregroundColor(.gray)
+                                                .font(.caption2).foregroundStyle(ThemeManager.shared.colorTextSecondary)
                                             if let cat = displayCategoryLabel(for: record) {
                                                 Text("Categoria: \(cat)")
                                                     .font(.caption2)
-                                                    .foregroundColor(.gray)
+                                                    .foregroundStyle(ThemeManager.shared.colorTextSecondary)
                                             }
                                             if let st = displayReceiptStatusLabel(for: record) {
                                                 Text("Stato ricezione: \(st)")
@@ -156,33 +149,33 @@ struct TraceabilityView: View {
                                             }
                                             Text("Scadenza: \(displayExpiry(for: record))")
                                                 .font(.caption2)
-                                                .foregroundColor(.gray)
+                                                .foregroundStyle(ThemeManager.shared.colorTextSecondary)
                                             statusBadge(for: record)
                                             let associated = associatedProductions(for: record)
                                             VStack(alignment: .leading, spacing: 4) {
                                                 Text("PRODUZIONI ASSOCIATE")
                                                     .font(.caption2.weight(.bold))
-                                                    .foregroundColor(.white.opacity(0.95))
+                                                    .foregroundStyle(ThemeManager.shared.colorTextPrimary)
                                                 Text(associated.isEmpty ? "Nessuna produzione" : associated.map(\.name).joined(separator: " • "))
                                                     .font(.caption.weight(.semibold))
-                                                    .foregroundColor(associated.isEmpty ? .gray : .green)
+                                                    .foregroundStyle(associated.isEmpty ? ThemeManager.shared.colorTextSecondary : ThemeManager.shared.colorSuccess)
                                                     .lineLimit(2)
                                             }
                                             .padding(.horizontal, 8)
                                             .padding(.vertical, 6)
                                             .background(
                                                 RoundedRectangle(cornerRadius: 8)
-                                                    .fill(associated.isEmpty ? Color.white.opacity(0.05) : Color.green.opacity(0.14))
+                                                    .fill(associated.isEmpty ? ThemeManager.shared.colorSurface : Color.green.opacity(0.14))
                                             )
                                             .overlay(
                                                 RoundedRectangle(cornerRadius: 8)
-                                                    .stroke(associated.isEmpty ? Color.white.opacity(0.12) : Color.green.opacity(0.5), lineWidth: 1)
+                                                    .stroke(associated.isEmpty ? ThemeManager.shared.colorDivider : Color.green.opacity(0.5), lineWidth: 1)
                                             )
                                             if record.isNonCompliant {
                                                 if let reason = record.nonComplianceNote, !reason.isEmpty {
                                                     Text("Criticità: \(reason)")
                                                         .font(.caption2)
-                                                        .foregroundColor(.orange)
+                                                        .foregroundStyle(ThemeManager.shared.colorWarning)
                                                 }
                                                 if let cap = record.nonComplianceCorrectiveAction, !cap.isEmpty {
                                                     Text("Azione: \(cap)")
@@ -197,11 +190,11 @@ struct TraceabilityView: View {
                                     HStack {
                                         Button("Associa a una produzione") {
                                             selectedTraceabilityForProduction = record
-                                            pendingProductionIds = Set(links.filter { $0.receivedItemId == record.id }.map(\.productionId))
+                                            pendingProductionIds = Set(dataStore.links.filter { $0.receivedItemId == record.id }.map(\.productionId))
                                             showProductionSelection = true
                                         }
                                         .buttonStyle(.bordered)
-                                        .tint(.white)
+                                        .tint(ThemeManager.shared.colorPrimary)
                                         .disabled(record.productStatus == .expired || record.productStatus == .rejected)
 
                                         Button("Segna non conforme") {
@@ -226,11 +219,11 @@ struct TraceabilityView: View {
                                     if record.productStatus == .expired || record.productStatus == .rejected {
                                         Text("Prodotto non associabile a produzioni (scaduto o non conforme).")
                                             .font(.caption2)
-                                            .foregroundColor(.yellow)
+                                            .foregroundStyle(ThemeManager.shared.colorWarning)
                                     }
                                 }
                                 .padding(10)
-                                .background(Color.white.opacity(0.05))
+                                .background(ThemeManager.shared.colorSurface)
                                 .cornerRadius(10)
                             }
                         }
@@ -241,10 +234,14 @@ struct TraceabilityView: View {
         }
         .background(ThemeManager.shared.colorBackground.ignoresSafeArea())
         .navigationTitle("Tracciabilità")
+        .task(id: appState.activeRestaurantId) {
+            dataStore.reload(context: modelContext, restaurantId: appState.activeRestaurantId)
+        }
         .onAppear {
             let expired = expiryService.refreshStatuses(records: scopedRecords, modelContext: modelContext)
             if expired > 0 {
                 errorMessage = "Sono stati marcati \(expired) prodotti come scaduti."
+                dataStore.reload(context: modelContext, restaurantId: appState.activeRestaurantId)
             }
         }
         .alert("Tracciabilità", isPresented: Binding(get: { errorMessage != nil }, set: { _ in errorMessage = nil })) {
@@ -263,9 +260,10 @@ struct TraceabilityView: View {
                             record: record,
                             selectedProductions: selectedProductions,
                             operatorName: currentUser?.name ?? "Operatore",
-                            links: links,
+                            links: dataStore.links,
                             modelContext: modelContext
                         )
+                        dataStore.reload(context: modelContext, restaurantId: appState.activeRestaurantId)
                         showProductionSelection = false
                     } catch {
                         errorMessage = "Associazione produzione non riuscita."
@@ -294,9 +292,9 @@ struct TraceabilityView: View {
                                 try service.deleteTraceabilityEntry(
                                     record: record,
                                     goodsReceipts: scopedGoodsReceipts,
-                                    links: links,
-                                    logs: logs,
-                                    images: images,
+                                    links: dataStore.links,
+                                    logs: dataStore.logs,
+                                    images: dataStore.images,
                                     modelContext: modelContext
                                 )
                             } catch {
@@ -379,7 +377,7 @@ struct TraceabilityView: View {
                 }
                 Section("Foto obbligatoria") {
                     RoundedRectangle(cornerRadius: 10)
-                        .fill(Color.black.opacity(0.85))
+                        .fill(ThemeManager.shared.colorCameraPreviewBackground)
                         .frame(height: 160)
                         .overlay(
                             Group {
@@ -460,8 +458,8 @@ struct TraceabilityView: View {
     }
 
     private func associatedProductions(for record: TraceabilityRecord) -> [Production] {
-        let productionIds = Set(links.filter { $0.receivedItemId == record.id }.map(\.productionId))
-        return productions.filter { productionIds.contains($0.id) }.sorted { $0.name < $1.name }
+        let productionIds = Set(dataStore.links.filter { $0.receivedItemId == record.id }.map(\.productionId))
+        return dataStore.productions.filter { productionIds.contains($0.id) }.sorted { $0.name < $1.name }
     }
 
     @ViewBuilder
@@ -469,7 +467,7 @@ struct TraceabilityView: View {
         let label = record.isNonCompliant ? "Non conforme" : record.productStatus.label
         Text(label)
             .font(.caption2.bold())
-            .foregroundColor(.white)
+            .foregroundStyle(ThemeManager.shared.colorTextPrimary)
             .padding(.horizontal, 8)
             .padding(.vertical, 3)
             .background(statusColor(record.productStatus))
@@ -487,7 +485,7 @@ struct TraceabilityView: View {
     }
 
     private func buildExportFile() -> URL? {
-        let csv = service.exportTraceabilityReport(records: filteredRecords, links: links, productions: productions)
+        let csv = service.exportTraceabilityReport(records: filteredRecords, links: dataStore.links, productions: dataStore.productions)
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("traceability_report.csv")
         do {
             try csv.write(to: url, atomically: true, encoding: .utf8)
@@ -500,7 +498,7 @@ struct TraceabilityView: View {
 
     @ViewBuilder
     private func recordImagePreview(for record: TraceabilityRecord) -> some View {
-        let recordImages = images.filter { $0.receivedItemId == record.id }.sorted { $0.createdAt > $1.createdAt }
+        let recordImages = dataStore.images.filter { $0.receivedItemId == record.id }.sorted { $0.createdAt > $1.createdAt }
         let preferred = recordImages.first { $0.type == .nonComplianceRequired }
             ?? recordImages.first { $0.type == .receiptOptional }
             ?? recordImages.first
@@ -512,33 +510,33 @@ struct TraceabilityView: View {
                 .scaledToFill()
                 .frame(width: 56, height: 56)
                 .clipShape(RoundedRectangle(cornerRadius: 8))
-                .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.white.opacity(0.15), lineWidth: 1))
+                .overlay(RoundedRectangle(cornerRadius: 8).stroke(ThemeManager.shared.colorDivider, lineWidth: 1))
         } else if let path = preferred?.localPath, let image = UIImage(contentsOfFile: path) {
             Image(uiImage: image)
                 .resizable()
                 .scaledToFill()
                 .frame(width: 56, height: 56)
                 .clipShape(RoundedRectangle(cornerRadius: 8))
-                .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.white.opacity(0.15), lineWidth: 1))
+                .overlay(RoundedRectangle(cornerRadius: 8).stroke(ThemeManager.shared.colorDivider, lineWidth: 1))
         } else if let data = receiptForTrace(record)?.photoData, let image = UIImage(data: data) {
             Image(uiImage: image)
                 .resizable()
                 .scaledToFill()
                 .frame(width: 56, height: 56)
                 .clipShape(RoundedRectangle(cornerRadius: 8))
-                .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.white.opacity(0.15), lineWidth: 1))
+                .overlay(RoundedRectangle(cornerRadius: 8).stroke(ThemeManager.shared.colorDivider, lineWidth: 1))
         } else if let data = record.photoData, let image = UIImage(data: data) {
             Image(uiImage: image)
                 .resizable()
                 .scaledToFill()
                 .frame(width: 56, height: 56)
                 .clipShape(RoundedRectangle(cornerRadius: 8))
-                .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.white.opacity(0.15), lineWidth: 1))
+                .overlay(RoundedRectangle(cornerRadius: 8).stroke(ThemeManager.shared.colorDivider, lineWidth: 1))
         } else {
             RoundedRectangle(cornerRadius: 8)
-                .fill(Color.white.opacity(0.04))
+                .fill(ThemeManager.shared.colorSurface)
                 .frame(width: 56, height: 56)
-                .overlay(Text("Nessuna foto").font(.caption2).foregroundColor(.gray))
+                .overlay(Text("Nessuna foto").font(.caption2).foregroundStyle(ThemeManager.shared.colorTextSecondary))
         }
     }
 }

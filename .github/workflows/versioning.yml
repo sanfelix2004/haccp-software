@@ -51,11 +51,12 @@ jobs:
           NEW_VERSION="$MAJOR.$MINOR.$PATCH"
 
           echo "$NEW_VERSION" > VERSION
+          echo "$NEW_VERSION" > haccp-software/VERSION
           echo "NEW_VERSION=$NEW_VERSION" >> $GITHUB_ENV
 
       - name: Commit version
         run: |
-          git add VERSION
+          git add VERSION haccp-software/VERSION
           git commit -m "chore: bump version to $NEW_VERSION" || echo "No changes to commit"
           git push
 

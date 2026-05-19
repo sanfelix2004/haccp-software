@@ -26,31 +26,31 @@ struct ChangePinView: View {
                             Text("VECCHIO PIN")
                                 .font(.caption)
                                 .fontWeight(.bold)
-                                .foregroundColor(.gray)
+                                .foregroundStyle(ThemeManager.shared.colorTextSecondary)
                             
                             SecureField("****", text: $oldPin)
                                 .keyboardType(.numberPad)
                                 .padding()
-                                .background(Color.white.opacity(0.1))
+                                .background(ThemeManager.shared.colorDivider)
                                 .cornerRadius(12)
                                 .onChange(of: oldPin) { newValue in
                                     if newValue.count > 4 { oldPin = String(newValue.prefix(4)) }
                                 }
                         }
                         
-                        Divider().background(Color.white.opacity(0.1))
+                        Divider().background(ThemeManager.shared.colorDivider)
                         
                         // New PIN
                         VStack(alignment: .leading, spacing: 8) {
                             Text("NUOVO PIN (4 CIFRE)")
                                 .font(.caption)
                                 .fontWeight(.bold)
-                                .foregroundColor(.gray)
+                                .foregroundStyle(ThemeManager.shared.colorTextSecondary)
                             
                             SecureField("****", text: $newPin)
                                 .keyboardType(.numberPad)
                                 .padding()
-                                .background(Color.white.opacity(0.1))
+                                .background(ThemeManager.shared.colorDivider)
                                 .cornerRadius(12)
                                 .onChange(of: newPin) { newValue in
                                     if newValue.count > 4 { newPin = String(newValue.prefix(4)) }
@@ -62,12 +62,12 @@ struct ChangePinView: View {
                             Text("CONFERMA NUOVO PIN")
                                 .font(.caption)
                                 .fontWeight(.bold)
-                                .foregroundColor(.gray)
+                                .foregroundStyle(ThemeManager.shared.colorTextSecondary)
                             
                             SecureField("****", text: $confirmPin)
                                 .keyboardType(.numberPad)
                                 .padding()
-                                .background(Color.white.opacity(0.1))
+                                .background(ThemeManager.shared.colorDivider)
                                 .cornerRadius(12)
                                 .onChange(of: confirmPin) { newValue in
                                     if newValue.count > 4 { confirmPin = String(newValue.prefix(4)) }
@@ -87,19 +87,19 @@ struct ChangePinView: View {
                                 .frame(maxWidth: .infinity)
                                 .padding()
                                 .background(isFormValid ? Color.red : Color.gray)
-                                .foregroundColor(.white)
+                                .foregroundStyle(ThemeManager.shared.colorTextPrimary)
                                 .cornerRadius(12)
                         }
                         .disabled(!isFormValid)
                         .padding(.top, 20)
                     }
                     .padding(24)
-                    .background(Color.white.opacity(0.05))
+                    .background(ThemeManager.shared.colorSurface)
                     .cornerRadius(24)
                 }
                 .padding(24)
             }
-            .background(Color.black.ignoresSafeArea())
+            .background(ThemeManager.shared.colorBackground.ignoresSafeArea())
             .navigationTitle("Modifica PIN")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -108,7 +108,6 @@ struct ChangePinView: View {
                 }
             }
         }
-        .preferredColorScheme(.dark)
     }
     
     private var isFormValid: Bool {

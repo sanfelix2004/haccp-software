@@ -31,6 +31,8 @@ final class GoodsReceivingRecord {
     /// Chiusura non conformità (se applicabile).
     var nonComplianceResolvedAt: Date?
     var nonComplianceResolvedByNameSnapshot: String?
+    var isArchived: Bool = false
+    var archivedAt: Date?
 
     init(
         id: UUID = UUID(),

@@ -72,10 +72,10 @@ struct AlertsView: View {
         HStack {
             Image(systemName: icon).foregroundColor(.red)
             VStack(alignment: .leading, spacing: 4) {
-                Text(message).foregroundColor(.white)
+                Text(message).foregroundStyle(ThemeManager.shared.colorTextPrimary)
                 Text(date.formatted(date: .abbreviated, time: .shortened))
                     .font(.caption)
-                    .foregroundColor(.gray)
+                    .foregroundStyle(ThemeManager.shared.colorTextSecondary)
             }
             Spacer()
         }
@@ -89,13 +89,13 @@ struct AlertsView: View {
             Image(systemName: "exclamationmark.triangle.fill").foregroundColor(.red)
             VStack(alignment: .leading, spacing: 4) {
                 Text("Pulizia non conforme: \(criticality.areaName) · \(criticality.taskName)")
-                    .foregroundColor(.white)
+                    .foregroundStyle(ThemeManager.shared.colorTextPrimary)
                 Text("Azione: \(criticality.correctiveAction)")
                     .font(.caption)
-                    .foregroundColor(.gray)
+                    .foregroundStyle(ThemeManager.shared.colorTextSecondary)
                 Text(criticality.createdAt.formatted(date: .abbreviated, time: .shortened))
                     .font(.caption2)
-                    .foregroundColor(.gray)
+                    .foregroundStyle(ThemeManager.shared.colorTextSecondary)
             }
             Spacer()
             Button("Segna risolta") {
@@ -114,13 +114,13 @@ struct AlertsView: View {
             Image(systemName: "thermometer.medium").foregroundColor(.red)
             VStack(alignment: .leading, spacing: 4) {
                 Text("Temperatura fuori range: \(alert.deviceName)")
-                    .foregroundColor(.white)
+                    .foregroundStyle(ThemeManager.shared.colorTextPrimary)
                 Text(alert.message)
                     .font(.caption)
-                    .foregroundColor(.gray)
+                    .foregroundStyle(ThemeManager.shared.colorTextSecondary)
                 Text(alert.createdAt.formatted(date: .abbreviated, time: .shortened))
                     .font(.caption2)
-                    .foregroundColor(.gray)
+                    .foregroundStyle(ThemeManager.shared.colorTextSecondary)
             }
             Spacer()
             Button("Risolvi") {
@@ -136,16 +136,16 @@ struct AlertsView: View {
 
     private func oilAlertRow(_ alert: OilControlAlert) -> some View {
         HStack {
-            Image(systemName: "drop.fill").foregroundColor(.orange)
+            Image(systemName: "drop.fill").foregroundStyle(ThemeManager.shared.colorWarning)
             VStack(alignment: .leading, spacing: 4) {
                 Text("Olio critico: \(alert.oilPointName)")
-                    .foregroundColor(.white)
+                    .foregroundStyle(ThemeManager.shared.colorTextPrimary)
                 Text(alert.message)
                     .font(.caption)
-                    .foregroundColor(.gray)
+                    .foregroundStyle(ThemeManager.shared.colorTextSecondary)
                 Text(alert.createdAt.formatted(date: .abbreviated, time: .shortened))
                     .font(.caption2)
-                    .foregroundColor(.gray)
+                    .foregroundStyle(ThemeManager.shared.colorTextSecondary)
             }
             Spacer()
             Button("Risolvi") {
