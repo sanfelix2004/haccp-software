@@ -12,7 +12,6 @@ struct HACCPModulesView: View {
         .init(name: "Controllo olio", description: "Stato olio frittura e azioni", icon: "drop.fill", state: .open, isEnabled: true),
         .init(name: "Etichette", description: "Etichette di produzione", icon: "tag.fill", state: .open, isEnabled: true),
         .init(name: "Ricezione merci", description: "Controllo conformita in ingresso", icon: "shippingbox.fill", state: .open, isEnabled: true),
-        .init(name: "Documenti", description: "Cartelle e documenti HACCP", icon: "folder.fill", state: .open, isEnabled: true),
         .init(name: "Storia", description: "Archivio registrazioni centralizzato", icon: "clock.arrow.circlepath", state: .open, isEnabled: true)
     ]
 
@@ -92,13 +91,6 @@ struct HACCPModulesView: View {
         } else if module.name == "Ricezione merci" {
             NavigationLink {
                 GoodsReceivingView()
-            } label: {
-                cardBody(module)
-            }
-            .buttonStyle(.plain)
-        } else if module.name == "Documenti" {
-            NavigationLink {
-                DocumentsView()
             } label: {
                 cardBody(module)
             }

@@ -80,7 +80,12 @@ struct HACCPSettingsView: View {
             .background(ThemeManager.shared.colorSurface)
             .cornerRadius(16)
             .onChange(of: storage.haccp.fridgeMaxTemp) { storage.saveAll() }
+            .onChange(of: storage.haccp.freezerMinTemp) { storage.saveAll() }
+            .onChange(of: storage.haccp.blastChillerTemp) { storage.saveAll() }
+            .onChange(of: storage.haccp.tempCheckFrequency) { storage.saveAll() }
+            .onChange(of: storage.haccp.warningThreshold) { storage.saveAll() }
             .onChange(of: storage.haccp.productExpiryThreshold) { storage.saveAll() }
+            .onChange(of: storage.haccp.storageDurationYears) { storage.saveAll() }
             .onChange(of: storage.haccp.oilPolarAttentionLimit) { storage.saveAll() }
             .onChange(of: storage.haccp.oilPolarMaximumLimit) { storage.saveAll() }
             .onChange(of: storage.haccp.oilNonCompliancePhotoRequired) { storage.saveAll() }

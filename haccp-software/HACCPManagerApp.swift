@@ -43,6 +43,7 @@ struct HACCPManagerApp: App {
                 CleaningCriticality.self,
                 BlastChillingRecord.self,
                 DefrostRecord.self,
+                DefrostCriticality.self,
                 OilPoint.self,
                 OilControlRecord.self,
                 OilControlAlert.self,
@@ -70,6 +71,8 @@ struct HACCPManagerApp: App {
         WindowGroup {
             ContentView()
                 .environmentObject(appState)
+                .environmentObject(ActiveBlastChillingManager.shared)
+                .environmentObject(ActiveDefrostManager.shared)
         }
         .modelContainer(container)
         .onChange(of: scenePhase) { _, newPhase in

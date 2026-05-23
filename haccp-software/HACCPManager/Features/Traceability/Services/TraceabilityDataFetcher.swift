@@ -13,6 +13,7 @@ struct TraceabilityFetchedData {
     var logs: [TraceabilityLog] = []
     var images: [ProductImage] = []
     var goodsReceipts: [GoodsReceipt] = []
+    var defrostRecords: [DefrostRecord] = []
 }
 
 @MainActor
@@ -45,6 +46,13 @@ enum TraceabilityDataFetcher {
         )
         receiptDescriptor.fetchLimit = recordLimit
         data.goodsReceipts = (try? context.fetch(receiptDescriptor)) ?? []
+
+        var defrostDescriptor = FetchDescriptor<DefrostRecord>(
+            predicate: #Predicate { $0.restaurantId == rid && !$0.isArchived },
+            sortBy: [SortDescriptor(\DefrostRecord.startAt, order: .reverse)]
+        )
+        defrostDescriptor.fetchLimit = 200
+        data.defrostRecords = (try? context.fetch(defrostDescriptor)) ?? []
 
         guard !recordIds.isEmpty else { return data }
 

@@ -5,6 +5,8 @@ import Observation
 
 struct ContentView: View {
     @EnvironmentObject var appState: AppState
+    @EnvironmentObject private var blastManager: ActiveBlastChillingManager
+    @EnvironmentObject private var defrostManager: ActiveDefrostManager
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.modelContext) private var modelContext
 
@@ -37,6 +39,12 @@ struct ContentView: View {
                 AuthRootView()
             }
         }
+        .overlay(alignment: .bottomTrailing) {
+            if appState.isAuthenticated && !appState.showSplash {
+                ActiveKitchenTimersOverlay()
+                    .zIndex(998)
+            }
+        }
         .overlay {
             if appState.isLoading {
                 LoadingOverlay(message: "Caricamento")
@@ -48,6 +56,7 @@ struct ContentView: View {
             if appState.isAuthenticated && restaurants.count == 1 {
                 appState.activeRestaurantId = restaurants.first?.id
             }
+            refreshActiveKitchenTimers()
         }
         .task {
             attachSettingsStorageIfNeeded()
@@ -55,6 +64,12 @@ struct ContentView: View {
         .onChange(of: appState.isAuthenticated) { _, authenticated in
             if authenticated && restaurants.count == 1 {
                 appState.activeRestaurantId = restaurants.first?.id
+            }
+            if authenticated {
+                refreshActiveKitchenTimers()
+            } else {
+                blastManager.reset()
+                defrostManager.reset()
             }
         }
         .monitorActivity {
@@ -72,7 +87,11 @@ struct ContentView: View {
                 SecurityService.shared.checkInactivity(lastActivity: lastActivity) {
                     appState.logout()
                 }
+                refreshActiveKitchenTimers()
             }
+        }
+        .onChange(of: appState.activeRestaurantId) { _, _ in
+            refreshActiveKitchenTimers()
         }
         .onChange(of: appState.currentUserId) { _, newUserId in
             guard let newUserId else { return }
@@ -94,9 +113,17 @@ struct ContentView: View {
         settingsStorage.setup(with: modelContext)
         didAttachSwiftDataSettings = true
     }
+
+    private func refreshActiveKitchenTimers() {
+        let rid = appState.activeRestaurantId
+        blastManager.refresh(context: modelContext, restaurantId: rid)
+        defrostManager.refresh(context: modelContext, restaurantId: rid)
+    }
 }
 
 #Preview {
     ContentView()
         .environmentObject(AppState())
+        .environmentObject(ActiveBlastChillingManager.shared)
+        .environmentObject(ActiveDefrostManager.shared)
 }

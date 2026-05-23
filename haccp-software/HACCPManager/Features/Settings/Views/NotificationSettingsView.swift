@@ -13,6 +13,7 @@ struct NotificationSettingsView: View {
             .padding()
             .background(ThemeManager.shared.colorDivider)
             .cornerRadius(16)
+            .onChange(of: storage.notifications.notificationsEnabled) { storage.saveAll() }
             
             VStack(alignment: .leading, spacing: 20) {
                 Text("Canali Notifica")
@@ -43,8 +44,13 @@ struct NotificationSettingsView: View {
             .padding()
             .background(ThemeManager.shared.colorSurface)
             .cornerRadius(16)
-            .onChange(of: storage.notifications.notificationsEnabled) { storage.saveAll() }
-            .onChange(of: storage.notifications.tempAlertsEnabled) { storage.saveAll() }
         }
+        .onChange(of: storage.notifications.notificationsEnabled) { storage.saveAll() }
+        .onChange(of: storage.notifications.tempAlertsEnabled) { storage.saveAll() }
+        .onChange(of: storage.notifications.checklistRemindersEnabled) { storage.saveAll() }
+        .onChange(of: storage.notifications.productExpiryAlertsEnabled) { storage.saveAll() }
+        .onChange(of: storage.notifications.dailyReportSummaryEnabled) { storage.saveAll() }
+        .onChange(of: storage.notifications.soundsEnabled) { storage.saveAll() }
+        .onChange(of: storage.notifications.hapticsEnabled) { storage.saveAll() }
     }
 }

@@ -8,6 +8,7 @@ struct AlertsView: View {
     @Query private var temperatureAlerts: [TemperatureAlert]
     @Query private var cleaningCriticalities: [CleaningCriticality]
     @Query private var oilAlerts: [OilControlAlert]
+    @Query private var defrostCriticalities: [DefrostCriticality]
     @Query private var users: [LocalUser]
 
     private var activeChecklistAlerts: [ChecklistAlert] {
@@ -30,6 +31,11 @@ struct AlertsView: View {
         return oilAlerts.filter { $0.restaurantId == rid && $0.isActive }
     }
 
+    private var activeDefrostCriticalities: [DefrostCriticality] {
+        guard let rid = appState.activeRestaurantId else { return [] }
+        return defrostCriticalities.filter { $0.restaurantId == rid && !$0.isResolved }
+    }
+
     private var currentUser: LocalUser? {
         users.first(where: { $0.id == appState.currentUserId })
     }
@@ -37,7 +43,7 @@ struct AlertsView: View {
     var body: some View {
         ScrollView {
             DashboardCardView(title: "Alert") {
-                if activeChecklistAlerts.isEmpty && activeTemperatureAlerts.isEmpty && activeCleaningCriticalities.isEmpty && activeOilAlerts.isEmpty {
+                if activeChecklistAlerts.isEmpty && activeTemperatureAlerts.isEmpty && activeCleaningCriticalities.isEmpty && activeOilAlerts.isEmpty && activeDefrostCriticalities.isEmpty {
                     DashboardEmptyStateView(
                         state: DashboardEmptyState(
                             title: "Nessun alert attivo",
@@ -58,6 +64,9 @@ struct AlertsView: View {
                         }
                         ForEach(activeOilAlerts) { alert in
                             oilAlertRow(alert)
+                        }
+                        ForEach(activeDefrostCriticalities) { criticality in
+                            defrostAlertRow(criticality)
                         }
                     }
                 }
@@ -157,6 +166,40 @@ struct AlertsView: View {
         .padding(10)
         .background(Color.orange.opacity(0.12))
         .cornerRadius(10)
+    }
+
+    private func defrostAlertRow(_ criticality: DefrostCriticality) -> some View {
+        HStack {
+            Image(systemName: "snowflake").foregroundStyle(ThemeManager.shared.colorWarning)
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Decongelamento: \(criticality.productName)")
+                    .foregroundStyle(ThemeManager.shared.colorTextPrimary)
+                Text(criticality.reason)
+                    .font(.caption)
+                    .foregroundStyle(ThemeManager.shared.colorTextSecondary)
+                Text("Azione: \(criticality.correctiveAction)")
+                    .font(.caption2)
+                    .foregroundStyle(ThemeManager.shared.colorTextSecondary)
+            }
+            Spacer()
+            Button("Risolvi") {
+                resolveDefrostCriticality(criticality)
+            }
+            .buttonStyle(.bordered)
+            .tint(.green)
+        }
+        .padding(10)
+        .background(Color.orange.opacity(0.12))
+        .cornerRadius(10)
+    }
+
+    private func resolveDefrostCriticality(_ criticality: DefrostCriticality) {
+        guard let user = currentUser else { return }
+        criticality.isResolved = true
+        criticality.resolvedAt = Date()
+        criticality.resolvedByUserId = user.id
+        criticality.resolvedByNameSnapshot = user.name
+        try? modelContext.save()
     }
 
     private func resolveCriticality(_ criticality: CleaningCriticality) {
