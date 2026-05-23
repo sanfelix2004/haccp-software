@@ -4,6 +4,7 @@ import SwiftData
 struct BlastChillingView: View {
     @Environment(\.modelContext) private var modelContext
     @EnvironmentObject var appState: AppState
+    @EnvironmentObject private var blastManager: ActiveBlastChillingManager
     @Query private var users: [LocalUser]
     @Query private var records: [BlastChillingRecord]
     @Query private var categories: [ProductionCategory]
@@ -56,15 +57,18 @@ struct BlastChillingView: View {
         let endStart = calendar.startOfDay(for: vm.historyEndDate)
         let end = calendar.date(byAdding: DateComponents(day: 1, second: -1), to: endStart) ?? vm.historyEndDate
         return scopedRecords.filter { record in
+            guard record.status != .inCorso else { return false }
             let categoryOk: Bool = {
                 guard let selected = vm.selectedHistoryCategoryId else { return true }
                 return record.productionCategorySnapshot == scopedCategories.first(where: { $0.id == selected })?.name
             }()
             let statusOk = vm.selectedHistoryStatus == nil || record.status == vm.selectedHistoryStatus
             let operatorOk = vm.selectedHistoryOperator == "Tutti" || record.createdByNameSnapshot == vm.selectedHistoryOperator
-            let periodOk = record.startedAt >= start && record.startedAt <= end
+            let anchor = record.endedAt ?? record.startedAt
+            let periodOk = anchor >= start && anchor <= end
             return categoryOk && statusOk && operatorOk && periodOk
         }
+        .sorted { ($0.endedAt ?? $0.startedAt) > ($1.endedAt ?? $1.startedAt) }
     }
 
     private var operators: [String] {
@@ -75,6 +79,10 @@ struct BlastChillingView: View {
         scopedRecords
             .filter { $0.status == .inCorso }
             .sorted { $0.startedAt > $1.startedAt }
+    }
+
+    private func refreshGlobalActiveBlasts() {
+        blastManager.refresh(context: modelContext, restaurantId: appState.activeRestaurantId)
     }
 
     private var selectedInProgressRecord: BlastChillingRecord? {
@@ -105,6 +113,12 @@ struct BlastChillingView: View {
                     }
                 }
 
+                if !inProgressRecords.isEmpty {
+                    SecondaryButton(title: "Termina abbattimento", icon: "checkmark.circle.fill") {
+                        blastManager.showActiveListSheet = true
+                    }
+                }
+
                 inProgressCard
                 filtersCard
                 BlastChillingHistoryView(records: filteredHistory)
@@ -115,6 +129,7 @@ struct BlastChillingView: View {
         .navigationTitle("Abbattimento in negativo")
         .onAppear {
             ensureProductions()
+            refreshGlobalActiveBlasts()
         }
         .onChange(of: appState.activeRestaurantId) { _, _ in
             ensureProductions()
@@ -302,10 +317,8 @@ struct BlastChillingView: View {
                                     .foregroundStyle(ThemeManager.shared.colorTextSecondary)
                             }
                             Spacer()
-                            Button("Termina") {
-                                recordToComplete = record
-                                vm.selectedProduction = productionForRecord(record)
-                                vm.showRecordSheet = true
+                            Button("Termina abbattimento") {
+                                blastManager.recordIdPendingComplete = record.id
                             }
                             .buttonStyle(.borderedProminent)
                             .tint(.orange)
@@ -444,6 +457,7 @@ struct BlastChillingView: View {
             vm.showRecordSheet = false
             vm.selectedProduction = nil
             vm.historyEndDate = Date()
+            blastManager.refresh(context: modelContext, restaurantId: restaurantId)
         } catch {
             vm.errorMessage = error.localizedDescription
         }
@@ -469,6 +483,7 @@ struct BlastChillingView: View {
             vm.selectedProduction = nil
             recordToComplete = nil
             vm.historyEndDate = Date()
+            blastManager.refresh(context: modelContext, restaurantId: record.restaurantId)
         } catch {
             vm.errorMessage = error.localizedDescription
         }

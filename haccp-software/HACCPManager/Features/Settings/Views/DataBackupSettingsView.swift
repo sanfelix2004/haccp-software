@@ -1,8 +1,14 @@
+//
+//  DataBackupSettingsView.swift
+//  Uso memoria reale, archiviazione e operazioni dati.
+//
+
 import SwiftUI
 import SwiftData
 
 struct DataBackupSettingsView: View {
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.theme) private var theme
     @EnvironmentObject var appState: AppState
     @Query private var users: [LocalUser]
     @Query private var documentItems: [DocumentItem]
@@ -11,13 +17,17 @@ struct DataBackupSettingsView: View {
 
     @AppStorage(DocumentsUserSettings.iCloudPDFSyncEnabledKey) private var iCloudPDFSyncEnabled = false
 
+    @State private var usage = AppStorageUsageBreakdown.empty
+    @State private var isCalculatingUsage = false
     @State private var showResetConfirm = false
     @State private var showAuthForReset = false
-    
+    @State private var archiveMessage: String?
+    @State private var isArchiving = false
+
     private var currentUser: LocalUser? {
         users.first { $0.id == appState.currentUserId }
     }
-    
+
     private var isMaster: Bool {
         currentUser?.role == .master
     }
@@ -31,134 +41,26 @@ struct DataBackupSettingsView: View {
         return documentItems.filter { $0.format == .pdf && $0.localFilePresent && !$0.isSyncedToICloud }.count
     }
 
-    private var pendingLine: String {
-        let base = "PDF copiati su iCloud: \(pdfSyncedCount)"
-        if iCloudPDFSyncEnabled {
-            return "\(base) · in coda di copia: \(pdfPendingICloudCount)"
+    private var lastArchiveText: String {
+        guard let rid = appState.activeRestaurantId else { return "Nessun ristorante attivo" }
+        let key = "DataArchiveService.lastRun.\(rid.uuidString)"
+        guard let date = UserDefaults.standard.object(forKey: key) as? Date else {
+            return "Mai eseguita"
         }
-        return "\(base) · attiva «Copia automatica…» per vedere la coda e copiare i PDF mancanti."
+        return date.formatted(date: .abbreviated, time: .shortened)
     }
 
     var body: some View {
-        VStack(spacing: 32) {
-            
-            VStack(alignment: .leading, spacing: 20) {
-                Text("Stato Archiviazione")
-                    .font(.headline)
-                
-                HStack {
-                    VStack(alignment: .leading) {
-                        Text("Database Locale")
-                            .font(.subheadline)
-                        Text("SwiftData Encrypted Storage")
-                            .font(.caption)
-                            .foregroundStyle(ThemeManager.shared.colorTextSecondary)
-                    }
-                    Spacer()
-                    Text("1.2 MB")
-                        .foregroundColor(.red)
-                        .fontWeight(.bold)
-                }
-                
-                HStack {
-                    Text("Ultimo Backup")
-                        .font(.subheadline)
-                    Spacer()
-                    Text("Mai")
-                        .foregroundStyle(ThemeManager.shared.colorTextSecondary)
-                }
-            }
-            .padding()
-            .background(ThemeManager.shared.colorSurface)
-            .cornerRadius(16)
-            
-            VStack(alignment: .leading, spacing: 20) {
-                Text("Operazioni Avanzate")
-                    .font(.headline)
-                
-                SettingsActionButton(title: "Esporta Dati (CSV/PDF)", icon: "square.and.arrow.up", isFuture: true)
-
-                if isMaster {
-                    VStack(alignment: .leading, spacing: 12) {
-                        HStack(alignment: .top, spacing: 12) {
-                            Image(systemName: iCloudSync.isUbiquityContainerAvailable ? "icloud.and.arrow.up.fill" : "icloud.slash")
-                                .font(.title)
-                                .foregroundColor(iCloudSync.isUbiquityContainerAvailable ? .green : .orange)
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(iCloudSync.isUbiquityContainerAvailable ? "iCloud: collegato" : "iCloud: non collegato")
-                                    .font(.headline)
-                                    .foregroundColor(iCloudSync.isUbiquityContainerAvailable ? .green : .orange)
-                                Text(pendingLine)
-                                    .font(.caption)
-                                    .foregroundStyle(ThemeManager.shared.colorTextSecondary)
-                            }
-                            Spacer(minLength: 0)
-                        }
-
-                        Text(iCloudSync.connectionExplanation)
-                            .font(.caption)
-                            .foregroundStyle(ThemeManager.shared.colorTextSecondary)
-                            .fixedSize(horizontal: false, vertical: true)
-
-                        if let d = iCloudSync.lastSyncActivityDate, !iCloudSync.lastSyncActivity.isEmpty {
-                            Text("Ultima operazione (\(d.formatted(date: .omitted, time: .shortened))): \(iCloudSync.lastSyncActivity)")
-                                .font(.caption2)
-                                .foregroundColor(.cyan.opacity(0.9))
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-
-                        Button {
-                            iCloudSync.refreshConnectionDiagnostics()
-                        } label: {
-                            Label("Aggiorna stato connessione", systemImage: "arrow.clockwise")
-                        }
-                        .buttonStyle(.bordered)
-                        .tint(.cyan)
-
-                        Text("I dati operativi restano sul dispositivo (SwiftData). Solo i PDF in Documenti vengono copiati nel container iCloud.")
-                            .font(.caption2)
-                            .foregroundStyle(ThemeManager.shared.colorTextSecondary)
-
-                        Toggle(isOn: $iCloudPDFSyncEnabled) {
-                            Text("Copia automatica dei PDF su iCloud dopo la generazione")
-                                .font(.subheadline)
-                        }
-                        .disabled(!iCloudSync.isUbiquityContainerAvailable)
-                    }
-                    .padding(.vertical, 8)
-                    .onAppear {
-                        iCloudSync.refreshConnectionDiagnostics()
-                    }
-                    .onChange(of: iCloudPDFSyncEnabled) { _, enabled in
-                        guard enabled, isMaster else { return }
-                        Task { @MainActor in
-                            await iCloudSync.syncAllPendingDocuments(
-                                items: documentItems,
-                                modelContext: modelContext
-                            )
-                        }
-                    }
-                }
-
-                if isMaster {
-                    Divider().background(ThemeManager.shared.colorDivider)
-                    
-                    Button(action: { showResetConfirm = true }) {
-                        HStack {
-                            Image(systemName: "trash.fill")
-                            Text("Reset completo app")
-                            Spacer()
-                        }
-                        .foregroundColor(.red)
-                        .padding()
-                        .background(Color.red.opacity(0.1))
-                        .cornerRadius(12)
-                    }
-                }
+        VStack(spacing: theme.spacing.sectionSpacing) {
+            storageUsageCard
+            archiveCard
+            if isMaster {
+                advancedCard
             }
         }
-        .confirmationDialog("Reset Totale", isPresented: $showResetConfirm) {
-            Button("CANCELLA TUTTO", role: .destructive) {
+        .task { await refreshUsage() }
+        .confirmationDialog("Reset totale", isPresented: $showResetConfirm) {
+            Button("Cancella tutto", role: .destructive) {
                 showAuthForReset = true
             }
             Button("Annulla", role: .cancel) {}
@@ -174,43 +76,226 @@ struct DataBackupSettingsView: View {
                         showAuthForReset = false
                         performFullReset()
                     },
-                    onCancel: {
-                        showAuthForReset = false
-                    }
+                    onCancel: { showAuthForReset = false }
                 ) { EmptyView() }
             }
         }
     }
-    
-    private func performFullReset() {
-        appState.factoryReset(modelContext: modelContext)
-    }
-}
 
-struct SettingsActionButton: View {
-    let title: String
-    let icon: String
-    var isFuture: Bool = false
-    
-    var body: some View {
-        HStack {
-            Image(systemName: icon)
-                .frame(width: 24)
-            Text(title)
-            Spacer()
-            if isFuture {
-                Text("PRESTO")
-                    .font(.system(size: 8, weight: .black))
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(Color.blue.opacity(0.2))
-                    .foregroundColor(.blue)
-                    .cornerRadius(4)
+    private var storageUsageCard: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack {
+                Text("Spazio occupato")
+                    .font(theme.typography.headline)
+                    .foregroundStyle(theme.colorTextPrimary)
+                Spacer()
+                Button {
+                    Task { await refreshUsage() }
+                } label: {
+                    if isCalculatingUsage {
+                        ProgressView()
+                    } else {
+                        Label("Aggiorna", systemImage: "arrow.clockwise")
+                    }
+                }
+                .buttonStyle(.bordered)
+                .tint(theme.colorPrimary)
+                .disabled(isCalculatingUsage)
+            }
+
+            usageRow(
+                title: "Database HACCP (SwiftData)",
+                subtitle: "Registrazioni, impostazioni, storico operativo",
+                bytes: usage.swiftDataBytes,
+                icon: "cylinder.split.1x2.fill"
+            )
+            usageRow(
+                title: "PDF e allegati",
+                subtitle: "File in Application Support",
+                bytes: usage.attachmentsBytes,
+                icon: "doc.fill"
+            )
+            usageRow(
+                title: "Cache app",
+                subtitle: "File temporanei di sistema",
+                bytes: usage.cacheBytes,
+                icon: "internaldrive"
+            )
+
+            Divider().background(theme.colorDivider)
+
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Totale stimato")
+                        .font(theme.typography.headline)
+                        .foregroundStyle(theme.colorTextPrimary)
+                    Text("Solo su questo iPad")
+                        .font(theme.typography.caption)
+                        .foregroundStyle(theme.colorTextSecondary)
+                }
+                Spacer()
+                Text(AppStorageUsageService.formattedBytes(usage.totalBytes))
+                    .font(.title2.weight(.bold))
+                    .foregroundStyle(theme.colorPrimary)
+            }
+
+            HStack {
+                Text("Ultima archiviazione automatica")
+                    .font(theme.typography.caption)
+                    .foregroundStyle(theme.colorTextSecondary)
+                Spacer()
+                Text(lastArchiveText)
+                    .font(theme.typography.caption.weight(.semibold))
+                    .foregroundStyle(theme.colorTextSecondary)
             }
         }
-        .padding()
-        .background(ThemeManager.shared.colorSurface)
-        .cornerRadius(12)
-        .foregroundColor(isFuture ? .gray : .white)
+        .padding(16)
+        .background(theme.colorSurface)
+        .clipShape(RoundedRectangle(cornerRadius: theme.spacing.cornerMedium, style: .continuous))
+    }
+
+    private func usageRow(title: String, subtitle: String, bytes: Int64, icon: String) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: icon)
+                .foregroundStyle(theme.colorInfo)
+                .frame(width: 28)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(theme.typography.subheadline)
+                    .foregroundStyle(theme.colorTextPrimary)
+                Text(subtitle)
+                    .font(theme.typography.caption)
+                    .foregroundStyle(theme.colorTextSecondary)
+            }
+            Spacer()
+            Text(AppStorageUsageService.formattedBytes(bytes))
+                .font(theme.typography.headline.monospacedDigit())
+                .foregroundStyle(theme.colorTextPrimary)
+        }
+    }
+
+    private var archiveCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Archiviazione dati")
+                .font(theme.typography.headline)
+                .foregroundStyle(theme.colorTextPrimary)
+
+            Text("I record più vecchi di \(PerformanceConfig.activeDataRetentionMonths) mesi vengono contrassegnati come archiviati per alleggerire le schermate operative. I dati restano sul dispositivo.")
+                .font(theme.typography.caption)
+                .foregroundStyle(theme.colorTextSecondary)
+
+            if let archiveMessage {
+                Text(archiveMessage)
+                    .font(theme.typography.caption)
+                    .foregroundStyle(theme.colorSuccess)
+            }
+
+            Button {
+                Task { await runManualArchive() }
+            } label: {
+                Label(isArchiving ? "Archiviazione…" : "Esegui archiviazione ora", systemImage: "archivebox.fill")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(theme.colorPrimary)
+            .disabled(isArchiving || appState.activeRestaurantId == nil)
+        }
+        .padding(16)
+        .background(theme.colorSurface)
+        .clipShape(RoundedRectangle(cornerRadius: theme.spacing.cornerMedium, style: .continuous))
+    }
+
+    private var advancedCard: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Operazioni avanzate (MASTER)")
+                .font(theme.typography.headline)
+                .foregroundStyle(theme.colorTextPrimary)
+
+            iCloudSection
+
+            Divider().background(theme.colorDivider)
+
+            Button(role: .destructive) {
+                showResetConfirm = true
+            } label: {
+                Label("Reset completo app", systemImage: "trash.fill")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
+        }
+        .padding(16)
+        .background(theme.colorSurface)
+        .clipShape(RoundedRectangle(cornerRadius: theme.spacing.cornerMedium, style: .continuous))
+    }
+
+    @ViewBuilder
+    private var iCloudSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: iCloudSync.isUbiquityContainerAvailable ? "icloud.fill" : "icloud.slash")
+                    .font(.title2)
+                    .foregroundStyle(iCloudSync.isUbiquityContainerAvailable ? theme.colorSuccess : theme.colorWarning)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(iCloudSync.isUbiquityContainerAvailable ? "iCloud collegato" : "iCloud non disponibile")
+                        .font(theme.typography.subheadline.weight(.semibold))
+                    Text("PDF copiati: \(pdfSyncedCount) · in coda: \(pdfPendingICloudCount)")
+                        .font(theme.typography.caption)
+                        .foregroundStyle(theme.colorTextSecondary)
+                }
+                Spacer(minLength: 0)
+            }
+
+            Text(iCloudSync.connectionExplanation)
+                .font(theme.typography.caption)
+                .foregroundStyle(theme.colorTextSecondary)
+
+            Button("Aggiorna stato iCloud") {
+                iCloudSync.refreshConnectionDiagnostics()
+            }
+            .buttonStyle(.bordered)
+            .tint(.cyan)
+
+            Toggle(isOn: $iCloudPDFSyncEnabled) {
+                Text("Copia automatica PDF su iCloud")
+                    .font(theme.typography.subheadline)
+            }
+            .disabled(!iCloudSync.isUbiquityContainerAvailable)
+        }
+        .onAppear { iCloudSync.refreshConnectionDiagnostics() }
+        .onChange(of: iCloudPDFSyncEnabled) { _, enabled in
+            guard enabled else { return }
+            Task { @MainActor in
+                await iCloudSync.syncAllPendingDocuments(items: documentItems, modelContext: modelContext)
+            }
+        }
+    }
+
+    private func refreshUsage() async {
+        isCalculatingUsage = true
+        usage = await AppStorageUsageService.calculate()
+        isCalculatingUsage = false
+    }
+
+    private func runManualArchive() async {
+        guard let rid = appState.activeRestaurantId else { return }
+        isArchiving = true
+        archiveMessage = nil
+        let count = await Task { @MainActor in
+            DataArchiveService.archiveRestaurant(context: modelContext, restaurantId: rid)
+        }.value
+        if count > 0 {
+            try? modelContext.save()
+            UserDefaults.standard.set(Date(), forKey: "DataArchiveService.lastRun.\(rid.uuidString)")
+            archiveMessage = "Archiviati \(count) record."
+        } else {
+            archiveMessage = "Nessun record da archiviare oltre la soglia."
+        }
+        isArchiving = false
+        await refreshUsage()
+    }
+
+    private func performFullReset() {
+        appState.factoryReset(modelContext: modelContext)
+        Task { await refreshUsage() }
     }
 }

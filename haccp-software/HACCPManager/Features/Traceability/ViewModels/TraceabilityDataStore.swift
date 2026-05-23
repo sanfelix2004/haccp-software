@@ -15,6 +15,7 @@ final class TraceabilityDataStore: ObservableObject {
     @Published private(set) var logs: [TraceabilityLog] = []
     @Published private(set) var images: [ProductImage] = []
     @Published private(set) var goodsReceipts: [GoodsReceipt] = []
+    @Published private(set) var defrostRecords: [DefrostRecord] = []
     @Published private(set) var isLoading = false
 
     private var loadTask: Task<Void, Never>?
@@ -37,6 +38,7 @@ final class TraceabilityDataStore: ObservableObject {
             logs = data.logs
             images = data.images
             goodsReceipts = data.goodsReceipts
+            defrostRecords = data.defrostRecords
             isLoading = false
         }
     }
@@ -48,6 +50,7 @@ final class TraceabilityDataStore: ObservableObject {
         logs = []
         images = []
         goodsReceipts = []
+        defrostRecords = []
         isLoading = false
     }
 

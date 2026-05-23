@@ -198,26 +198,31 @@ struct CleaningHistoryProvider: HistoryDataProvider {
 
 struct BlastChillingHistoryProvider: HistoryDataProvider {
     func entries(from source: [BlastChillingRecord], restaurantId: UUID) -> [HistoryEntry] {
-        source.filter { $0.restaurantId == restaurantId }.map { record in
-            HistoryEntry(
+        source
+            .filter { $0.restaurantId == restaurantId && $0.status != .inCorso }
+            .map { record in
+            let sortDate = record.endedAt ?? record.startedAt
+            return HistoryEntry(
                 id: "blast-\(record.id)",
                 module: .blastChilling,
                 title: record.productionNameSnapshot,
                 category: record.productionCategorySnapshot,
                 status: record.status.label,
                 operatorName: record.createdByNameSnapshot,
-                date: record.startedAt,
+                date: sortDate,
                 details: [
                     .init(label: "Produzione", value: record.productionNameSnapshot),
                     .init(label: "Categoria", value: record.productionCategorySnapshot),
                     .init(label: "Temperatura iniziale", value: HistoryFormat.temp(record.initialTemperature)),
                     .init(label: "Temperatura finale", value: HistoryFormat.temp(record.finalTemperature)),
+                    .init(label: "Target", value: HistoryFormat.temp(record.targetTemperature)),
                     .init(label: "Inizio", value: HistoryFormat.dateTime(record.startedAt)),
                     .init(label: "Fine", value: HistoryFormat.dateTime(record.endedAt)),
                     .init(label: "Esito", value: record.status.label),
+                    .init(label: "Azione correttiva", value: HistoryFormat.text(record.correctiveAction)),
                     .init(label: "Note", value: HistoryFormat.text(record.notes))
                 ],
-                hasCriticality: record.status == .nonConforme || record.status == .annullato
+                hasCriticality: record.status == .nonConforme
             )
         }
     }

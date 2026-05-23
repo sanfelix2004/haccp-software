@@ -166,6 +166,9 @@ struct SettingsDetailContainer: View {
         .cornerRadius(32)
         .shadow(color: ThemeManager.shared.shadows.elevated.color, radius: 40)
         .padding(40)
+        .onDisappear {
+            SettingsStorageService.shared.saveAll()
+        }
     }
     
     @ViewBuilder

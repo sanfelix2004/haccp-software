@@ -13,9 +13,7 @@ enum SidebarItem: String, Identifiable {
     case oilControl = "Controllo olio"
     case productionLabels = "Etichette di produzione"
     case goodsReceiving = "Ricezione merci"
-    case documents = "Documenti"
     case history = "Storia"
-    case analytics = "Grafici"
     case alerts = "Alert"
     case users = "Utenti"
     case settings = "Impostazioni"
@@ -29,7 +27,7 @@ enum SidebarItem: String, Identifiable {
     ]
 
     static let toolsInOrder: [SidebarItem] = [
-        .documents, .history, .analytics, .alerts, .users, .settings
+        .history, .alerts, .users, .settings
     ]
 
     var icon: String {
@@ -45,9 +43,7 @@ enum SidebarItem: String, Identifiable {
         case .productionLabels: return "tag.fill"
         case .goodsReceiving: return "shippingbox.fill"
         case .expiryControl: return "calendar.badge.exclamationmark"
-        case .documents: return "folder.fill"
         case .history: return "clock.arrow.circlepath"
-        case .analytics: return "chart.xyaxis.line"
         case .alerts: return "bell.badge.fill"
         case .users: return "person.2.fill"
         case .settings: return "gearshape.fill"
@@ -264,12 +260,8 @@ struct DashboardRootView: View {
             ProductionLabelsView()
         case .goodsReceiving:
             GoodsReceivingView()
-        case .documents:
-            DocumentsView()
         case .history:
             HistoryView()
-        case .analytics:
-            AnalyticsView()
         case .alerts:
             AlertsView()
         case .users:

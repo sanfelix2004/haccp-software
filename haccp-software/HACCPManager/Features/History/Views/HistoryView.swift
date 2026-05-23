@@ -18,5 +18,8 @@ struct HistoryView: View {
         .task(id: appState.activeRestaurantId) {
             loader.reload(context: modelContext, restaurantId: appState.activeRestaurantId)
         }
+        .onReceive(NotificationCenter.default.publisher(for: .kitchenProcessRecordsDidChange)) { _ in
+            loader.reload(context: modelContext, restaurantId: appState.activeRestaurantId)
+        }
     }
 }

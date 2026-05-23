@@ -72,30 +72,14 @@ struct DashboardView: View {
                     }
                 }
 
-                DashboardCardView(title: "Sistema e archivi", subtitle: "Documenti, storico e report") {
-                    LazyVGrid(columns: columns, spacing: 16) {
-                        archiveTile(
-                            title: "Documenti",
-                            icon: "folder.fill",
-                            description: "Archivio PDF e registri",
-                            badge: countForDocuments,
-                            target: .documents
-                        )
-                        archiveTile(
-                            title: "Storia",
-                            icon: "clock.arrow.circlepath",
-                            description: "Registrazioni centralizzate",
-                            badge: nil,
-                            target: .history
-                        )
-                        archiveTile(
-                            title: "Grafici",
-                            icon: "chart.xyaxis.line",
-                            description: "Analytics conformità",
-                            badge: nil,
-                            target: .analytics
-                        )
-                    }
+                DashboardCardView(title: "Storia", subtitle: "Archivio registrazioni centralizzato") {
+                    archiveTile(
+                        title: "Storia",
+                        icon: "clock.arrow.circlepath",
+                        description: "Tutte le registrazioni HACCP",
+                        badge: nil,
+                        target: .history
+                    )
                 }
             }
             .padding(theme.spacing.screenPadding + 8)
@@ -220,8 +204,5 @@ struct DashboardView: View {
     }
     private var countForBlast: Int? {
         metrics.blastCount > 0 ? metrics.blastCount : nil
-    }
-    private var countForDocuments: Int? {
-        metrics.documentFolders > 0 ? metrics.documentFolders : nil
     }
 }

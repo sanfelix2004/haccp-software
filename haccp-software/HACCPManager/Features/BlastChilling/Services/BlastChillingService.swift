@@ -33,12 +33,13 @@ struct BlastChillingService {
         }
 
         let now = Date()
+        let safeStartedAt = min(startedAt, now)
         let record = BlastChillingRecord(
             restaurantId: restaurantId,
             productionId: production.id,
             productionNameSnapshot: production.name,
             productionCategorySnapshot: production.categoryNameSnapshot,
-            startedAt: startedAt,
+            startedAt: safeStartedAt,
             initialTemperature: initialTemperature,
             targetTemperature: targetTemperature,
             status: .inCorso,
@@ -50,6 +51,7 @@ struct BlastChillingService {
         )
         modelContext.insert(record)
         try modelContext.save()
+        KitchenProcessNotifications.postRecordsDidChange()
         return record
     }
 
@@ -76,13 +78,30 @@ struct BlastChillingService {
                 userInfo: [NSLocalizedDescriptionKey: validation.message ?? "Controlla i dati di fine abbattimento."]
             )
         }
-        record.endedAt = endedAt
+        record.endedAt = max(endedAt, record.startedAt)
         record.finalTemperature = finalTemperature
         record.status = validation.status
         record.notes = trimmedOrNil(notes)
         record.correctiveAction = trimmedOrNil(correctiveAction)
         record.updatedAt = Date()
         try modelContext.save()
+        KitchenProcessNotifications.postRecordsDidChange()
+    }
+
+    func cancelRecord(_ record: BlastChillingRecord, modelContext: ModelContext) throws {
+        guard record.status == .inCorso else {
+            throw NSError(
+                domain: "BlastChillingService",
+                code: 9007,
+                userInfo: [NSLocalizedDescriptionKey: "L'abbattimento non è più in corso."]
+            )
+        }
+        let now = Date()
+        record.endedAt = max(now, record.startedAt)
+        record.status = .annullato
+        record.updatedAt = now
+        try modelContext.save()
+        KitchenProcessNotifications.postRecordsDidChange()
     }
 
     func addProduction(

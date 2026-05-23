@@ -44,4 +44,7 @@ enum PerformanceConfig {
 
     /// Limite record tracciabilità in schermata operativa.
     static let traceabilityActiveFetchLimit = 600
+
+    /// Durata consigliata abbattimento (minuti) prima del warning overlay.
+    static let blastChillingRecommendedMinutes: Int = 90
 }

@@ -171,6 +171,25 @@ struct TraceabilityView: View {
                                                 RoundedRectangle(cornerRadius: 8)
                                                     .stroke(associated.isEmpty ? ThemeManager.shared.colorDivider : Color.green.opacity(0.5), lineWidth: 1)
                                             )
+                                            let defrostUses = dataStore.defrostRecords.filter { $0.traceabilityItemId == record.id }
+                                            if !defrostUses.isEmpty {
+                                                VStack(alignment: .leading, spacing: 4) {
+                                                    Text("DECONGELAMENTO")
+                                                        .font(.caption2.weight(.bold))
+                                                        .foregroundStyle(ThemeManager.shared.colorTextPrimary)
+                                                    ForEach(defrostUses) { defrost in
+                                                        Text("Usato in decongelamento · \(defrost.method) · \(defrost.defrostStatus.label)")
+                                                            .font(.caption.weight(.semibold))
+                                                            .foregroundStyle(ThemeManager.shared.colorInfo)
+                                                    }
+                                                }
+                                                .padding(.horizontal, 8)
+                                                .padding(.vertical, 6)
+                                                .background(
+                                                    RoundedRectangle(cornerRadius: 8)
+                                                        .fill(ThemeManager.shared.colorInfo.opacity(0.12))
+                                                )
+                                            }
                                             if record.isNonCompliant {
                                                 if let reason = record.nonComplianceNote, !reason.isEmpty {
                                                     Text("Criticità: \(reason)")

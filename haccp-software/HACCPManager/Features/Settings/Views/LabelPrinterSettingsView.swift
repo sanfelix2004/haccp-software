@@ -2,7 +2,8 @@ import SwiftUI
 
 struct LabelPrinterSettingsView: View {
     var storage = SettingsStorageService.shared
-    
+    @State private var showPrinterDiscoveryInfo = false
+
     var body: some View {
         @Bindable var storage = storage
         VStack(spacing: 32) {
@@ -23,7 +24,9 @@ struct LabelPrinterSettingsView: View {
                         .padding(.horizontal, 40)
                 }
                 
-                Button(action: {}) {
+                Button {
+                    showPrinterDiscoveryInfo = true
+                } label: {
                     Text("Cerca stampanti...")
                         .fontWeight(.bold)
                         .padding(.horizontal, 30)
@@ -31,6 +34,16 @@ struct LabelPrinterSettingsView: View {
                         .background(ThemeManager.shared.colorDivider)
                         .cornerRadius(10)
                 }
+                Text("La ricerca Bluetooth/Wi‑Fi sarà disponibile in un aggiornamento. I campi etichetta sotto sono già attivi.")
+                    .font(.caption2)
+                    .foregroundStyle(ThemeManager.shared.colorTextSecondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 24)
+            }
+            .alert("Stampanti", isPresented: $showPrinterDiscoveryInfo) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text("Il collegamento alle stampanti termiche è in sviluppo. Puoi comunque configurare i campi mostrati sulle etichette di tracciabilità.")
             }
             .padding(.vertical, 40)
             .frame(maxWidth: .infinity)
@@ -55,6 +68,11 @@ struct LabelPrinterSettingsView: View {
             .background(ThemeManager.shared.colorSurface)
             .cornerRadius(16)
             .onChange(of: storage.printer.showProductName) { storage.saveAll() }
+            .onChange(of: storage.printer.showPrepDate) { storage.saveAll() }
+            .onChange(of: storage.printer.showExpiryDate) { storage.saveAll() }
+            .onChange(of: storage.printer.showLotNumber) { storage.saveAll() }
+            .onChange(of: storage.printer.showOperatorName) { storage.saveAll() }
+            .onChange(of: storage.printer.showAllergenWarning) { storage.saveAll() }
         }
     }
 }
