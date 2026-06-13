@@ -19,6 +19,9 @@ struct ProductionLabelDetailView: View {
     @State private var shareURL: URL?
     @State private var showShare = false
     @State private var errorMessage: String?
+    @State private var isPrinting = false
+
+    @ObservedObject private var printerManager = ClabelPrinterManager.shared
 
     private let service = ProductionLabelsService()
 
@@ -26,6 +29,19 @@ struct ProductionLabelDetailView: View {
         ScrollView {
             VStack(spacing: theme.spacing.sectionSpacing) {
                 ProductionLabelStickerView(label: label)
+
+                if SettingsStorageService.shared.printer.showQRCode {
+                    DashboardCardView(title: "Codice QR", subtitle: "Leggibile da qualsiasi dispositivo") {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Il QR contiene prodotto, lotto, date, allergeni e altre info HACCP. Puoi scansionarlo da un altro telefono anche senza archivio locale.")
+                                .font(theme.typography.subheadline)
+                                .foregroundStyle(theme.colorTextSecondary)
+                            Text("ID: \(label.id.uuidString.prefix(8).uppercased())…")
+                                .font(theme.typography.caption)
+                                .foregroundStyle(theme.colorTextSecondary)
+                        }
+                    }
+                }
 
                 DashboardCardView(title: "Collegamenti HACCP") {
                     VStack(alignment: .leading, spacing: 10) {
@@ -55,9 +71,22 @@ struct ProductionLabelDetailView: View {
                 }
 
                 VStack(spacing: 12) {
+                    PrimaryButton(title: isPrinting ? "Stampa…" : "Stampa etichetta", icon: "printer.fill") {
+                        Task { await printLabel() }
+                    }
+                    .disabled(isPrinting || !printerManager.isReadyToPrint)
+
+                    if printerManager.isConnected && !printerManager.isReadyToPrint {
+                        Text("Stampante collegata ma canale stampa non pronto. Attendi o riconnetti da Impostazioni.")
+                            .font(theme.typography.caption)
+                            .foregroundStyle(theme.colorWarning)
+                            .multilineTextAlignment(.center)
+                    }
                     PrimaryButton(title: "Esporta PDF", icon: "doc.fill") { exportPDF() }
                     SecondaryButton(title: "Duplica etichetta", icon: "doc.on.doc") { duplicate() }
-                    SecondaryButton(title: "Prepara ristampa", icon: "printer") { prepareReprint() }
+                    SecondaryButton(title: "Prepara ristampa", icon: "printer") {
+                        Task { await reprintLabel() }
+                    }
                     if !label.isArchived {
                         SecondaryButton(title: "Archivia", icon: "archivebox") { archive() }
                     }
@@ -98,6 +127,17 @@ struct ProductionLabelDetailView: View {
         } message: {
             Text(errorMessage ?? "")
         }
+        .alert("Stampa", isPresented: Binding(
+            get: { printerManager.lastSuccessMessage != nil },
+            set: { if !$0 { printerManager.lastSuccessMessage = nil } }
+        )) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(printerManager.lastSuccessMessage ?? "")
+        }
+        .onChange(of: printerManager.lastErrorMessage) { _, msg in
+            if let msg { errorMessage = msg }
+        }
     }
 
     private func linkRow(_ title: String, _ value: String, icon: String) -> some View {
@@ -131,10 +171,32 @@ struct ProductionLabelDetailView: View {
         }
     }
 
-    private func prepareReprint() {
+    private func printLabel() async {
+        guard printerManager.isReadyToPrint else {
+            errorMessage = printerManager.isConnected
+                ? "Canale stampa non pronto. Vai in Impostazioni → Stampanti e attendi «Connessa»."
+                : "Collega la stampante da Impostazioni → Stampanti."
+            return
+        }
+        isPrinting = true
+        defer { isPrinting = false }
+        do {
+            try await ProductionLabelPrintQueue.shared.printNow(
+                label: label,
+                restaurantName: restaurantName
+            )
+            errorMessage = nil
+        } catch {
+            errorMessage = error.localizedDescription
+            printerManager.lastErrorMessage = error.localizedDescription
+        }
+    }
+
+    private func reprintLabel() async {
         do {
             try service.markReprinted(label, modelContext: modelContext)
             onChanged()
+            await printLabel()
         } catch {
             errorMessage = error.localizedDescription
         }

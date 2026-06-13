@@ -22,8 +22,11 @@ struct ProductionLabelsView: View {
     @State private var sourceDraft: ProductionLabelDraft?
     @State private var selectedLabelId: UUID?
     @ObservedObject private var printQueue = ProductionLabelPrintQueue.shared
+    @ObservedObject private var printerManager = ClabelPrinterManager.shared
     @State private var shareURL: URL?
     @State private var showShare = false
+    @State private var showScanner = false
+    @State private var scannedLabelData: ProductionLabelScanData?
     @State private var errorMessage: String?
 
     private var currentUser: LocalUser? {
@@ -56,17 +59,45 @@ struct ProductionLabelsView: View {
         }
         .background(theme.colorBackground.ignoresSafeArea())
         .navigationTitle("Etichette di produzione")
+        .toolbar {
+            if appState.activeRestaurantId != nil, ProductionLabelScannerSupport.isAvailable {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        showScanner = true
+                    } label: {
+                        Image(systemName: "qrcode.viewfinder")
+                    }
+                    .accessibilityLabel("Scansiona QR etichetta")
+                }
+            }
+        }
+        .sheet(isPresented: $showScanner) {
+            ProductionLabelScannerSheet { payload in
+                handleScannedPayload(payload)
+            }
+        }
+        .sheet(item: $scannedLabelData) { data in
+            ProductionLabelScannedDetailView(data: data)
+        }
         .task(id: appState.activeRestaurantId) {
             reloadData()
         }
         .onChange(of: vm.appliedFilter.showArchived) { _, _ in
             reloadData()
         }
+        .onChange(of: printQueue.pendingJobs.count) { _, _ in
+            Task {
+                await printQueue.processPending(
+                    labels: dataStore.labels,
+                    restaurantName: activeRestaurant?.name
+                )
+            }
+        }
         .navigationDestination(item: $selectedLabelId) { labelId in
-            if let label = dataStore.labels.first(where: { $0.id == labelId }),
-               let user = currentUser {
-                ProductionLabelDetailView(
-                    label: label,
+            if let user = currentUser {
+                ProductionLabelDetailLoaderView(
+                    labelId: labelId,
+                    restaurantId: appState.activeRestaurantId,
                     restaurantName: activeRestaurant?.name ?? "Ristorante",
                     user: user,
                     onChanged: { reloadData() }
@@ -144,6 +175,11 @@ struct ProductionLabelsView: View {
                         SecondaryButton(title: "Da tracciabilità / ricezione / abbattimento", icon: "link") {
                             showSourcePicker = true
                         }
+                        if ProductionLabelScannerSupport.isAvailable {
+                            SecondaryButton(title: "Scansiona QR etichetta", icon: "qrcode.viewfinder") {
+                                showScanner = true
+                            }
+                        }
                         if !filteredLabels.isEmpty {
                             SecondaryButton(title: "Esporta PDF archivio filtrato", icon: "doc.richtext") {
                                 exportFilteredPDF()
@@ -152,8 +188,8 @@ struct ProductionLabelsView: View {
                     }
                 }
 
-                if printQueue.pendingJobs.isEmpty == false {
-                    DashboardCardView(title: "Coda stampa", subtitle: "Pronta per Bluetooth (in arrivo)") {
+                if !printQueue.pendingJobs.isEmpty {
+                    DashboardCardView(title: "Coda stampa", subtitle: printerManager.isConnected ? "Invio alla stampante CLABEL" : "Stampante non connessa") {
                         VStack(alignment: .leading, spacing: 8) {
                             ForEach(printQueue.pendingJobs) { job in
                                 HStack {
@@ -162,11 +198,16 @@ struct ProductionLabelsView: View {
                                     Text("Etichetta in attesa · \(job.copies) copie")
                                         .font(theme.typography.subheadline)
                                     Spacer()
+                                    if printQueue.isProcessing {
+                                        ProgressView()
+                                    }
                                 }
                             }
-                            Text("La stampa termica sarà disponibile in un aggiornamento futuro.")
-                                .font(theme.typography.caption)
-                                .foregroundStyle(theme.colorTextSecondary)
+                            if !printerManager.isConnected {
+                                Text("Collega la stampante da Impostazioni → Stampanti.")
+                                    .font(theme.typography.caption)
+                                    .foregroundStyle(theme.colorWarning)
+                            }
                         }
                     }
                 }
@@ -266,6 +307,37 @@ struct ProductionLabelsView: View {
         } catch {
             errorMessage = error.localizedDescription
         }
+    }
+
+    private func handleScannedPayload(_ payload: String) {
+        guard let scanned = ProductionLabelQRService.parseScanned(payload) else {
+            errorMessage = "QR non riconosciuto. Usa un’etichetta HACCP Manager."
+            return
+        }
+
+        do {
+            if let label = try ProductionLabelLookupService.fetchLabel(
+                id: scanned.id,
+                restaurantId: appState.activeRestaurantId,
+                context: modelContext
+            ) {
+                if !dataStore.labels.contains(where: { $0.id == label.id }) {
+                    dataStore.mergeFetchedLabel(label)
+                }
+                selectedLabelId = label.id
+                return
+            }
+        } catch {
+            errorMessage = error.localizedDescription
+            return
+        }
+
+        if scanned.hasRichContent {
+            scannedLabelData = scanned
+            return
+        }
+
+        errorMessage = "QR senza dati completi. Ristampa l’etichetta per generare un codice aggiornato."
     }
 }
 

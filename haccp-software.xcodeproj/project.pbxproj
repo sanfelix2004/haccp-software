@@ -274,6 +274,7 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = "HACCP Manager";
+				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "HACCP Manager usa il Bluetooth per collegare la stampante etichette CLABEL e stampare le etichette di tracciabilita.";
 				INFOPLIST_KEY_NSCameraUsageDescription = "La fotocamera viene usata per acquisire immagini a supporto della tracciabilita HACCP.";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "La libreria foto viene usata per allegare immagini alle registrazioni HACCP.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -310,6 +311,7 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = "HACCP Manager";
+				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "HACCP Manager usa il Bluetooth per collegare la stampante etichette CLABEL e stampare le etichette di tracciabilita.";
 				INFOPLIST_KEY_NSCameraUsageDescription = "La fotocamera viene usata per acquisire immagini a supporto della tracciabilita HACCP.";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "La libreria foto viene usata per allegare immagini alle registrazioni HACCP.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;

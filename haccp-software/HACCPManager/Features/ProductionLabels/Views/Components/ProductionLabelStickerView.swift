@@ -10,7 +10,16 @@ struct ProductionLabelStickerView: View {
     var compact: Bool = false
 
     @Environment(\.theme) private var theme
+    @Bindable private var settingsStorage = SettingsStorageService.shared
     @State private var qrImage: UIImage?
+
+    private var printerSettings: LabelPrinterSettings {
+        settingsStorage.printer
+    }
+
+    private var qrPreviewSide: CGFloat {
+        compact ? 56 : 72
+    }
 
     var body: some View {
         HStack(alignment: .top, spacing: compact ? 10 : 14) {
@@ -69,21 +78,20 @@ struct ProductionLabelStickerView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
 
             VStack(spacing: 8) {
-                if let qrImage {
-                    Image(uiImage: qrImage)
-                        .interpolation(.none)
-                        .resizable()
-                        .scaledToFit()
-                        .frame(width: compact ? 72 : 96, height: compact ? 72 : 96)
-                        .background(Color.white)
-                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                } else {
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(theme.colorSurfaceElevated)
-                        .frame(width: compact ? 72 : 96, height: compact ? 72 : 96)
-                        .overlay {
+                if printerSettings.showQRCode {
+                    Group {
+                        if let qrImage {
+                            Image(uiImage: qrImage)
+                                .interpolation(.none)
+                                .resizable()
+                                .scaledToFit()
+                        } else {
                             ProgressView()
                         }
+                    }
+                    .frame(width: qrPreviewSide, height: qrPreviewSide)
+                    .background(Color.white)
+                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                 }
                 Text(label.sourceModule.label)
                     .font(.system(size: 9, weight: .semibold))
@@ -102,8 +110,20 @@ struct ProductionLabelStickerView: View {
                 .foregroundStyle(theme.colorDivider)
         )
         .shadow(color: theme.shadows.card.color, radius: theme.shadows.card.radius, y: theme.shadows.card.y)
-        .onAppear { loadQR() }
-        .onChange(of: label.qrPayload) { _, _ in loadQR() }
+        .task(id: qrPreviewTaskID) {
+            await loadQR()
+        }
+    }
+
+    private var qrPreviewTaskID: String {
+        [
+            label.id.uuidString,
+            label.qrPayload,
+            String(printerSettings.showQRCode),
+            String(printerSettings.qrRotationRaw),
+            String(printerSettings.qrCornerRaw),
+            String(printerSettings.qrCellSize)
+        ].joined(separator: "|")
     }
 
     @ViewBuilder
@@ -131,10 +151,27 @@ struct ProductionLabelStickerView: View {
         }
     }
 
-    private func loadQR() {
-        let payload = label.qrPayload.isEmpty
-            ? ProductionLabelQRService.buildPayload(for: label)
-            : label.qrPayload
-        qrImage = ProductionLabelQRService.image(from: payload, dimension: compact ? 144 : 192)
+    @MainActor
+    private func loadQR() async {
+        guard printerSettings.showQRCode else {
+            qrImage = nil
+            return
+        }
+
+        let payload = LabelQRCodeLayout.payload(for: label)
+        let cell = LabelQRCodeLayout.clampedCellSize(
+            printerSettings.qrCellSize,
+            payload: payload,
+            corner: printerSettings.qrCorner
+        )
+        let dots = LabelQRCodeLayout.printSizeDots(cellSize: cell, payload: payload)
+        let dimension = max(96, CGFloat(dots) * 2)
+        let rotation = printerSettings.qrRotation
+
+        let image = await Task.detached(priority: .userInitiated) {
+            ProductionLabelQRService.image(from: payload, dimension: dimension, rotation: rotation)
+        }.value
+
+        qrImage = image
     }
 }

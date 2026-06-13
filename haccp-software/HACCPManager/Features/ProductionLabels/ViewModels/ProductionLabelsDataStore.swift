@@ -53,6 +53,11 @@ final class ProductionLabelsDataStore: ObservableObject {
         isLoading = false
     }
 
+    func mergeFetchedLabel(_ label: ProductionLabelRecord) {
+        guard !labels.contains(where: { $0.id == label.id }) else { return }
+        labels.insert(label, at: 0)
+    }
+
     deinit {
         loadTask?.cancel()
     }
