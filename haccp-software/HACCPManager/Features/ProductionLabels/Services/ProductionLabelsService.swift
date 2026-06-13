@@ -52,7 +52,7 @@ struct ProductionLabelsService {
             status: .active
         )
         record.previewText = buildPreviewText(record)
-        record.qrPayload = ProductionLabelQRService.buildPayload(for: record)
+        assignQRPayload(to: record, modelContext: modelContext)
         modelContext.insert(record)
         try modelContext.save()
         return record
@@ -82,7 +82,7 @@ struct ProductionLabelsService {
         label.productStatus = draft.productStatus
         label.updatedAt = Date()
         label.previewText = buildPreviewText(label)
-        label.qrPayload = ProductionLabelQRService.buildPayload(for: label)
+        assignQRPayload(to: label, modelContext: modelContext)
         try modelContext.save()
     }
 
@@ -118,7 +118,7 @@ struct ProductionLabelsService {
             duplicateOfLabelId: label.id
         )
         copy.previewText = buildPreviewText(copy)
-        copy.qrPayload = ProductionLabelQRService.buildPayload(for: copy)
+        assignQRPayload(to: copy, modelContext: modelContext)
         modelContext.insert(copy)
         try modelContext.save()
         return copy
@@ -128,7 +128,6 @@ struct ProductionLabelsService {
         label.reprintCount += 1
         label.labelStatus = .reprinted
         label.updatedAt = Date()
-        ProductionLabelPrintQueue.shared.enqueue(labelId: label.id)
         try modelContext.save()
     }
 
@@ -228,6 +227,17 @@ struct ProductionLabelsService {
         d.defrostRecordId = label.defrostRecordId
         d.productionId = label.productionId
         return d
+    }
+
+    private func assignQRPayload(to label: ProductionLabelRecord, modelContext: ModelContext) {
+        let restaurantName = fetchRestaurantName(label.restaurantId, modelContext: modelContext)
+        label.qrPayload = ProductionLabelQRService.buildPayload(for: label, restaurantName: restaurantName)
+    }
+
+    private func fetchRestaurantName(_ id: UUID, modelContext: ModelContext) -> String? {
+        var descriptor = FetchDescriptor<Restaurant>(predicate: #Predicate { $0.id == id })
+        descriptor.fetchLimit = 1
+        return try? modelContext.fetch(descriptor).first?.name
     }
 
     private func buildPreviewText(_ label: ProductionLabelRecord) -> String {

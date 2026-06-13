@@ -1,6 +1,6 @@
 //
 //  ProductionLabelPrintQueue.swift
-//  Stub per futura stampa Bluetooth (termica).
+//  Coda stampa etichette → stampante CLABEL Bluetooth.
 //
 
 import Foundation
@@ -13,12 +13,12 @@ struct ProductionLabelPrintJob: Identifiable, Equatable {
     var copies: Int
 }
 
-/// Coda locale in memoria — in futuro collegata a driver Bluetooth.
 @MainActor
 final class ProductionLabelPrintQueue: ObservableObject {
     static let shared = ProductionLabelPrintQueue()
 
     @Published private(set) var pendingJobs: [ProductionLabelPrintJob] = []
+    @Published private(set) var isProcessing = false
 
     private init() {}
 
@@ -40,10 +40,44 @@ final class ProductionLabelPrintQueue: ObservableObject {
         pendingJobs.removeAll()
     }
 
-    /// Placeholder: quando sarà disponibile il modulo Bluetooth, processare qui.
-    func processNext() async -> Bool {
-        guard !pendingJobs.isEmpty else { return false }
-        pendingJobs.removeFirst()
-        return true
+    func processPending(labels: [ProductionLabelRecord], restaurantName: String? = nil) async {
+        guard !pendingJobs.isEmpty, !isProcessing else { return }
+        isProcessing = true
+        defer { isProcessing = false }
+
+        let settings = SettingsStorageService.shared.printer
+        let manager = ClabelPrinterManager.shared
+
+        while let job = pendingJobs.first {
+            guard let label = labels.first(where: { $0.id == job.labelId }) else {
+                remove(jobId: job.id)
+                continue
+            }
+            do {
+                for _ in 0..<job.copies {
+                    try await manager.printWithFallback(
+                        label: label,
+                        settings: settings,
+                        restaurantName: restaurantName
+                    )
+                }
+                remove(jobId: job.id)
+            } catch {
+                manager.lastErrorMessage = error.localizedDescription
+                break
+            }
+        }
+    }
+
+    func printNow(label: ProductionLabelRecord, restaurantName: String? = nil, copies: Int = 1) async throws {
+        let settings = SettingsStorageService.shared.printer
+        let manager = ClabelPrinterManager.shared
+        for _ in 0..<max(1, copies) {
+            try await manager.printWithFallback(
+                label: label,
+                settings: settings,
+                restaurantName: restaurantName
+            )
+        }
     }
 }

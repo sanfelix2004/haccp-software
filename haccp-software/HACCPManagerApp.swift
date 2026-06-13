@@ -19,6 +19,10 @@ struct HACCPManagerApp: App {
         // Tema/layout da UserDefaults prima del primo frame (evita flash nero).
         ThemeManager.shared.loadSavedTheme()
 
+        if let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
+            try? FileManager.default.createDirectory(at: appSupport, withIntermediateDirectories: true)
+        }
+
         do {
             container = try ModelContainer(
                 for: LocalUser.self,
@@ -73,6 +77,7 @@ struct HACCPManagerApp: App {
                 .environmentObject(appState)
                 .environmentObject(ActiveBlastChillingManager.shared)
                 .environmentObject(ActiveDefrostManager.shared)
+                .environmentObject(ClabelPrinterManager.shared)
         }
         .modelContainer(container)
         .onChange(of: scenePhase) { _, newPhase in
@@ -91,6 +96,7 @@ struct HACCPManagerApp: App {
                     if let restaurantId = appState.activeRestaurantId {
                         await DataArchiveService.runIfNeeded(context: context, restaurantId: restaurantId)
                     }
+                    ClabelPrinterManager.shared.reconnectIfSaved()
                     await tickReportEngine(modelContext: context)
                 }
             }
