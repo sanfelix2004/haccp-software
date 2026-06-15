@@ -56,7 +56,7 @@ struct SettingsView: View {
                     HStack {
                         Spacer()
                         VStack(spacing: 6) {
-                            Text("HACCP Manager Premium Edition")
+                            Text("HACCP Manager")
                                 .font(.headline)
                             Text(AppVersionService.currentVersion)
                                 .font(.caption)

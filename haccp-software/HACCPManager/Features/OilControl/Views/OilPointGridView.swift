@@ -40,7 +40,7 @@ struct OilPointGridView: View {
                     .background(ThemeManager.shared.colorSurfaceElevated)
                     .overlay(
                         RoundedRectangle(cornerRadius: 14)
-                            .stroke(selectedPointId == point.id ? Color.green : ThemeManager.shared.colorDivider, lineWidth: selectedPointId == point.id ? 2 : 1)
+                            .stroke(selectedPointId == point.id ? ThemeManager.shared.colorPrimary : ThemeManager.shared.colorDivider, lineWidth: selectedPointId == point.id ? 2 : 1)
                     )
                     .cornerRadius(14)
                 }
@@ -58,11 +58,11 @@ struct OilPointGridView: View {
 
     private func statusColor(for point: OilPoint) -> Color {
         switch lastRecord(for: point)?.oilStatus {
-        case .conforme: return .green
-        case .daMonitorare: return .yellow
-        case .daSostituire: return .orange
-        case .nonConforme: return .red
-        case nil: return .gray
+        case .conforme: return ThemeManager.shared.colorSuccess
+        case .daMonitorare: return ThemeManager.shared.colorWarning
+        case .daSostituire: return ThemeManager.shared.colorWarning
+        case .nonConforme: return ThemeManager.shared.colorError
+        case nil: return ThemeManager.shared.colorTextSecondary
         }
     }
 }

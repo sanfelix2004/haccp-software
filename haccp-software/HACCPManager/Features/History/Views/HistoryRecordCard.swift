@@ -2,48 +2,125 @@ import SwiftUI
 
 struct HistoryRecordCard: View {
     let entry: HistoryEntry
+    var isLastInSection: Bool = false
+
+    @Environment(\.theme) private var theme
+    @State private var isExpanded = false
+
+    private var accent: Color {
+        entry.module.accentColor(theme: theme)
+    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(entry.title)
-                        .font(.headline)
-                        .foregroundStyle(ThemeManager.shared.colorTextPrimary)
-                    Text("\(entry.status) · \(entry.operatorName)")
-                        .font(.caption)
-                        .foregroundStyle(entry.hasCriticality ? ThemeManager.shared.colorWarning : ThemeManager.shared.colorTextSecondary)
-                }
-                Spacer()
-                Text(entry.date.formatted(date: .omitted, time: .shortened))
-                    .font(.caption)
-                    .foregroundStyle(ThemeManager.shared.colorTextSecondary)
-            }
+        HStack(alignment: .top, spacing: 14) {
+            timelineRail
 
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 190), spacing: 8)], alignment: .leading, spacing: 8) {
-                ForEach(entry.details) { detail in
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(detail.label)
-                            .font(.caption2.bold())
-                            .foregroundStyle(ThemeManager.shared.colorTextSecondary)
-                        Text(detail.value)
-                            .font(.caption)
-                            .foregroundStyle(ThemeManager.shared.colorTextPrimary)
-                            .lineLimit(3)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(8)
-                    .background(ThemeManager.shared.colorSurfaceElevated)
-                    .cornerRadius(8)
+            VStack(alignment: .leading, spacing: 10) {
+                header
+                if isExpanded, !entry.details.isEmpty {
+                    detailsGrid
+                        .transition(.opacity.combined(with: .move(edge: .top)))
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(14)
+            .background(cardBackground)
+            .clipShape(RoundedRectangle(cornerRadius: theme.spacing.cornerLarge, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: theme.spacing.cornerLarge, style: .continuous)
+                    .strokeBorder(
+                        entry.hasCriticality ? theme.colorError.opacity(0.35) : theme.colorDivider.opacity(0.7),
+                        lineWidth: 1
+                    )
+            )
+            .onTapGesture {
+                withAnimation(.spring(response: 0.28, dampingFraction: 0.86)) {
+                    isExpanded.toggle()
                 }
             }
         }
-        .padding(12)
-        .background(entry.hasCriticality ? Color.red.opacity(0.12) : ThemeManager.shared.colorSurface)
-        .overlay(
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(entry.hasCriticality ? Color.red.opacity(0.35) : ThemeManager.shared.colorDivider, lineWidth: 1)
-        )
-        .cornerRadius(12)
+    }
+
+    private var timelineRail: some View {
+        VStack(spacing: 0) {
+            Circle()
+                .fill(entry.hasCriticality ? theme.colorError : accent)
+                .frame(width: 12, height: 12)
+                .overlay(
+                    Circle()
+                        .strokeBorder(theme.colorBackground, lineWidth: 2)
+                )
+            if !isLastInSection {
+                Rectangle()
+                    .fill(theme.colorDivider.opacity(0.8))
+                    .frame(width: 2)
+                    .frame(maxHeight: .infinity)
+            }
+        }
+        .frame(width: 12)
+        .padding(.top, 18)
+    }
+
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(entry.title)
+                        .font(theme.typography.headline)
+                        .foregroundStyle(theme.colorTextPrimary)
+                        .lineLimit(isExpanded ? nil : 2)
+                    Text(entry.operatorName)
+                        .font(theme.typography.caption)
+                        .foregroundStyle(theme.colorTextSecondary)
+                }
+                Spacer(minLength: 8)
+                VStack(alignment: .trailing, spacing: 6) {
+                    Text(entry.date.formatted(date: .omitted, time: .shortened))
+                        .font(theme.typography.caption.weight(.semibold))
+                        .foregroundStyle(theme.colorTextSecondary)
+                    HACCPBadge(title: entry.status, style: entry.statusBadgeStyle, showIcon: false)
+                }
+            }
+
+            HStack(spacing: 8) {
+                if !entry.category.isEmpty, entry.category != "—" {
+                    Label(entry.category, systemImage: "folder")
+                        .font(theme.typography.caption2)
+                        .foregroundStyle(theme.colorTextSecondary)
+                        .lineLimit(1)
+                }
+                Spacer()
+                if !entry.details.isEmpty {
+                    Label(isExpanded ? "Meno dettagli" : "Dettagli", systemImage: isExpanded ? "chevron.up" : "chevron.down")
+                        .font(theme.typography.caption2.weight(.semibold))
+                        .foregroundStyle(theme.colorPrimary)
+                }
+            }
+        }
+    }
+
+    private var detailsGrid: some View {
+        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], alignment: .leading, spacing: 8) {
+            ForEach(entry.details) { detail in
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(detail.label.uppercased())
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(theme.colorTextSecondary)
+                        .tracking(0.4)
+                    Text(detail.value)
+                        .font(theme.typography.caption)
+                        .foregroundStyle(theme.colorTextPrimary)
+                        .lineLimit(4)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(10)
+                .background(theme.colorSurface)
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            }
+        }
+    }
+
+    private var cardBackground: Color {
+        entry.hasCriticality ? theme.colorError.opacity(0.07) : theme.colorSurfaceElevated
     }
 }

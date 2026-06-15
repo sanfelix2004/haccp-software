@@ -12,6 +12,7 @@ struct TraceabilityView: View {
     }
 
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.theme) private var theme
     @EnvironmentObject var appState: AppState
     @Query private var users: [LocalUser]
     @StateObject private var dataStore = TraceabilityDataStore()
@@ -32,10 +33,12 @@ struct TraceabilityView: View {
     @State private var recordPendingDelete: TraceabilityRecord?
     @State private var exportURL: URL?
     @State private var errorMessage: String?
+    @State private var labelDraft: ProductionLabelDraft?
 
     private let productionLibraryService = ProductionLibraryService()
     private let expiryService = TraceabilityExpiryService()
     private let service = TraceabilityService()
+    private let labelService = ProductionLabelsService()
 
     private var scopedRecords: [TraceabilityRecord] {
         dataStore.records
@@ -82,7 +85,7 @@ struct TraceabilityView: View {
                             Label("Aggiungi da Ricezione merci", systemImage: "shippingbox.fill")
                         }
                         .buttonStyle(.borderedProminent)
-                        .tint(.red)
+                        .tint(theme.colorPrimary)
                         HStack(spacing: 8) {
                             TextField("Cerca prodotto", text: $searchText)
                                 .textFieldStyle(.roundedBorder)
@@ -119,7 +122,7 @@ struct TraceabilityView: View {
 
                     if filteredRecords.isEmpty {
                         DashboardEmptyStateView(state: .init(
-                            title: "Nessun prodotto in tracciabilita",
+                            title: "Nessun prodotto in tracciabilità",
                             message: "Ricevi merci per popolare lo storico e gestire stato/produzioni.",
                             actionTitle: nil
                         ))
@@ -145,7 +148,7 @@ struct TraceabilityView: View {
                                             if let st = displayReceiptStatusLabel(for: record) {
                                                 Text("Stato ricezione: \(st)")
                                                     .font(.caption2)
-                                                    .foregroundColor(.orange.opacity(0.95))
+                                                    .foregroundStyle(theme.colorWarning)
                                             }
                                             Text("Scadenza: \(displayExpiry(for: record))")
                                                 .font(.caption2)
@@ -153,30 +156,30 @@ struct TraceabilityView: View {
                                             statusBadge(for: record)
                                             let associated = associatedProductions(for: record)
                                             VStack(alignment: .leading, spacing: 4) {
-                                                Text("PRODUZIONI ASSOCIATE")
+                                                Text("Produzioni associate")
                                                     .font(.caption2.weight(.bold))
-                                                    .foregroundStyle(ThemeManager.shared.colorTextPrimary)
+                                                    .foregroundStyle(theme.colorTextSecondary)
                                                 Text(associated.isEmpty ? "Nessuna produzione" : associated.map(\.name).joined(separator: " • "))
                                                     .font(.caption.weight(.semibold))
-                                                    .foregroundStyle(associated.isEmpty ? ThemeManager.shared.colorTextSecondary : ThemeManager.shared.colorSuccess)
+                                                    .foregroundStyle(associated.isEmpty ? theme.colorTextSecondary : theme.colorSuccess)
                                                     .lineLimit(2)
                                             }
                                             .padding(.horizontal, 8)
                                             .padding(.vertical, 6)
                                             .background(
                                                 RoundedRectangle(cornerRadius: 8)
-                                                    .fill(associated.isEmpty ? ThemeManager.shared.colorSurface : Color.green.opacity(0.14))
+                                                    .fill(associated.isEmpty ? theme.colorSurface : theme.colorSuccess.opacity(0.14))
                                             )
                                             .overlay(
                                                 RoundedRectangle(cornerRadius: 8)
-                                                    .stroke(associated.isEmpty ? ThemeManager.shared.colorDivider : Color.green.opacity(0.5), lineWidth: 1)
+                                                    .stroke(associated.isEmpty ? theme.colorDivider : theme.colorSuccess.opacity(0.5), lineWidth: 1)
                                             )
                                             let defrostUses = dataStore.defrostRecords.filter { $0.traceabilityItemId == record.id }
                                             if !defrostUses.isEmpty {
                                                 VStack(alignment: .leading, spacing: 4) {
-                                                    Text("DECONGELAMENTO")
+                                                    Text("Decongelamento")
                                                         .font(.caption2.weight(.bold))
-                                                        .foregroundStyle(ThemeManager.shared.colorTextPrimary)
+                                                        .foregroundStyle(theme.colorTextSecondary)
                                                     ForEach(defrostUses) { defrost in
                                                         Text("Usato in decongelamento · \(defrost.method) · \(defrost.defrostStatus.label)")
                                                             .font(.caption.weight(.semibold))
@@ -199,7 +202,7 @@ struct TraceabilityView: View {
                                                 if let cap = record.nonComplianceCorrectiveAction, !cap.isEmpty {
                                                     Text("Azione: \(cap)")
                                                         .font(.caption2)
-                                                        .foregroundColor(.yellow.opacity(0.9))
+                                                        .foregroundStyle(theme.colorWarning)
                                                 }
                                             }
                                         }
@@ -216,6 +219,12 @@ struct TraceabilityView: View {
                                         .tint(ThemeManager.shared.colorPrimary)
                                         .disabled(record.productStatus == .expired || record.productStatus == .rejected)
 
+                                        if record.productStatus != .rejected {
+                                            CreateProductionLabelLink {
+                                                labelDraft = labelService.draft(from: record)
+                                            }
+                                        }
+
                                         Button("Segna non conforme") {
                                             nonComplianceRecord = record
                                             nonComplianceNote = ""
@@ -224,7 +233,7 @@ struct TraceabilityView: View {
                                             ncCamera.resetCaptureBuffer()
                                         }
                                         .buttonStyle(.bordered)
-                                        .tint(.orange)
+                                        .tint(theme.colorWarning)
                                         .disabled(record.productStatus == .rejected)
 
                                         if isMaster {
@@ -294,10 +303,27 @@ struct TraceabilityView: View {
         .sheet(isPresented: Binding(get: { nonComplianceRecord != nil }, set: { if !$0 { nonComplianceRecord = nil } })) {
             nonComplianceSheet
         }
+        .sheet(isPresented: Binding(
+            get: { labelDraft != nil },
+            set: { if !$0 { labelDraft = nil } }
+        )) {
+            if let draft = labelDraft,
+               let rid = appState.activeRestaurantId,
+               let user = currentUser {
+                ProductionLabelEditorSheet(
+                    mode: .create(draft),
+                    restaurantId: rid,
+                    user: user,
+                    onSaved: { labelDraft = nil },
+                    onCancel: { labelDraft = nil }
+                )
+            }
+        }
         .onReceive(ncCamera.$capturedPhotoData) { data in
-            guard ncAwaitingCapture, let data, data.isEmpty == false else { return }
+            guard ncAwaitingCapture, let data, !data.isEmpty else { return }
             ncAwaitingCapture = false
             nonCompliancePhotoData = data
+            ncCamera.stop()
         }
         .fullScreenCover(isPresented: $showMasterAuthDelete) {
             if let master = users.first(where: { $0.role == .master }) {
@@ -395,31 +421,37 @@ struct TraceabilityView: View {
                         .lineLimit(2...5)
                 }
                 Section("Foto obbligatoria") {
-                    RoundedRectangle(cornerRadius: 10)
-                        .fill(ThemeManager.shared.colorCameraPreviewBackground)
-                        .frame(height: 160)
-                        .overlay(
-                            Group {
-                                if ncCamera.authorizationDenied {
-                                    Text("Accesso fotocamera negato")
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                } else {
-                                    FinalizeCameraSessionPreview(session: ncCamera.session)
-                                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                    if let data = nonCompliancePhotoData,
+                       let preview = HACCPZoomablePhotoPreview(data: data, height: 220, zoomTitle: "Foto non conformità") {
+                        preview
+                        Button("Riscatta foto") {
+                            nonCompliancePhotoData = nil
+                            ncCamera.resetCaptureBuffer()
+                            ncCamera.start()
+                        }
+                        .buttonStyle(.bordered)
+                    } else {
+                        RoundedRectangle(cornerRadius: 10)
+                            .fill(ThemeManager.shared.colorCameraPreviewBackground)
+                            .frame(height: 160)
+                            .overlay(
+                                Group {
+                                    if ncCamera.authorizationDenied {
+                                        Text("Accesso fotocamera negato")
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    } else {
+                                        FinalizeCameraSessionPreview(session: ncCamera.session)
+                                            .clipShape(RoundedRectangle(cornerRadius: 10))
+                                    }
                                 }
-                            }
-                        )
-                    Button("Scatta foto") {
-                        ncAwaitingCapture = true
-                        ncCamera.capturePhoto()
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(ncCamera.authorizationDenied)
-                    if nonCompliancePhotoData != nil {
-                        Label("Foto acquisita", systemImage: "checkmark.circle.fill")
-                            .font(.caption)
-                            .foregroundStyle(.green)
+                            )
+                        Button("Scatta foto") {
+                            ncAwaitingCapture = true
+                            ncCamera.capturePhoto()
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(ncCamera.authorizationDenied)
                     }
                 }
             }
@@ -484,22 +516,17 @@ struct TraceabilityView: View {
     @ViewBuilder
     private func statusBadge(for record: TraceabilityRecord) -> some View {
         let label = record.isNonCompliant ? "Non conforme" : record.productStatus.label
-        Text(label)
-            .font(.caption2.bold())
-            .foregroundStyle(ThemeManager.shared.colorTextPrimary)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 3)
-            .background(statusColor(record.productStatus))
-            .cornerRadius(8)
+        let style: HACCPBadgeStyle = record.isNonCompliant ? .nonConforme : badgeStyle(record.productStatus)
+        HACCPBadge(title: label, style: style, showIcon: false)
     }
 
-    private func statusColor(_ status: ProductStatus) -> Color {
+    private func badgeStyle(_ status: ProductStatus) -> HACCPBadgeStyle {
         switch status {
-        case .available: return .blue.opacity(0.7)
-        case .partiallyUsed: return .orange.opacity(0.8)
-        case .used: return .green.opacity(0.8)
-        case .expired: return .red.opacity(0.9)
-        case .rejected: return .red
+        case .available: return .info
+        case .partiallyUsed: return .warning
+        case .used: return .conforme
+        case .expired: return .nonConforme
+        case .rejected: return .nonConforme
         }
     }
 
@@ -517,45 +544,39 @@ struct TraceabilityView: View {
 
     @ViewBuilder
     private func recordImagePreview(for record: TraceabilityRecord) -> some View {
-        let recordImages = dataStore.images.filter { $0.receivedItemId == record.id }.sorted { $0.createdAt > $1.createdAt }
-        let preferred = recordImages.first { $0.type == .nonComplianceRequired }
-            ?? recordImages.first { $0.type == .receiptOptional }
-            ?? recordImages.first
-        if let imgModel = preferred,
-           let bytes = imgModel.imageData, bytes.isEmpty == false,
-           let image = UIImage(data: bytes) {
-            Image(uiImage: image)
-                .resizable()
-                .scaledToFill()
-                .frame(width: 56, height: 56)
-                .clipShape(RoundedRectangle(cornerRadius: 8))
-                .overlay(RoundedRectangle(cornerRadius: 8).stroke(ThemeManager.shared.colorDivider, lineWidth: 1))
-        } else if let path = preferred?.localPath, let image = UIImage(contentsOfFile: path) {
-            Image(uiImage: image)
-                .resizable()
-                .scaledToFill()
-                .frame(width: 56, height: 56)
-                .clipShape(RoundedRectangle(cornerRadius: 8))
-                .overlay(RoundedRectangle(cornerRadius: 8).stroke(ThemeManager.shared.colorDivider, lineWidth: 1))
-        } else if let data = receiptForTrace(record)?.photoData, let image = UIImage(data: data) {
-            Image(uiImage: image)
-                .resizable()
-                .scaledToFill()
-                .frame(width: 56, height: 56)
-                .clipShape(RoundedRectangle(cornerRadius: 8))
-                .overlay(RoundedRectangle(cornerRadius: 8).stroke(ThemeManager.shared.colorDivider, lineWidth: 1))
-        } else if let data = record.photoData, let image = UIImage(data: data) {
-            Image(uiImage: image)
-                .resizable()
-                .scaledToFill()
-                .frame(width: 56, height: 56)
-                .clipShape(RoundedRectangle(cornerRadius: 8))
-                .overlay(RoundedRectangle(cornerRadius: 8).stroke(ThemeManager.shared.colorDivider, lineWidth: 1))
+        if let image = traceabilityUIImage(for: record) {
+            HACCPZoomablePhotoThumbnail(
+                image: image,
+                size: 56,
+                zoomTitle: displayProductName(for: record)
+            )
         } else {
             RoundedRectangle(cornerRadius: 8)
                 .fill(ThemeManager.shared.colorSurface)
                 .frame(width: 56, height: 56)
                 .overlay(Text("Nessuna foto").font(.caption2).foregroundStyle(ThemeManager.shared.colorTextSecondary))
         }
+    }
+
+    private func traceabilityUIImage(for record: TraceabilityRecord) -> UIImage? {
+        let recordImages = dataStore.images.filter { $0.receivedItemId == record.id }.sorted { $0.createdAt > $1.createdAt }
+        let preferred = recordImages.first { $0.type == .nonComplianceRequired }
+            ?? recordImages.first { $0.type == .receiptOptional }
+            ?? recordImages.first
+        if let imgModel = preferred,
+           let bytes = imgModel.imageData, !bytes.isEmpty,
+           let image = UIImage(data: bytes) {
+            return image
+        }
+        if let path = preferred?.localPath, let image = UIImage(contentsOfFile: path) {
+            return image
+        }
+        if let data = receiptForTrace(record)?.photoData, let image = UIImage(data: data) {
+            return image
+        }
+        if let data = record.photoData, let image = UIImage(data: data) {
+            return image
+        }
+        return nil
     }
 }

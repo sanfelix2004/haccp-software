@@ -72,9 +72,11 @@ struct ChecklistView: View {
                     ChecklistTemplatesView(
                         templates: scopedTemplates,
                         canManage: canManageTemplates,
-                        canExecute: false,
+                        canExecute: currentUser != nil,
                         onCreate: { vm.showCreateTemplate = true },
-                        onStartRun: { _ in },
+                        onStartRun: { template in
+                            startRun(from: template)
+                        },
                         onEdit: { template in
                             templateToEdit = template
                             showEditTemplateSheet = true
@@ -140,6 +142,25 @@ struct ChecklistView: View {
             )
         } catch {
             vm.errorMessage = "Risoluzione alert non riuscita."
+        }
+    }
+
+    private func startRun(from template: ChecklistTemplate) {
+        guard let restaurantId, let user = currentUser else {
+            vm.errorMessage = "Seleziona un ristorante e accedi per avviare una checklist."
+            return
+        }
+        do {
+            let run = try vm.service.startRun(
+                template: template,
+                user: user,
+                restaurantId: restaurantId,
+                modelContext: modelContext
+            )
+            selectedRunForSheet = run
+            showRunSheet = true
+        } catch {
+            vm.errorMessage = "Avvio checklist non riuscito."
         }
     }
 

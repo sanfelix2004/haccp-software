@@ -25,7 +25,7 @@ struct BlastChillingProductionGridView: View {
                     .background(ThemeManager.shared.colorSurfaceElevated)
                     .overlay(
                         RoundedRectangle(cornerRadius: 12)
-                            .stroke(selectedProductionId == production.id ? Color.green : ThemeManager.shared.colorDivider, lineWidth: selectedProductionId == production.id ? 2 : 1)
+                            .stroke(selectedProductionId == production.id ? ThemeManager.shared.colorPrimary : ThemeManager.shared.colorDivider, lineWidth: selectedProductionId == production.id ? 2 : 1)
                     )
                     .cornerRadius(12)
                     .overlay(alignment: .topTrailing) {

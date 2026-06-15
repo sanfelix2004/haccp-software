@@ -15,6 +15,15 @@ struct ActiveDefrostSnapshot: Identifiable, Equatable {
     let startAt: Date
     let operatorName: String
 
+    init(record: DefrostRecord) {
+        id = record.id
+        productName = record.productName
+        methodLabel = record.method
+        lotNumber = record.lotNumber
+        startAt = record.startAt
+        operatorName = record.createdByNameSnapshot
+    }
+
     func elapsed(at now: Date) -> TimeInterval {
         DefrostDurationFormatter.elapsed(since: startAt, now: now)
     }
@@ -29,6 +38,8 @@ final class ActiveDefrostManager: ObservableObject {
 
     static let shared = ActiveDefrostManager()
 
+    private static let maxActiveFetch = 32
+
     @Published private(set) var activeSnapshots: [ActiveDefrostSnapshot] = []
     @Published private(set) var now: Date = Date()
     @Published var showActiveListSheet = false
@@ -36,6 +47,7 @@ final class ActiveDefrostManager: ObservableObject {
     @Published var errorMessage: String?
 
     private var tickCancellable: AnyCancellable?
+    private let service = DefrostService()
 
     private init() {}
 
@@ -58,48 +70,23 @@ final class ActiveDefrostManager: ObservableObject {
     }
 
     func reset() {
-        activeSnapshots = []
-        showActiveListSheet = false
+        clearActiveState()
         recordIdPendingComplete = nil
         errorMessage = nil
-        stopTicking()
     }
 
     func refresh(context: ModelContext, restaurantId: UUID?) {
         guard let restaurantId else {
-            activeSnapshots = []
-            stopTicking()
+            clearActiveState()
             return
         }
 
-        let rid = restaurantId
-        var descriptor = FetchDescriptor<DefrostRecord>(
-            predicate: #Predicate { $0.restaurantId == rid && $0.endAt == nil },
-            sortBy: [SortDescriptor(\DefrostRecord.startAt)]
-        )
-        descriptor.fetchLimit = 32
-
-        let cancelledStatus = DefrostStatus.cancelled.rawValue
-        let records = ((try? context.fetch(descriptor)) ?? []).filter {
-            $0.endAt == nil && $0.statusRaw != cancelledStatus
-        }
-
-        activeSnapshots = records.map {
-            ActiveDefrostSnapshot(
-                id: $0.id,
-                productName: $0.productName,
-                methodLabel: $0.method,
-                lotNumber: $0.lotNumber,
-                startAt: $0.startAt,
-                operatorName: $0.createdByNameSnapshot
-            )
-        }
-
-        if activeSnapshots.isEmpty {
-            showActiveListSheet = false
-            stopTicking()
-        } else {
-            startTicking()
+        switch fetchActiveRecords(context: context, restaurantId: restaurantId) {
+        case .success(let records):
+            applyActiveRecords(records)
+        case .failure:
+            // Evita di azzerare la bubble su errori SwiftData transitori.
+            break
         }
     }
 
@@ -122,24 +109,64 @@ final class ActiveDefrostManager: ObservableObject {
 
     func cancel(record: DefrostRecord, context: ModelContext) {
         do {
-            try DefrostService().cancelDefrost(record, modelContext: context)
+            try service.cancelDefrost(record, modelContext: context)
             refresh(context: context, restaurantId: record.restaurantId)
         } catch {
             errorMessage = error.localizedDescription
         }
     }
 
-    private func startTicking() {
-        guard tickCancellable == nil else { return }
-        tickCancellable = Timer.publish(every: 1, on: .main, in: .common)
-            .autoconnect()
-            .sink { [weak self] date in
-                self?.now = date
-            }
+    // MARK: - Private
+
+    private enum FetchResult {
+        case success([DefrostRecord])
+        case failure
     }
 
-    private func stopTicking() {
-        tickCancellable?.cancel()
-        tickCancellable = nil
+    private func fetchActiveRecords(
+        context: ModelContext,
+        restaurantId: UUID
+    ) -> FetchResult {
+        let rid = restaurantId
+        let inProgressStatus = DefrostStatus.inProgress.rawValue
+        let delayedStatus = DefrostStatus.delayed.rawValue
+
+        var descriptor = FetchDescriptor<DefrostRecord>(
+            predicate: #Predicate { record in
+                record.restaurantId == rid
+                    && (record.statusRaw == inProgressStatus || record.statusRaw == delayedStatus)
+            },
+            sortBy: [SortDescriptor(\DefrostRecord.startAt)]
+        )
+        descriptor.fetchLimit = Self.maxActiveFetch
+
+        do {
+            let fetched = try context.fetch(descriptor)
+            service.refreshDelayedStatuses(records: fetched)
+            if !fetched.isEmpty {
+                try? context.save()
+            }
+            return .success(fetched.filter(\.isActive))
+        } catch {
+            return .failure
+        }
+    }
+
+    private func applyActiveRecords(_ records: [DefrostRecord]) {
+        activeSnapshots = records.map(ActiveDefrostSnapshot.init(record:))
+
+        if activeSnapshots.isEmpty {
+            clearActiveState()
+        } else {
+            KitchenProcessTimerTicker.start(&tickCancellable) { [weak self] date in
+                self?.now = date
+            }
+        }
+    }
+
+    private func clearActiveState() {
+        activeSnapshots = []
+        showActiveListSheet = false
+        KitchenProcessTimerTicker.stop(&tickCancellable)
     }
 }

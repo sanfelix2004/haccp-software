@@ -4,6 +4,9 @@ struct HistoryFilterBar: View {
     @Binding var filter: HistoryFilter
     let entries: [HistoryEntry]
 
+    @Environment(\.theme) private var theme
+    @State private var showAdvanced = false
+
     private var statusOptions: [String] {
         ["Tutti"] + Array(Set(entries.map(\.status))).sorted()
     }
@@ -17,31 +20,118 @@ struct HistoryFilterBar: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 10) {
-                DatePicker("Dal", selection: $filter.startDate, displayedComponents: .date)
-                DatePicker("Al", selection: $filter.endDate, displayedComponents: .date)
-                TextField("Cerca", text: $filter.searchText)
-                    .textFieldStyle(.roundedBorder)
+                Image(systemName: "magnifyingglass")
+                    .foregroundStyle(theme.colorTextSecondary)
+                TextField("Cerca titolo, operatore, dettagli…", text: $filter.searchText)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+            }
+            .padding(12)
+            .background(theme.colorSurface)
+            .clipShape(RoundedRectangle(cornerRadius: theme.spacing.cornerMedium, style: .continuous))
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(HistoryPeriodPreset.allCases) { preset in
+                        HistoryFilterChip(
+                            title: preset.rawValue,
+                            isSelected: preset.contains(filter: filter)
+                        ) {
+                            preset.apply(to: &filter)
+                        }
+                    }
+                }
             }
 
-            HStack(spacing: 10) {
-                Picker("Stato", selection: $filter.status) {
-                    ForEach(statusOptions, id: \.self) { Text($0).tag($0) }
+            Button {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    showAdvanced.toggle()
                 }
-                .pickerStyle(.menu)
+            } label: {
+                HStack {
+                    Label(showAdvanced ? "Nascondi filtri" : "Altri filtri", systemImage: "line.3.horizontal.decrease.circle")
+                        .font(theme.typography.subheadline.weight(.semibold))
+                    Spacer()
+                    Image(systemName: showAdvanced ? "chevron.up" : "chevron.down")
+                        .font(.caption.weight(.bold))
+                }
+                .foregroundStyle(theme.colorPrimary)
+            }
 
-                Picker("Operatore", selection: $filter.operatorName) {
-                    ForEach(operatorOptions, id: \.self) { Text($0).tag($0) }
-                }
-                .pickerStyle(.menu)
+            if showAdvanced {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack(spacing: 10) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Dal")
+                                .font(theme.typography.caption)
+                                .foregroundStyle(theme.colorTextSecondary)
+                            DatePicker("", selection: $filter.startDate, displayedComponents: .date)
+                                .labelsHidden()
+                        }
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Al")
+                                .font(theme.typography.caption)
+                                .foregroundStyle(theme.colorTextSecondary)
+                            DatePicker("", selection: $filter.endDate, displayedComponents: .date)
+                                .labelsHidden()
+                        }
+                    }
 
-                Picker("Categoria", selection: $filter.category) {
-                    ForEach(categoryOptions, id: \.self) { Text($0).tag($0) }
+                    filterMenu(title: "Stato", selection: $filter.status, options: statusOptions)
+                    filterMenu(title: "Operatore", selection: $filter.operatorName, options: operatorOptions)
+                    filterMenu(title: "Categoria", selection: $filter.category, options: categoryOptions)
+
+                    Button("Reimposta filtri") {
+                        filter = HistoryFilter()
+                    }
+                    .font(theme.typography.subheadline)
+                    .foregroundStyle(theme.colorPrimary)
                 }
-                .pickerStyle(.menu)
+                .padding(12)
+                .background(theme.colorSurface)
+                .clipShape(RoundedRectangle(cornerRadius: theme.spacing.cornerMedium, style: .continuous))
             }
         }
-        .foregroundStyle(ThemeManager.shared.colorTextPrimary)
+    }
+
+    private func filterMenu(title: String, selection: Binding<String>, options: [String]) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .font(theme.typography.caption)
+                .foregroundStyle(theme.colorTextSecondary)
+            Picker(title, selection: selection) {
+                ForEach(options, id: \.self) { option in
+                    Text(option).tag(option)
+                }
+            }
+            .pickerStyle(.menu)
+        }
+    }
+}
+
+struct HistoryFilterChip: View {
+    let title: String
+    let isSelected: Bool
+    let action: () -> Void
+
+    @Environment(\.theme) private var theme
+
+    var body: some View {
+        Button(action: action) {
+            Text(title)
+                .font(theme.typography.caption.weight(.semibold))
+                .foregroundStyle(isSelected ? theme.colorTextOnPrimary : theme.colorTextPrimary)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+                .background(isSelected ? theme.colorPrimary : theme.colorSurface)
+                .clipShape(Capsule())
+                .overlay(
+                    Capsule()
+                        .strokeBorder(isSelected ? theme.colorPrimary : theme.colorDivider, lineWidth: 1)
+                )
+        }
+        .buttonStyle(.plain)
     }
 }

@@ -1,11 +1,32 @@
 import Foundation
 import SwiftData
 
-enum SchedulingFrequency: String, Codable, CaseIterable {
+enum SchedulingFrequency: String, Codable, CaseIterable, Identifiable {
     case daily = "GIORNALIERA"
     case weekly = "SETTIMANALE"
     case monthly = "MENSILE"
     case custom = "PERSONALIZZATA"
+
+    var id: String { rawValue }
+
+    /// Etichetta leggibile per l'interfaccia.
+    var label: String {
+        switch self {
+        case .daily: return "Giornaliera"
+        case .weekly: return "Settimanale"
+        case .monthly: return "Mensile"
+        case .custom: return "Personalizzata"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .daily: return "sun.max.fill"
+        case .weekly: return "calendar"
+        case .monthly: return "calendar.badge.clock"
+        case .custom: return "slider.horizontal.3"
+        }
+    }
 }
 
 @Model

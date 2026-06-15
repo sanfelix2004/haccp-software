@@ -14,6 +14,9 @@ struct BlastChillingView: View {
     @State private var showMasterDeleteAuth = false
     @State private var productionPendingDeletion: Production?
     @State private var recordToComplete: BlastChillingRecord?
+    @State private var labelDraft: ProductionLabelDraft?
+
+    private let labelService = ProductionLabelsService()
 
     private var scopedRecords: [BlastChillingRecord] {
         guard let rid = appState.activeRestaurantId else { return [] }
@@ -121,12 +124,14 @@ struct BlastChillingView: View {
 
                 inProgressCard
                 filtersCard
-                BlastChillingHistoryView(records: filteredHistory)
+                BlastChillingHistoryView(records: filteredHistory) { record in
+                    labelDraft = labelService.draft(from: record)
+                }
             }
             .padding(24)
         }
         .background(ThemeManager.shared.colorBackground.ignoresSafeArea())
-        .navigationTitle("Abbattimento in negativo")
+        .navigationTitle("Abbattimento")
         .onAppear {
             ensureProductions()
             refreshGlobalActiveBlasts()
@@ -175,6 +180,22 @@ struct BlastChillingView: View {
         .sheet(isPresented: $vm.showEditProductionSheet) {
             if let production = vm.productionToEdit {
                 productionEditor(title: "Modifica produzione", production: production)
+            }
+        }
+        .sheet(isPresented: Binding(
+            get: { labelDraft != nil },
+            set: { if !$0 { labelDraft = nil } }
+        )) {
+            if let draft = labelDraft,
+               let rid = appState.activeRestaurantId,
+               let user = currentUser {
+                ProductionLabelEditorSheet(
+                    mode: .create(draft),
+                    restaurantId: rid,
+                    user: user,
+                    onSaved: { labelDraft = nil },
+                    onCancel: { labelDraft = nil }
+                )
             }
         }
         .fullScreenCover(isPresented: $showMasterEditAuth) {
@@ -226,10 +247,10 @@ struct BlastChillingView: View {
         } label: {
             Text(title)
                 .font(.subheadline.weight(.semibold))
-                .foregroundColor(vm.selectedCategoryId == id ? .white : .gray)
+                .foregroundStyle(vm.selectedCategoryId == id ? ThemeManager.shared.colorTextOnPrimary : ThemeManager.shared.colorTextSecondary)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
-                .background(vm.selectedCategoryId == id ? Color.red.opacity(0.65) : ThemeManager.shared.colorDivider)
+                .background(vm.selectedCategoryId == id ? ThemeManager.shared.colorPrimary : ThemeManager.shared.colorDivider)
                 .cornerRadius(10)
         }
         .buttonStyle(.plain)
@@ -250,7 +271,7 @@ struct BlastChillingView: View {
 
     private var actionBar: some View {
         HStack(spacing: 10) {
-            Button("Aggiungere") {
+            Button("Aggiungi") {
                 vm.newProductionName = ""
                 vm.newProductionCategoryId = vm.selectedCategoryId ?? scopedCategories.first?.id
                 vm.showAddProductionSheet = true
@@ -276,11 +297,11 @@ struct BlastChillingView: View {
 
             Spacer()
 
-            Button("Annullare") {
+            Button("Annulla") {
                 vm.selectedProduction = nil
             }
             .buttonStyle(.bordered)
-            .tint(ThemeManager.shared.colorPrimary)
+            .tint(ThemeManager.shared.colorTextSecondary)
 
             Button(selectedInProgressRecord == nil ? "Inizia abbattimento" : "Termina abbattimento") {
                 if let inProgress = selectedInProgressRecord {
@@ -291,7 +312,7 @@ struct BlastChillingView: View {
                 vm.showRecordSheet = true
             }
             .buttonStyle(.borderedProminent)
-            .tint(vm.selectedProduction == nil ? .gray : (selectedInProgressRecord == nil ? .green : .orange))
+            .tint(vm.selectedProduction == nil ? ThemeManager.shared.colorTextSecondary : (selectedInProgressRecord == nil ? ThemeManager.shared.colorSuccess : ThemeManager.shared.colorWarning))
             .disabled(vm.selectedProduction == nil)
         }
     }
@@ -321,7 +342,7 @@ struct BlastChillingView: View {
                                 blastManager.recordIdPendingComplete = record.id
                             }
                             .buttonStyle(.borderedProminent)
-                            .tint(.orange)
+                            .tint(ThemeManager.shared.colorWarning)
                         }
                         .padding(10)
                         .background(ThemeManager.shared.colorSurface)
@@ -395,7 +416,7 @@ struct BlastChillingView: View {
             .navigationTitle(title)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Annullare") {
+                    Button("Annulla") {
                         vm.showAddProductionSheet = false
                         vm.showEditProductionSheet = false
                     }

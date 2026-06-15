@@ -122,7 +122,7 @@ struct BlastChillingRecordSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Annullare", action: onCancel)
+                    Button("Annulla", action: onCancel)
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button(isCompletion ? "Termina" : "Inizia") {
@@ -160,7 +160,7 @@ struct BlastChillingRecordSheet: View {
             }
             .frame(maxWidth: .infinity, minHeight: 70, alignment: .leading)
             .padding(10)
-            .background(vm.activeTemperatureField == field ? Color.red.opacity(0.35) : ThemeManager.shared.colorSurfaceElevated)
+            .background(vm.activeTemperatureField == field ? ThemeManager.shared.colorPrimary.opacity(0.35) : ThemeManager.shared.colorSurfaceElevated)
             .cornerRadius(12)
         }
         .buttonStyle(.plain)

@@ -77,7 +77,7 @@ struct TemperatureRootView: View {
         }
         .padding(24)
         .background(ThemeManager.shared.colorBackground.ignoresSafeArea())
-        .navigationTitle("Temperature")
+        .navigationTitle("Frigoriferi")
         .sheet(isPresented: $viewModel.showAddDeviceSheet) {
             TemperatureDeviceEditView(
                 restaurantId: restaurantId,
@@ -159,7 +159,7 @@ struct TemperatureRootView: View {
                     .font(.headline)
                     .foregroundStyle(ThemeManager.shared.colorTextOnPrimary)
                     .padding(.horizontal, 16)
-                    .padding(.vertical, 12).background(Color.red)
+                    .padding(.vertical, 12).background(ThemeManager.shared.colorPrimary)
                     .cornerRadius(12)
             }
             .disabled(scopedDevices.isEmpty)
@@ -215,7 +215,7 @@ struct TemperatureRootView: View {
                         Text("Dispositivi con problemi").foregroundStyle(ThemeManager.shared.colorTextPrimary).font(.headline)
                         ForEach(activeAlerts.prefix(5)) { alert in
                             HStack {
-                                Image(systemName: "exclamationmark.triangle.fill").foregroundColor(.red)
+                                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(ThemeManager.shared.colorError)
                                 VStack(alignment: .leading) {
                                     Text(alert.deviceName).foregroundStyle(ThemeManager.shared.colorTextPrimary)
                                     Text(alert.message).font(.caption).foregroundStyle(ThemeManager.shared.colorTextSecondary)
@@ -223,7 +223,7 @@ struct TemperatureRootView: View {
                                 Spacer()
                             }
                             .padding(10)
-                            .background(Color.red.opacity(0.12))
+                            .background(ThemeManager.shared.colorError.opacity(0.12))
                             .cornerRadius(10)
                         }
                     }
@@ -246,7 +246,7 @@ struct TemperatureRootView: View {
                     export(includeCSV: false)
                 }
                 .buttonStyle(.borderedProminent)
-                .tint(.red)
+                .tint(ThemeManager.shared.colorPrimary)
 
                 Button("Genera PDF + CSV") {
                     export(includeCSV: true)
@@ -273,13 +273,13 @@ struct TemperatureRootView: View {
                         Label("Aggiungi dispositivo", systemImage: "plus.circle.fill")
                             .foregroundStyle(ThemeManager.shared.colorTextOnPrimary)
                             .padding(.horizontal, 12)
-                            .padding(.vertical, 8).background(Color.red)
+                            .padding(.vertical, 8).background(ThemeManager.shared.colorPrimary)
                             .cornerRadius(10)
                     }
                 }
             }
             if currentUser?.role != .master {
-                Text("Solo il MASTER puo creare, modificare o eliminare dispositivi.")
+                Text("Solo il responsabile può creare, modificare o eliminare dispositivi.")
                     .font(.caption)
                     .foregroundStyle(ThemeManager.shared.colorTextSecondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -304,14 +304,14 @@ struct TemperatureRootView: View {
                                             deviceToEdit = device
                                             showEditDeviceSheet = true
                                         } label: {
-                                            Image(systemName: "pencil.circle.fill").foregroundColor(.blue)
+                                            Image(systemName: "pencil.circle.fill").foregroundStyle(ThemeManager.shared.colorInfo)
                                         }
                                         .buttonStyle(.plain)
                                         Button(role: .destructive) {
                                             devicePendingDeletion = device
                                             showMasterAuthForDelete = true
                                         } label: {
-                                            Image(systemName: "trash.fill").foregroundColor(.red)
+                                            Image(systemName: "trash.fill").foregroundStyle(ThemeManager.shared.colorError)
                                         }
                                         .buttonStyle(.plain)
                                     }
@@ -395,12 +395,12 @@ struct TemperatureRootView: View {
                 VStack(spacing: 10) {
                     ForEach(activeAlerts) { alert in
                         HStack(alignment: .top) {
-                            Image(systemName: "exclamationmark.triangle.fill").foregroundColor(.red)
+                            Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(ThemeManager.shared.colorError)
                             VStack(alignment: .leading, spacing: 6) {
                                 Text(alert.deviceName).foregroundStyle(ThemeManager.shared.colorTextPrimary).font(.headline)
                                 Text(alert.message).foregroundStyle(ThemeManager.shared.colorTextSecondary).font(.caption)
                                 Text(alert.createdAt.formatted(date: .abbreviated, time: .shortened))
-                                    .foregroundColor(.gray.opacity(0.8))
+                                    .foregroundStyle(ThemeManager.shared.colorTextSecondary.opacity(0.8))
                                     .font(.caption2)
                             }
                             Spacer()
@@ -410,7 +410,7 @@ struct TemperatureRootView: View {
                             .buttonStyle(.bordered)
                         }
                         .padding(12)
-                        .background(Color.red.opacity(0.12))
+                        .background(ThemeManager.shared.colorError.opacity(0.12))
                         .cornerRadius(12)
                     }
                 }
@@ -752,12 +752,12 @@ struct AddTemperatureRecordView: View {
                                 .background(ThemeManager.shared.colorSurfaceElevated)
                                 .overlay(
                                     RoundedRectangle(cornerRadius: 10)
-                                        .stroke(requiresCorrectiveAction ? Color.orange : ThemeManager.shared.colorDivider, lineWidth: 1)
+                                        .stroke(requiresCorrectiveAction ? ThemeManager.shared.colorWarning : ThemeManager.shared.colorDivider, lineWidth: 1)
                                 )
                                 .cornerRadius(10)
-                            Text(requiresCorrectiveAction ? "Obbligatoria: inserisci azione per valori fuori range." : "Opzionale: utile per tracciabilita.")
+                            Text(requiresCorrectiveAction ? "Obbligatoria: inserisci azione per valori fuori range." : "Opzionale: utile per tracciabilità.")
                                 .font(.caption)
-                                .foregroundColor(requiresCorrectiveAction ? .orange : .gray)
+                                .foregroundStyle(requiresCorrectiveAction ? ThemeManager.shared.colorWarning : ThemeManager.shared.colorTextSecondary)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                         .frame(width: min(geo.size.width * 0.35, 260), alignment: .top)
@@ -771,7 +771,7 @@ struct AddTemperatureRecordView: View {
                             save()
                         }
                         .buttonStyle(.borderedProminent)
-                        .tint(.red)
+                        .tint(ThemeManager.shared.colorPrimary)
                         .disabled(!canSubmit)
                     }
                 }
@@ -887,9 +887,9 @@ struct AddTemperatureRecordView: View {
 private extension TemperatureStatus {
     var color: Color {
         switch self {
-        case .ok: return .green
-        case .warning: return .yellow
-        case .outOfRange: return .red
+        case .ok: return ThemeManager.shared.colorSuccess
+        case .warning: return ThemeManager.shared.colorWarning
+        case .outOfRange: return ThemeManager.shared.colorError
         case .critical: return Color(hex: "#8B0000")
         }
     }

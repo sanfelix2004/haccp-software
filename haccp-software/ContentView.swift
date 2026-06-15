@@ -93,6 +93,9 @@ struct ContentView: View {
         .onChange(of: appState.activeRestaurantId) { _, _ in
             refreshActiveKitchenTimers()
         }
+        .onReceive(NotificationCenter.default.publisher(for: .kitchenProcessRecordsDidChange)) { _ in
+            refreshActiveKitchenTimers()
+        }
         .onChange(of: appState.currentUserId) { _, newUserId in
             guard let newUserId else { return }
             guard let user = users.first(where: { $0.id == newUserId }), user.role == .master else {

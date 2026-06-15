@@ -76,6 +76,14 @@ struct ChecklistTemplatesView: View {
                                 }
                                 Spacer()
 
+                                if canExecute {
+                                    Button("Avvia") {
+                                        onStartRun(template)
+                                    }
+                                    .buttonStyle(.borderedProminent)
+                                    .tint(ThemeManager.shared.colorPrimary)
+                                }
+
                                 if canManage {
                                     Button {
                                         onEdit(template)

@@ -41,6 +41,16 @@ enum DefrostStatus: String, Codable, CaseIterable {
     case cancelled = "CANCELLED"
     case delayed = "DELAYED"
 
+    /// Stati persistiti per processi ancora aperti (overlay + sezione "In corso").
+    static let openRawValues: Set<String> = [
+        DefrostStatus.inProgress.rawValue,
+        DefrostStatus.delayed.rawValue
+    ]
+
+    static func isOpen(rawValue: String) -> Bool {
+        openRawValues.contains(rawValue)
+    }
+
     var label: String {
         switch self {
         case .inProgress: return "In corso"

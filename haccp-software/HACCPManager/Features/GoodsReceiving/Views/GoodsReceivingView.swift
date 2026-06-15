@@ -5,6 +5,7 @@ import Combine
 
 struct GoodsReceivingView: View {
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.theme) private var theme
     @EnvironmentObject var appState: AppState
     @Query private var users: [LocalUser]
     @Query private var records: [GoodsReceipt]
@@ -38,6 +39,9 @@ struct GoodsReceivingView: View {
     @State private var pendingSaveRequirement: GoodsReceiptRequirement?
     @State private var showMasterAuthDeleteReceipt = false
     @State private var receiptPendingDeletion: GoodsReceipt?
+    @State private var labelDraft: ProductionLabelDraft?
+
+    private let labelService = ProductionLabelsService()
 
     private var scopedRecords: [GoodsReceipt] {
         guard let rid = appState.activeRestaurantId else { return [] }
@@ -114,33 +118,41 @@ struct GoodsReceivingView: View {
                             )
                         }
                         HStack(spacing: 10) {
-                            Button("Aggiungere") { showAddSupplier = true }
-                                .buttonStyle(.bordered)
-                                .tint(ThemeManager.shared.colorPrimary)
-                                .disabled(appState.activeRestaurantId == nil)
-                                .opacity(appState.activeRestaurantId != nil ? 1 : 0.4)
-                            Button("Modifica") {}
-                                .buttonStyle(.bordered)
-                                .tint(ThemeManager.shared.colorPrimary)
-                                .disabled(!isMaster || vm.selectedProduct == nil)
-                                .opacity((isMaster && vm.selectedProduct != nil) ? 1 : 0.4)
-                            Spacer()
-                            Button("Annullare") {
-                                vm.selectedProduct = nil
-                                vm.selectedCategory = .all
+                            Button {
+                                showAddSupplier = true
+                            } label: {
+                                Label("Aggiungi fornitore", systemImage: "plus")
                             }
                             .buttonStyle(.bordered)
-                            .tint(ThemeManager.shared.colorPrimary)
-                            Button("Ho finito") {
+                            .tint(theme.colorPrimary)
+                            .disabled(appState.activeRestaurantId == nil)
+                            .opacity(appState.activeRestaurantId != nil ? 1 : 0.4)
+
+                            if vm.selectedProduct != nil {
+                                Button {
+                                    vm.selectedProduct = nil
+                                    vm.selectedCategory = .all
+                                } label: {
+                                    Label("Annulla", systemImage: "xmark")
+                                }
+                                .buttonStyle(.bordered)
+                                .tint(theme.colorTextSecondary)
+                            }
+
+                            Spacer()
+
+                            Button {
                                 guard vm.selectedSupplier != nil else {
                                     vm.errorMessage = "Seleziona o aggiungi un fornitore prima di confermare la ricezione."
                                     return
                                 }
                                 guard vm.selectedProduct != nil else { return }
                                 vm.presentControlSheet()
+                            } label: {
+                                Label("Conferma", systemImage: "checkmark")
                             }
                             .buttonStyle(.borderedProminent)
-                            .tint((vm.selectedProduct == nil || vm.selectedSupplier == nil) ? .gray : .green)
+                            .tint((vm.selectedProduct == nil || vm.selectedSupplier == nil) ? theme.colorTextSecondary : theme.colorSuccess)
                             .disabled(vm.selectedProduct == nil || vm.selectedSupplier == nil)
                         }
                     }
@@ -150,7 +162,7 @@ struct GoodsReceivingView: View {
                     if scopedRecords.isEmpty {
                         DashboardEmptyStateView(state: .init(
                             title: "Nessuna ricezione registrata",
-                            message: "Le registrazioni merci con conformita e note appariranno qui.",
+                            message: "Le registrazioni merci con conformità e note appariranno qui.",
                             actionTitle: nil
                         ))
                     } else {
@@ -158,13 +170,9 @@ struct GoodsReceivingView: View {
                             ForEach(scopedRecords.prefix(20)) { record in
                                 VStack(alignment: .leading, spacing: 6) {
                                     HStack {
-                                        if let data = record.photoData, let image = UIImage(data: data) {
-                                            Image(uiImage: image)
-                                                .resizable()
-                                                .scaledToFill()
-                                                .frame(width: 54, height: 54)
-                                                .clipShape(RoundedRectangle(cornerRadius: 8))
-                                                .overlay(RoundedRectangle(cornerRadius: 8).stroke(ThemeManager.shared.colorDivider, lineWidth: 1))
+                                        if let data = record.photoData,
+                                           let thumb = HACCPZoomablePhotoThumbnail(data: data, size: 54, zoomTitle: record.productNameSnapshot) {
+                                            thumb
                                         } else {
                                             RoundedRectangle(cornerRadius: 8)
                                                 .fill(ThemeManager.shared.colorSurface)
@@ -178,9 +186,11 @@ struct GoodsReceivingView: View {
                                                 .foregroundStyle(ThemeManager.shared.colorTextSecondary)
                                         }
                                         Spacer()
-                                        Text(record.status.label)
-                                            .font(.caption.bold())
-                                            .foregroundColor(record.status == .conforme ? .green : .orange)
+                                        HACCPBadge(
+                                            title: record.status.label,
+                                            style: record.status == .conforme ? .conforme : .warning,
+                                            showIcon: false
+                                        )
                                     }
 
                                     HStack(spacing: 10) {
@@ -192,7 +202,7 @@ struct GoodsReceivingView: View {
                                         let range = "(\(formatTemperature(record.minAllowed)) / \(formatTemperature(record.maxAllowed)))"
                                         Text("Temperatura: \(String(format: "%.1f", temperature))°C \(range) - \(record.temperatureStatus.label)")
                                             .font(.caption2)
-                                            .foregroundColor(record.temperatureStatus == .conforme ? .gray : .yellow)
+                                            .foregroundStyle(record.temperatureStatus == .conforme ? theme.colorTextSecondary : theme.colorWarning)
                                     }
 
                                     HStack(spacing: 10) {
@@ -204,7 +214,7 @@ struct GoodsReceivingView: View {
                                     .foregroundStyle(ThemeManager.shared.colorTextSecondary)
 
                                     HStack(spacing: 10) {
-                                        Text("Quantita: \(record.quantity.map { String(format: "%.2f", $0) } ?? "-") \(record.unit ?? "")")
+                                        Text("Quantità: \(record.quantity.map { String(format: "%.2f", $0) } ?? "-") \(record.unit ?? "")")
                                         Text("Operatore: \(record.createdByNameSnapshot.isEmpty ? "-" : record.createdByNameSnapshot)")
                                     }
                                     .font(.caption2)
@@ -219,7 +229,7 @@ struct GoodsReceivingView: View {
                                                 let note = (item.note ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
                                                 Text("• \(item.item.rawValue): \(item.value.label)\(note.isEmpty ? "" : " (\(note))")")
                                                     .font(.caption2)
-                                                    .foregroundColor(item.value == .notOk ? .orange : .gray)
+                                                    .foregroundStyle(item.value == .notOk ? theme.colorWarning : theme.colorTextSecondary)
                                             }
                                         }
                                     }
@@ -236,6 +246,9 @@ struct GoodsReceivingView: View {
                                     }
 
                                     HStack {
+                                        CreateProductionLabelLink {
+                                            labelDraft = labelService.draft(from: record)
+                                        }
                                         Spacer()
                                         Button("Modifica") {
                                             editRecord = record
@@ -263,7 +276,7 @@ struct GoodsReceivingView: View {
 
                                     Text("Creato: \(record.createdAt.formatted(date: .abbreviated, time: .shortened))")
                                         .font(.caption2)
-                                        .foregroundColor(.gray.opacity(0.8))
+                                        .foregroundStyle(theme.colorTextSecondary.opacity(0.8))
                                 }
                                 .padding(10)
                                 .background(ThemeManager.shared.colorSurface)
@@ -314,45 +327,62 @@ struct GoodsReceivingView: View {
                         .font(.subheadline)
                         .foregroundStyle(ThemeManager.shared.colorTextSecondary)
                         .multilineTextAlignment(.center)
-                    RoundedRectangle(cornerRadius: 12)
-                        .fill(ThemeManager.shared.colorCameraPreviewBackground)
-                        .frame(height: pendingRequiresMandatoryPhoto ? 220 : 160)
-                        .overlay(
-                            Group {
-                                if finalizeCamera.authorizationDenied {
-                                    VStack(spacing: 6) {
-                                        Image(systemName: "camera.fill")
-                                            .foregroundStyle(ThemeManager.shared.colorTextSecondary)
-                                        Text("Accesso fotocamera negato")
-                                            .font(.caption)
-                                            .foregroundStyle(ThemeManager.shared.colorTextSecondary)
-                                    }
-                                } else {
-                                    FinalizeCameraSessionPreview(session: finalizeCamera.session)
-                                        .clipShape(RoundedRectangle(cornerRadius: 12))
-                                }
-                            }
-                        )
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 12)
-                                .stroke(ThemeManager.shared.colorDivider, lineWidth: 1)
-                        )
-
-                    HStack(spacing: 10) {
-                        if !pendingRequiresMandatoryPhoto {
-                            Button("Salva senza foto") {
-                                finalizeReceipt(photoData: nil)
+                    if let data = finalizePhotoData, let preview = HACCPZoomablePhotoPreview(data: data, height: pendingRequiresMandatoryPhoto ? 280 : 240, zoomTitle: "Foto ricezione") {
+                        preview
+                        HStack(spacing: 10) {
+                            Button("Riscatta") {
+                                finalizePhotoData = nil
+                                finalizeCamera.resetCaptureBuffer()
+                                finalizeCamera.start()
                             }
                             .buttonStyle(.bordered)
-                            .tint(ThemeManager.shared.colorPrimary)
+                            Button("Usa foto") {
+                                finalizeReceipt(photoData: data)
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .tint(theme.colorSuccess)
                         }
-                        Button("Scatta foto") {
-                            awaitingFinalizeCapture = true
-                            finalizeCamera.capturePhoto()
+                    } else {
+                        RoundedRectangle(cornerRadius: 12)
+                            .fill(ThemeManager.shared.colorCameraPreviewBackground)
+                            .frame(height: pendingRequiresMandatoryPhoto ? 220 : 160)
+                            .overlay(
+                                Group {
+                                    if finalizeCamera.authorizationDenied {
+                                        VStack(spacing: 6) {
+                                            Image(systemName: "camera.fill")
+                                                .foregroundStyle(ThemeManager.shared.colorTextSecondary)
+                                            Text("Accesso fotocamera negato")
+                                                .font(.caption)
+                                                .foregroundStyle(ThemeManager.shared.colorTextSecondary)
+                                        }
+                                    } else {
+                                        FinalizeCameraSessionPreview(session: finalizeCamera.session)
+                                            .clipShape(RoundedRectangle(cornerRadius: 12))
+                                    }
+                                }
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 12)
+                                    .stroke(ThemeManager.shared.colorDivider, lineWidth: 1)
+                            )
+
+                        HStack(spacing: 10) {
+                            if !pendingRequiresMandatoryPhoto {
+                                Button("Salva senza foto") {
+                                    finalizeReceipt(photoData: nil)
+                                }
+                                .buttonStyle(.bordered)
+                                .tint(ThemeManager.shared.colorPrimary)
+                            }
+                            Button("Scatta foto") {
+                                awaitingFinalizeCapture = true
+                                finalizeCamera.capturePhoto()
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .tint(theme.colorSuccess)
+                            .disabled(finalizeCamera.authorizationDenied)
                         }
-                        .buttonStyle(.borderedProminent)
-                        .tint(.green)
-                        .disabled(finalizeCamera.authorizationDenied)
                     }
                 }
                 .padding(24)
@@ -369,6 +399,7 @@ struct GoodsReceivingView: View {
                     }
                 }
                 .onAppear {
+                    finalizePhotoData = nil
                     finalizeCamera.resetCaptureBuffer()
                     awaitingFinalizeCapture = false
                     finalizeCamera.start()
@@ -380,10 +411,10 @@ struct GoodsReceivingView: View {
             }
         }
         .onReceive(finalizeCamera.$capturedPhotoData) { data in
-            guard awaitingFinalizeCapture, let data else { return }
+            guard awaitingFinalizeCapture, let data, !data.isEmpty else { return }
             awaitingFinalizeCapture = false
             finalizePhotoData = data
-            finalizeReceipt(photoData: data)
+            finalizeCamera.stop()
         }
         .alert("Ricezione merci", isPresented: Binding(get: { vm.errorMessage != nil }, set: { _ in vm.errorMessage = nil })) {
             Button("OK", role: .cancel) {}
@@ -464,6 +495,22 @@ struct GoodsReceivingView: View {
                         Button("Salva") { saveEditedReceipt() }
                     }
                 }
+            }
+        }
+        .sheet(isPresented: Binding(
+            get: { labelDraft != nil },
+            set: { if !$0 { labelDraft = nil } }
+        )) {
+            if let draft = labelDraft,
+               let rid = appState.activeRestaurantId,
+               let user = currentUser {
+                ProductionLabelEditorSheet(
+                    mode: .create(draft),
+                    restaurantId: rid,
+                    user: user,
+                    onSaved: { labelDraft = nil },
+                    onCancel: { labelDraft = nil }
+                )
             }
         }
         .fullScreenCover(isPresented: $showMasterAuthDeleteReceipt) {

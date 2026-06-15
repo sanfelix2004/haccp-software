@@ -76,9 +76,11 @@ struct CleaningControlView: View {
                 if scopedTasks.isEmpty {
                     DashboardEmptyStateView(state: .init(
                         title: "Nessun task di pulizia disponibile",
-                        message: isMaster ? "Crea aree e task dal pulsante Gestione." : "Attendi che il MASTER configuri aree e task.",
-                        actionTitle: isMaster ? "Gestione" : nil
-                    ))
+                        message: isMaster ? "Crea aree e task dal pulsante Gestione." : "Attendi che il responsabile configuri aree e task.",
+                        actionTitle: isMaster ? "Gestione aree/task" : nil
+                    )) {
+                        showMasterManage = true
+                    }
                 } else {
                     VStack(spacing: 14) {
                         progressCard
@@ -141,7 +143,7 @@ struct CleaningControlView: View {
                 .font(.caption)
                 .foregroundStyle(ThemeManager.shared.colorTextSecondary)
             ProgressView(value: summary.percentage)
-                .tint(.green)
+                .tint(ThemeManager.shared.colorSuccess)
         }
         .padding(10)
         .background(ThemeManager.shared.colorSurface)
@@ -189,7 +191,7 @@ struct CleaningControlView: View {
                     .foregroundStyle(ThemeManager.shared.colorTextSecondary)
             }
             ProgressView(value: total == 0 ? 0.0 : Double(completed) / Double(total))
-                .tint(.green)
+                .tint(ThemeManager.shared.colorSuccess)
         }
     }
 
@@ -225,7 +227,7 @@ struct CleaningControlView: View {
                 }
                 Spacer()
                 if card.isOverdue {
-                    Text("IN RITARDO").font(.caption2.bold()).foregroundColor(.red)
+                    HACCPBadge(title: "In ritardo", style: .warning, showIcon: false)
                 }
             }
 
@@ -243,7 +245,7 @@ struct CleaningControlView: View {
                         updateOutcome(for: card, outcome: .daFare)
                     }
                     .buttonStyle(.bordered)
-                    .tint(.yellow)
+                    .tint(ThemeManager.shared.colorWarning)
                 }
             }
 
@@ -419,7 +421,7 @@ struct CleaningControlView: View {
                     pendingCriticalityOriginalOutcome = nil
                 }
                 .buttonStyle(.borderedProminent)
-                .tint(.red)
+                .tint(ThemeManager.shared.colorError)
                 Button("Annulla") {
                     if let record = pendingCriticalityRecord, let previous = pendingCriticalityOriginalOutcome {
                         record.outcome = previous

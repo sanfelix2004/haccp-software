@@ -90,7 +90,7 @@ struct ActiveBlastChillingListSheet: View {
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
-                .tint(.orange)
+                .tint(ThemeManager.shared.colorWarning)
 
                 Button("Annulla", role: .destructive) {
                     onCancelProcess(snapshot.id)
