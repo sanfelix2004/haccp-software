@@ -140,31 +140,37 @@ struct OilControlView: View {
     }
 
     private var headerMetrics: some View {
-        HStack(spacing: 10) {
-            metric(title: "Punti olio", value: "\(scopedPoints.count)")
-            metric(title: "Controlli", value: "\(scopedRecords.count)")
-            metric(title: "Alert attivi", value: "\(scopedAlerts.filter { $0.isActive }.count)")
+        let activeAlerts = scopedAlerts.filter { $0.isActive }.count
+        return LazyVGrid(columns: [
+            GridItem(.flexible()),
+            GridItem(.flexible()),
+            GridItem(.flexible())
+        ], spacing: 16) {
+            StatCard(
+                title: "Punti olio",
+                value: "\(scopedPoints.count)",
+                icon: "drop.fill",
+                accent: ThemeManager.shared.colorInfo
+            )
+            StatCard(
+                title: "Controlli",
+                value: "\(scopedRecords.count)",
+                icon: "checklist",
+                accent: ThemeManager.shared.colorPrimary
+            )
+            StatCard(
+                title: "Alert attivi",
+                value: "\(activeAlerts)",
+                subtitle: activeAlerts > 0 ? "Da gestire" : "Nessuno",
+                icon: "exclamationmark.triangle.fill",
+                accent: activeAlerts > 0 ? ThemeManager.shared.colorWarning : ThemeManager.shared.colorTextSecondary
+            )
         }
-    }
-
-    private func metric(title: String, value: String) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(title)
-                .font(.caption)
-                .foregroundStyle(ThemeManager.shared.colorTextSecondary)
-            Text(value)
-                .font(.title3.bold())
-                .foregroundStyle(ThemeManager.shared.colorTextPrimary)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(10)
-        .background(ThemeManager.shared.colorSurfaceElevated)
-        .cornerRadius(12)
     }
 
     private var actionBar: some View {
         HStack(spacing: 10) {
-            Button("Aggiungere") {
+            Button("Aggiungi") {
                 vm.pointToEdit = nil
                 vm.newPointName = ""
                 pendingMasterAction = .addPoint
@@ -201,7 +207,7 @@ struct OilControlView: View {
                 vm.showCheckSheet = true
             }
             .buttonStyle(.borderedProminent)
-            .tint(vm.selectedPoint == nil ? .gray : .green)
+            .tint(vm.selectedPoint == nil ? ThemeManager.shared.colorTextSecondary : ThemeManager.shared.colorSuccess)
             .disabled(vm.selectedPoint == nil)
         }
     }
@@ -249,7 +255,7 @@ struct OilControlView: View {
                     TextField("Nome punto olio", text: $vm.newPointName)
                 }
             }
-            .navigationTitle(vm.pointToEdit == nil ? "Aggiungere" : "Modifica")
+            .navigationTitle(vm.pointToEdit == nil ? "Nuovo punto olio" : "Modifica punto olio")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Annulla") { vm.showPointEditor = false }

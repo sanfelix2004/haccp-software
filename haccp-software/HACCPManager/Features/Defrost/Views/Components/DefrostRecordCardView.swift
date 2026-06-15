@@ -13,7 +13,7 @@ struct DefrostRecordCardView: View {
     @Environment(\.theme) private var theme
 
     private var isActiveProcess: Bool {
-        record.endAt == nil && record.defrostStatus != .cancelled
+        record.isActive
     }
 
     var body: some View {

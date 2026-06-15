@@ -5,6 +5,13 @@ struct DashboardView: View {
     @EnvironmentObject var appState: AppState
     @Environment(\.theme) private var theme
 
+    private let toolModules: [(item: SidebarItem, description: String, icon: String)] = [
+        (.checklist, "Controlli periodici", "checklist"),
+        (.documents, "Report e archivio PDF", "folder.fill"),
+        (.analytics, "Andamento e statistiche", "chart.bar.fill"),
+        (.alerts, "Avvisi da gestire", "bell.badge.fill")
+    ]
+
     private let haccpDashboardModules: [(item: SidebarItem, description: String, icon: String)] = [
         (.traceability, "Prodotti, lotti, fornitori", "archivebox.fill"),
         (.fridges, "Temperature e allarmi", "thermometer.medium"),
@@ -15,7 +22,7 @@ struct DashboardView: View {
         (.defrost, "Decongelamenti", "snowflake"),
         (.oilControl, "Olio frittura", "drop.fill"),
         (.productionLabels, "Etichette produzione", "tag.fill"),
-        (.goodsReceiving, "Ingresso merci", "shippingbox.fill")
+        (.goodsReceiving, "Ricezione merci", "shippingbox.fill")
     ]
 
     @Environment(\.modelContext) private var modelContext
@@ -72,6 +79,25 @@ struct DashboardView: View {
                     }
                 }
 
+                DashboardCardView(title: "Strumenti", subtitle: "Checklist, documenti, grafici e avvisi") {
+                    LazyVGrid(columns: columns, spacing: 16) {
+                        ForEach(toolModules, id: \.item) { row in
+                            Button {
+                                HapticManager.shared.selection()
+                                appState.pendingSidebarNavigation = row.item
+                            } label: {
+                                ModuleTileView(
+                                    title: row.item.rawValue,
+                                    icon: row.icon,
+                                    description: row.description,
+                                    badge: toolBadge(for: row.item)
+                                )
+                            }
+                            .buttonStyle(PremiumPressButtonStyle())
+                        }
+                    }
+                }
+
                 DashboardCardView(title: "Storia", subtitle: "Archivio registrazioni centralizzato") {
                     archiveTile(
                         title: "Storia",
@@ -108,18 +134,11 @@ struct DashboardView: View {
             GridItem(.flexible(), spacing: 16)
         ], spacing: 16) {
             StatCard(
-                title: "Conformità oggi",
-                value: "\(complianceScore)%",
-                subtitle: "Indice stimato",
-                icon: "checkmark.shield.fill",
-                accent: theme.colorSuccess
-            )
-            StatCard(
-                title: "Alert attivi",
+                title: "Avvisi attivi",
                 value: "\(activeAlertsCount)",
-                subtitle: temperatureAlertsLabel,
+                subtitle: activeAlertsCount > 0 ? "Da gestire" : "Tutto ok",
                 icon: "bell.badge.fill",
-                accent: activeAlertsCount > 0 ? theme.colorError : theme.colorTextSecondary
+                accent: activeAlertsCount > 0 ? theme.colorError : theme.colorSuccess
             )
             StatCard(
                 title: "Task aperti",
@@ -134,6 +153,13 @@ struct DashboardView: View {
                 subtitle: "Oggi nel sistema",
                 icon: "doc.text.fill",
                 accent: theme.colorPrimary
+            )
+            StatCard(
+                title: "Documenti",
+                value: "\(metrics.documentItems)",
+                subtitle: "In archivio",
+                icon: "folder.fill",
+                accent: theme.colorInfo
             )
         }
     }
@@ -161,23 +187,22 @@ struct DashboardView: View {
 
     private var activeRestaurantId: UUID? { activeRestaurant?.id }
 
-    private var complianceScore: Int {
-        let alerts = activeAlertsCount
-        if alerts == 0 { return 98 }
-        return max(72, 98 - alerts * 4)
+    private var recordsCount: Int { metrics.todayRecords }
+
+    private func toolBadge(for item: SidebarItem) -> Int? {
+        switch item {
+        case .alerts:
+            return activeAlertsCount > 0 ? activeAlertsCount : nil
+        case .documents:
+            return metrics.documentItems > 0 ? metrics.documentItems : nil
+        default:
+            return nil
+        }
     }
 
     private var activeAlertsCount: Int { metrics.activeAlerts }
 
-    private var temperatureAlertsLabel: String {
-        activeAlertsCount > 0 ? "Richiede attenzione" : "Nessuna criticità"
-    }
-
     private var openTasksCount: Int { metrics.openTasks }
-
-    private var recordsCount: Int {
-        metrics.traceabilityCount + metrics.blastCount
-    }
 
     private func badgeCount(for item: SidebarItem) -> Int? {
         switch item {

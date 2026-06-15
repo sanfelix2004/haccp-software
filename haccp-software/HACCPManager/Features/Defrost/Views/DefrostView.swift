@@ -215,8 +215,8 @@ struct DefrostView: View {
             StatCard(
                 title: "In corso",
                 value: "\(stats.inProgress)",
-                subtitle: "Termina manualmente",
-                icon: "drop.fill",
+                subtitle: "Da terminare",
+                icon: "snowflake",
                 accent: theme.colorInfo
             )
             StatCard(
@@ -243,11 +243,8 @@ struct DefrostView: View {
                 .foregroundStyle(theme.colorTextSecondary)
             HStack(spacing: 12) {
                 if record.endAt != nil {
-                    Button {
+                    CreateProductionLabelLink {
                         labelDraftAfterComplete = ProductionLabelsService().draft(from: record)
-                    } label: {
-                        Label("Crea etichetta", systemImage: "tag.fill")
-                            .font(theme.typography.caption)
                     }
                 }
                 if isMaster {

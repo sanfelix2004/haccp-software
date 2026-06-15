@@ -9,12 +9,18 @@ struct HistoryView: View {
     var body: some View {
         Group {
             if loader.isLoading && loader.entries.isEmpty {
-                ProgressView("Caricamento storico…")
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                VStack(spacing: 16) {
+                    ProgressView()
+                    Text("Caricamento storico…")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 HistoryDashboardView(entries: loader.entries)
             }
         }
+        .background(ThemeManager.shared.colorBackground.ignoresSafeArea())
         .task(id: appState.activeRestaurantId) {
             loader.reload(context: modelContext, restaurantId: appState.activeRestaurantId)
         }

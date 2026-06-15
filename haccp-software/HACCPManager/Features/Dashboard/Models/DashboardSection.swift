@@ -4,8 +4,8 @@ enum DashboardSection: String, CaseIterable, Identifiable {
     case modules = "Moduli HACCP"
     case checklist = "Checklist"
     case charts = "Grafici e andamento"
-    case recentActivities = "Attivita recenti"
-    case alerts = "Alert"
+    case recentActivities = "Attività recenti"
+    case alerts = "Avvisi"
 
     var id: String { rawValue }
 }

@@ -96,8 +96,9 @@ extension DefrostRecord {
         set { outcomeRaw = newValue?.rawValue }
     }
 
+    /// Processo ancora aperto in cucina (overlay + sezione "In corso").
     var isActive: Bool {
-        endAt == nil && defrostStatus != .cancelled
+        endAt == nil && DefrostStatus.isOpen(rawValue: statusRaw)
     }
 
     var duration: TimeInterval? {

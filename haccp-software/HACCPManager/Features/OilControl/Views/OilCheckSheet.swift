@@ -67,7 +67,11 @@ struct OilCheckSheet: View {
                     Section("Foto non conformità") {
                         let hasPhoto = vm.photoData != nil
                         PhotosPicker(selection: $selectedPhotoItem, matching: .images) {
-                            Label(hasPhoto ? "Foto allegata" : "Allega foto obbligatoria", systemImage: hasPhoto ? "checkmark.circle.fill" : "camera.fill")
+                            Label(hasPhoto ? "Cambia foto" : "Allega foto obbligatoria", systemImage: hasPhoto ? "checkmark.circle.fill" : "camera.fill")
+                        }
+                        if let data = vm.photoData,
+                           let preview = HACCPZoomablePhotoPreview(data: data, height: 200, zoomTitle: "Foto controllo olio") {
+                            preview
                         }
                     }
                 }

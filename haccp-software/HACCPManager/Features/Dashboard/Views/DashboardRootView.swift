@@ -13,8 +13,11 @@ enum SidebarItem: String, Identifiable {
     case oilControl = "Controllo olio"
     case productionLabels = "Etichette di produzione"
     case goodsReceiving = "Ricezione merci"
+    case checklist = "Checklist"
     case history = "Storia"
-    case alerts = "Alert"
+    case documents = "Documenti"
+    case analytics = "Grafici"
+    case alerts = "Avvisi"
     case users = "Utenti"
     case settings = "Impostazioni"
 
@@ -23,11 +26,12 @@ enum SidebarItem: String, Identifiable {
     /// Moduli HACCP principali (ordine ufficiale).
     static let haccpModulesInOrder: [SidebarItem] = [
         .traceability, .fridges, .cleaningControl, .blastChilling, .scheduling,
-        .expiryControl, .defrost, .oilControl, .productionLabels, .goodsReceiving
+        .expiryControl, .defrost, .oilControl, .productionLabels, .goodsReceiving,
+        .checklist
     ]
 
     static let toolsInOrder: [SidebarItem] = [
-        .history, .alerts, .users, .settings
+        .documents, .analytics, .history, .alerts, .users, .settings
     ]
 
     var icon: String {
@@ -42,8 +46,11 @@ enum SidebarItem: String, Identifiable {
         case .oilControl: return "drop.fill"
         case .productionLabels: return "tag.fill"
         case .goodsReceiving: return "shippingbox.fill"
+        case .checklist: return "checklist"
         case .expiryControl: return "calendar.badge.exclamationmark"
         case .history: return "clock.arrow.circlepath"
+        case .documents: return "folder.fill"
+        case .analytics: return "chart.bar.fill"
         case .alerts: return "bell.badge.fill"
         case .users: return "person.2.fill"
         case .settings: return "gearshape.fill"
@@ -60,6 +67,7 @@ struct DashboardRootView: View {
     
     @State private var selectedItem: SidebarItem? = .dashboard
     @State private var columnVisibility = NavigationSplitViewVisibility.all
+    @State private var detailNavigationPath = NavigationPath()
     @State private var showCreateUserFromSidebar = false
     @State private var showMasterAuthForCreate = false
     private let documentsService = DocumentsService()
@@ -109,16 +117,11 @@ struct DashboardRootView: View {
                 theme.colorBackground.ignoresSafeArea()
 
                 if let selectedItem = selectedItem {
-                    NavigationStack {
+                    NavigationStack(path: $detailNavigationPath) {
                         detailView(for: selectedItem)
-                            .id(selectedItem.id)
-                            .transition(.asymmetric(
-                                insertion: .opacity.combined(with: .scale(scale: 0.98)),
-                                removal: .opacity
-                            ))
                             .scrollContentBackground(.hidden)
                     }
-                    .animation(theme.spring, value: selectedItem)
+                    .id(selectedItem.id)
                 } else {
                     VStack(spacing: theme.spacing.lg) {
                         Image(systemName: "sidebar.left")
@@ -131,6 +134,10 @@ struct DashboardRootView: View {
                     .transition(.opacity)
                 }
             }
+        }
+        .onChange(of: selectedItem) { oldItem, newItem in
+            guard oldItem?.id != newItem?.id else { return }
+            detailNavigationPath = NavigationPath()
         }
         .onChange(of: appState.navigateToGoodsReceiving) { _, go in
             if go {
@@ -260,25 +267,35 @@ struct DashboardRootView: View {
             ProductionLabelsView()
         case .goodsReceiving:
             GoodsReceivingView()
+        case .checklist:
+            ChecklistView()
         case .history:
             HistoryView()
+        case .documents:
+            DocumentsView()
+        case .analytics:
+            AnalyticsView()
         case .alerts:
             AlertsView()
         case .users:
             if currentUser?.role == .master {
                 UsersManagementView()
             } else {
-                VStack(spacing: 20) {
+                VStack(spacing: 16) {
                     Image(systemName: "lock.shield")
-                        .font(.system(size: 60))
-                        .foregroundColor(.red)
-                    Text("Accesso Negato")
-                        .font(.title)
-                        .fontWeight(.bold)
-                    Text("Solo il MASTER può accedere alla gestione collaboratori.")
-                        .foregroundStyle(ThemeManager.shared.colorTextSecondary)
+                        .font(.system(size: 56, weight: .medium))
+                        .foregroundStyle(theme.colorPrimary)
+                    Text("Accesso riservato")
+                        .font(theme.typography.title3)
+                        .foregroundStyle(theme.colorTextPrimary)
+                    Text("Solo il responsabile può accedere alla gestione dei collaboratori.")
+                        .font(theme.typography.body)
+                        .foregroundStyle(theme.colorTextSecondary)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 40)
                 }
-                .navigationTitle("Gestione Staff")
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .navigationTitle("Collaboratori")
             }
         case .settings:
             SettingsView()

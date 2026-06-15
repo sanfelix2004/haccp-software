@@ -30,50 +30,53 @@ struct UsersManagementView: View {
         ZStack {
             theme.colorBackground.ignoresSafeArea()
             
-            VStack(spacing: 0) {
-                // --- ACTUAL LIST ---
-                List {
-                    Section {
-                        ForEach(filteredUsers) { user in
-                            UserRow(user: user)
-                                .contentShape(Rectangle())
-                                .listRowBackground(theme.colorSurface)
-                                .onTapGesture {
-                                    if user.role == .master {
-                                        // Do nothing or show a haptic feedback
-                                        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                                    } else if currentUser?.role == .master {
-                                        withAnimation(.spring()) {
-                                            pendingUserToEdit = user
-                                            showMasterAuthForEdit = true
+            if filteredUsers.isEmpty {
+                emptyStateView
+            } else {
+                VStack(spacing: 0) {
+                    List {
+                        Section {
+                            ForEach(filteredUsers) { user in
+                                UserRow(user: user)
+                                    .contentShape(Rectangle())
+                                    .listRowBackground(theme.colorSurface)
+                                    .onTapGesture {
+                                        if user.role == .master {
+                                            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                                        } else if currentUser?.role == .master {
+                                            withAnimation(.spring()) {
+                                                pendingUserToEdit = user
+                                                showMasterAuthForEdit = true
+                                            }
                                         }
                                     }
-                                }
+                            }
+                            .onDelete(perform: confirmDeletionPrompt)
+                        } header: {
+                            Text("Membri del team")
+                                .font(.caption)
+                                .fontWeight(.bold)
+                                .foregroundStyle(theme.colorTextSecondary)
                         }
-                        .onDelete(perform: confirmDeletionPrompt)
-                    } header: {
-                        Text("Membri del Team")
-                            .font(.caption)
-                            .fontWeight(.bold)
-                            .foregroundStyle(theme.colorTextSecondary)
+                    }
+                    .listStyle(.insetGrouped)
+                    .scrollContentBackground(.hidden)
+                    .searchable(text: $searchText, prompt: "Cerca collaboratore…")
+                    .foregroundStyle(theme.colorTextPrimary)
+                    .background(theme.colorBackground)
+
+                    if currentUser?.role == .master {
+                        HStack(spacing: 8) {
+                            Image(systemName: "hand.draw.fill")
+                                .foregroundStyle(theme.colorPrimary)
+                            Text("Scorri a sinistra per eliminare (escluso il responsabile)")
+                                .font(.caption)
+                                .fontWeight(.bold)
+                                .foregroundStyle(theme.colorTextSecondary)
+                        }
+                        .padding(.bottom, 16)
                     }
                 }
-                .listStyle(.insetGrouped)
-                .scrollContentBackground(.hidden)
-                .searchable(text: $searchText, prompt: "Cerca collaboratore...")
-                .foregroundStyle(theme.colorTextPrimary)
-                .background(theme.colorBackground)
-                
-                // SWIPE HINT
-                HStack(spacing: 8) {
-                    Image(systemName: "hand.draw.fill")
-                        .foregroundStyle(theme.colorPrimary)
-                    Text("Scorri a sinistra per eliminare (escluso MASTER)")
-                        .font(.caption)
-                        .fontWeight(.bold)
-                        .foregroundStyle(theme.colorTextSecondary)
-                }
-                .padding(.bottom, 16)
             }
             // --- FLOATING ACTION BUTTON (The "Ingenious" bit) ---
             if currentUser?.role == .master {
@@ -107,7 +110,7 @@ struct UsersManagementView: View {
                 }
             }
         }
-        .navigationTitle("Gestione Staff")
+        .navigationTitle("Collaboratori")
         .alert("Conferma Eliminazione", isPresented: $showDeleteAlert) {
             Button("Annulla", role: .cancel) { userToDelete = nil }
             Button("Elimina", role: .destructive) {
@@ -179,42 +182,43 @@ struct UsersManagementView: View {
     }
     
     private var emptyStateView: some View {
-        VStack(spacing: 30) {
+        VStack(spacing: 28) {
             Spacer()
-            
+
             ZStack {
                 Circle()
-                    .fill(Color.red.opacity(0.1))
-                    .frame(width: 200, height: 200)
-                
-                Image(systemName: "person.2.badge.key.fill")
-                    .font(.system(size: 80))
-                    .foregroundColor(.red)
+                    .fill(theme.colorPrimary.opacity(0.1))
+                    .frame(width: 180, height: 180)
+
+                Image(systemName: "person.2.badge.plus")
+                    .font(.system(size: 72, weight: .medium))
+                    .foregroundStyle(theme.colorPrimary)
             }
-            
+
             VStack(spacing: 12) {
-                Text("Non hai ancora uno staff")
+                Text(searchText.isEmpty ? "Nessun collaboratore" : "Nessun risultato")
                     .font(.title2)
                     .fontWeight(.bold)
-                
-                Text("Inizia a costruire il tuo team per gestire i controlli HACCP del ristorante in modo granulare.")
+                    .foregroundStyle(theme.colorTextPrimary)
+
+                Text(searchText.isEmpty
+                     ? "Aggiungi i collaboratori per gestire insieme i controlli HACCP del ristorante."
+                     : "Nessun collaboratore corrisponde alla ricerca.")
                     .multilineTextAlignment(.center)
-                    .foregroundStyle(ThemeManager.shared.colorTextSecondary)
+                    .foregroundStyle(theme.colorTextSecondary)
                     .padding(.horizontal, 40)
             }
-            
-            Button(action: { showMasterAuthForCreate = true }) {
-                Text("Crea il primo Badge")
-                    .fontWeight(.bold)
-                    .padding(.horizontal, 40)
-                    .padding(.vertical, 16)
-                    .background(Color.white)
-                    .foregroundStyle(ThemeManager.shared.colorTextPrimary)
-                    .cornerRadius(12)
+
+            if searchText.isEmpty, currentUser?.role == .master {
+                PrimaryButton(title: "Aggiungi collaboratore", icon: "person.badge.plus") {
+                    showMasterAuthForCreate = true
+                }
+                .frame(maxWidth: 280)
             }
-            
+
             Spacer()
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
     
     private func confirmDeletionPrompt(offsets: IndexSet) {

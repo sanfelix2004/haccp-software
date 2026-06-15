@@ -17,6 +17,10 @@ struct OilHistoryView: View {
                 VStack(spacing: 10) {
                     ForEach(records) { record in
                         HStack(alignment: .top, spacing: 12) {
+                            if let data = record.nonCompliancePhotoData,
+                               let thumb = HACCPZoomablePhotoThumbnail(data: data, size: 52, zoomTitle: record.oilPointNameSnapshot) {
+                                thumb
+                            }
                             Circle()
                                 .fill(color(for: record.oilStatus))
                                 .frame(width: 10, height: 10)
@@ -37,7 +41,7 @@ struct OilHistoryView: View {
                                 if let notes = record.notes, !notes.isEmpty {
                                     Text("Note: \(notes)")
                                         .font(.caption2)
-                                        .foregroundColor(.yellow.opacity(0.9))
+                                        .foregroundStyle(ThemeManager.shared.colorTextSecondary)
                                 }
                             }
                             Spacer()
@@ -67,10 +71,10 @@ struct OilHistoryView: View {
 
     private func color(for status: OilStatus) -> Color {
         switch status {
-        case .conforme: return .green
-        case .daMonitorare: return .yellow
-        case .daSostituire: return .orange
-        case .nonConforme: return .red
+        case .conforme: return ThemeManager.shared.colorSuccess
+        case .daMonitorare: return ThemeManager.shared.colorWarning
+        case .daSostituire: return ThemeManager.shared.colorWarning
+        case .nonConforme: return ThemeManager.shared.colorError
         }
     }
 }

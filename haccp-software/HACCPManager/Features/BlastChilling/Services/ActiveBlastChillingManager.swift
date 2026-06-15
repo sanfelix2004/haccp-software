@@ -73,13 +73,14 @@ final class ActiveBlastChillingManager: ObservableObject {
         showActiveListSheet = false
         recordIdPendingComplete = nil
         errorMessage = nil
-        stopTicking()
+        KitchenProcessTimerTicker.stop(&tickCancellable)
     }
 
     func refresh(context: ModelContext, restaurantId: UUID?) {
         guard let restaurantId else {
             activeSnapshots = []
-            stopTicking()
+            showActiveListSheet = false
+            KitchenProcessTimerTicker.stop(&tickCancellable)
             return
         }
 
@@ -109,9 +110,11 @@ final class ActiveBlastChillingManager: ObservableObject {
 
         if activeSnapshots.isEmpty {
             showActiveListSheet = false
-            stopTicking()
+            KitchenProcessTimerTicker.stop(&tickCancellable)
         } else {
-            startTicking()
+            KitchenProcessTimerTicker.start(&tickCancellable) { [weak self] date in
+                self?.now = date
+            }
         }
     }
 
@@ -165,19 +168,5 @@ final class ActiveBlastChillingManager: ObservableObject {
         } catch {
             errorMessage = error.localizedDescription
         }
-    }
-
-    private func startTicking() {
-        guard tickCancellable == nil else { return }
-        tickCancellable = Timer.publish(every: 1, on: .main, in: .common)
-            .autoconnect()
-            .sink { [weak self] date in
-                self?.now = date
-            }
-    }
-
-    private func stopTicking() {
-        tickCancellable?.cancel()
-        tickCancellable = nil
     }
 }

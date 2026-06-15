@@ -2,6 +2,7 @@ import SwiftUI
 
 struct BlastChillingHistoryView: View {
     let records: [BlastChillingRecord]
+    var onCreateLabel: ((BlastChillingRecord) -> Void)? = nil
 
     var body: some View {
         DashboardCardView(title: "Storico abbattimenti") {
@@ -25,13 +26,11 @@ struct BlastChillingHistoryView: View {
                                         .foregroundStyle(ThemeManager.shared.colorTextSecondary)
                                 }
                                 Spacer()
-                                Text(record.status.label)
-                                    .font(.caption.bold())
-                                    .foregroundStyle(ThemeManager.shared.colorTextPrimary)
-                                    .padding(.horizontal, 8)
-                                    .padding(.vertical, 4)
-                                    .background(record.status == .conforme ? Color.green.opacity(0.75) : Color.orange.opacity(0.85))
-                                    .cornerRadius(8)
+                                HACCPBadge(
+                                    title: record.status.label,
+                                    style: record.status == .conforme ? .conforme : .warning,
+                                    showIcon: false
+                                )
                             }
                             HStack(spacing: 10) {
                                 Text("Data: \(record.startedAt.formatted(date: .abbreviated, time: .shortened))")
@@ -51,6 +50,11 @@ struct BlastChillingHistoryView: View {
                                 Text("Azione correttiva: \(action)")
                                     .font(.caption2)
                                     .foregroundStyle(ThemeManager.shared.colorWarning)
+                            }
+                            if record.endedAt != nil, let onCreateLabel {
+                                CreateProductionLabelLink {
+                                    onCreateLabel(record)
+                                }
                             }
                         }
                         .padding(10)

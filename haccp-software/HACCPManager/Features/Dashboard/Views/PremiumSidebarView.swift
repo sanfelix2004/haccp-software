@@ -22,7 +22,7 @@ struct PremiumSidebarView: View {
                 .padding(.top, theme.spacing.xl)
                 .padding(.bottom, theme.spacing.md)
 
-            List {
+            List(selection: $selectedItem) {
                 Section {
                     sidebarRow(.dashboard)
                 } header: {
@@ -54,6 +54,9 @@ struct PremiumSidebarView: View {
                 .padding(theme.spacing.lg)
         }
         .background(sidebarBackground)
+        .onChange(of: selectedItem) { _, _ in
+            HapticManager.shared.selection()
+        }
     }
 
     @ViewBuilder
@@ -152,24 +155,19 @@ struct PremiumSidebarView: View {
     }
 
     private func sidebarRow(_ item: SidebarItem) -> some View {
-        Button {
-            HapticManager.shared.selection()
-            selectedItem = item
-        } label: {
-            HStack(spacing: 12) {
-                Image(systemName: item.icon)
-                    .font(.body.weight(.semibold))
-                    .foregroundStyle(selectedItem == item ? theme.colorPrimary : theme.colorTextSecondary)
-                    .frame(width: 24)
-                Text(item.rawValue)
-                    .font(theme.typography.body)
-                    .foregroundStyle(selectedItem == item ? theme.colorTextPrimary : theme.colorTextSecondary)
-                Spacer(minLength: 0)
-            }
-            .contentShape(Rectangle())
-            .padding(.vertical, 4)
+        HStack(spacing: 12) {
+            Image(systemName: item.icon)
+                .font(.body.weight(.semibold))
+                .foregroundStyle(selectedItem == item ? theme.colorPrimary : theme.colorTextSecondary)
+                .frame(width: 24)
+            Text(item.rawValue)
+                .font(theme.typography.body)
+                .foregroundStyle(selectedItem == item ? theme.colorTextPrimary : theme.colorTextSecondary)
+            Spacer(minLength: 0)
         }
-        .buttonStyle(.plain)
+        .contentShape(Rectangle())
+        .padding(.vertical, 4)
+        .tag(item)
         .listRowBackground(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .fill(selectedItem == item ? theme.colorPrimary.opacity(0.12) : Color.clear)

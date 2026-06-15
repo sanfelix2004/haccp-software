@@ -27,7 +27,7 @@ enum HistoryModule: String, CaseIterable, Identifiable {
         .defrost,
         .oilControl,
         .productionLabels,
-        .moduleTimer
+        .checklist
     ]
 
     var icon: String {
@@ -45,5 +45,26 @@ enum HistoryModule: String, CaseIterable, Identifiable {
         case .moduleTimer: return "timer"
         case .checklist: return "checklist"
         }
+    }
+
+    var shortTitle: String {
+        switch self {
+        case .goodsReceiving: return "Ricezione"
+        case .traceability: return "Tracciabilità"
+        case .fridges: return "Frigo"
+        case .cleaningControl: return "Pulizia"
+        case .blastChilling: return "Abbattimento"
+        case .scheduling: return "Programm."
+        case .expiryControl: return "Scadenze"
+        case .defrost: return "Decongel."
+        case .oilControl: return "Olio"
+        case .productionLabels: return "Etichette"
+        case .moduleTimer: return "Timer"
+        case .checklist: return "Checklist"
+        }
+    }
+
+    var accentSymbol: String {
+        icon
     }
 }
