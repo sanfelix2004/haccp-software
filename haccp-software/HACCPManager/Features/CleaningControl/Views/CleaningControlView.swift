@@ -13,9 +13,8 @@ struct CleaningControlView: View {
     @State private var pendingCriticalityRecord: CleaningRecord?
     @State private var showCriticalitySheet = false
     @State private var pendingCriticalityOriginalOutcome: CleaningTaskOutcome?
-    @State private var showMasterManage = false
     @State private var showManageSheet = false
-    @State private var showMasterClearHistory = false
+    @State private var masterAuth = MasterAuthCoordinator()
     @State private var selectedAreaIdForNewTask: UUID?
     @State private var newAreaName: String = ""
     @State private var newTaskName: String = ""
@@ -26,9 +25,14 @@ struct CleaningControlView: View {
         users.first(where: { $0.id == appState.currentUserId })
     }
 
-    private var isMaster: Bool {
-        currentUser?.role == .master
+    private var canUseCleaningConfig: Bool {
+        permissions.canPerform(.manageCleaningConfiguration)
     }
+
+    private var permissions: UserPermissions { currentUser.permissions }
+    private var canManageCleaning: Bool { permissions.can(.manageCleaningConfiguration) }
+    private var canClearHistory: Bool { permissions.can(.clearCleaningHistory) }
+    private var canExecute: Bool { permissions.can(.executeRecords) }
 
     private var scopedAreas: [CleaningArea] {
         guard let rid = appState.activeRestaurantId else { return [] }
@@ -72,26 +76,43 @@ struct CleaningControlView: View {
 
     var body: some View {
         ScrollView {
-            DashboardCardView(title: "Controllo pulizia") {
+            VStack(spacing: 14) {
+                ModuleScreenHeader(
+                    title: "Controllo pulizia",
+                    subtitle: "Piano sanificazione aree e attività con storico HACCP",
+                    systemImage: "sparkles",
+                    help: ModuleHelpLibrary.sidebar(.cleaningControl)
+                )
+
+                DashboardCardView(title: "Attività del giorno", subtitle: "Task da completare", help: ModuleHelpLibrary.sidebar(.cleaningControl)) {
                 if scopedTasks.isEmpty {
                     DashboardEmptyStateView(state: .init(
                         title: "Nessun task di pulizia disponibile",
-                        message: isMaster ? "Crea aree e task dal pulsante Gestione." : "Attendi che il responsabile configuri aree e task.",
-                        actionTitle: isMaster ? "Gestione aree/task" : nil
+                        message: canManageCleaning ? "Crea aree e task dal pulsante Gestione." : "Attendi che il responsabile configuri aree e task.",
+                        actionTitle: "Gestione aree/task"
                     )) {
-                        showMasterManage = true
+                        masterAuth.request(permission: .manageCleaningConfiguration, permissions: permissions) {
+                            showManageSheet = true
+                        }
                     }
                 } else {
                     VStack(spacing: 14) {
                         progressCard
-                        if isMaster {
-                            HStack(spacing: 8) {
-                                Button("Gestione aree/task") { showMasterManage = true }
-                                    .buttonStyle(.bordered)
-                                    .tint(ThemeManager.shared.colorPrimary)
-                                Button("Pulisci storico", role: .destructive) { showMasterClearHistory = true }
-                                    .buttonStyle(.bordered)
+                        HStack(spacing: 8) {
+                            Button("Gestione aree/task") {
+                                masterAuth.request(permission: .manageCleaningConfiguration, permissions: permissions) {
+                                    showManageSheet = true
+                                }
                             }
+                            .buttonStyle(.bordered)
+                            .tint(ThemeManager.shared.colorPrimary)
+
+                            Button("Pulisci storico", role: .destructive) {
+                                masterAuth.request(permission: .clearCleaningHistory, permissions: permissions) {
+                                    clearHistory()
+                                }
+                            }
+                            .buttonStyle(.bordered)
                         }
                         Picker("Filtro", selection: $vm.selectedTab) {
                             ForEach(CleaningControlViewModel.Tab.allCases) { tab in
@@ -112,6 +133,7 @@ struct CleaningControlView: View {
                         }
                     }
                 }
+                }
             }
             .padding(24)
         }
@@ -126,12 +148,7 @@ struct CleaningControlView: View {
         .sheet(isPresented: $showManageSheet) {
             manageSheet
         }
-        .fullScreenCover(isPresented: $showMasterManage) {
-            masterManageOverlay
-        }
-        .fullScreenCover(isPresented: $showMasterClearHistory) {
-            masterClearOverlay
-        }
+        .masterAuthCover(coordinator: masterAuth, master: users.first(where: { $0.role == .master }))
     }
 
     private var progressCard: some View {
@@ -237,8 +254,9 @@ struct CleaningControlView: View {
                 Text("N/A").tag(CleaningTaskOutcome.nonApplicabile)
             }
             .pickerStyle(.segmented)
+            .disabled(!canExecute)
 
-            if card.record.outcome != .daFare {
+            if card.record.outcome != .daFare, canExecute {
                 HStack {
                     Spacer()
                     Button("Riporta a da fare") {
@@ -263,6 +281,7 @@ struct CleaningControlView: View {
                 }
             ))
             .textFieldStyle(.roundedBorder)
+            .disabled(!canExecute)
 
             if card.record.outcome == .nonPulito {
                 Text("Per 'Non pulito' è obbligatoria un'azione correttiva.")
@@ -465,23 +484,6 @@ struct CleaningControlView: View {
         return "Data/ora pulizia automatica: \(record.updatedAt.formatted(date: .abbreviated, time: .shortened))"
     }
 
-    @ViewBuilder
-    private var masterManageOverlay: some View {
-        if let master = users.first(where: { $0.role == .master }) {
-            MasterAuthOverlay(
-                master: master,
-                operation: .manageCleaningTasks,
-                onAuthorized: {
-                    showMasterManage = false
-                    showManageSheet = true
-                },
-                onCancel: { showMasterManage = false }
-            ) {
-                EmptyView()
-            }
-        }
-    }
-
     private var manageSheet: some View {
         NavigationStack {
             ScrollView {
@@ -548,23 +550,8 @@ struct CleaningControlView: View {
         }
     }
 
-    @ViewBuilder
-    private var masterClearOverlay: some View {
-        if let master = users.first(where: { $0.role == .master }) {
-            MasterAuthOverlay(
-                master: master,
-                operation: .clearCleaningHistory,
-                onAuthorized: {
-                    clearHistory()
-                    showMasterClearHistory = false
-                },
-                onCancel: { showMasterClearHistory = false }
-            ) { EmptyView() }
-        }
-    }
-
     private func addArea() {
-        guard isMaster, let rid = appState.activeRestaurantId, let user = currentUser else { return }
+        guard canUseCleaningConfig, let rid = appState.activeRestaurantId, let user = currentUser else { return }
         let name = newAreaName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty else { return }
         let area = CleaningArea(
@@ -579,7 +566,7 @@ struct CleaningControlView: View {
     }
 
     private func addTask(to area: CleaningArea) {
-        guard isMaster, let rid = appState.activeRestaurantId, let user = currentUser else { return }
+        guard canUseCleaningConfig, let rid = appState.activeRestaurantId, let user = currentUser else { return }
         let title = newTaskName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !title.isEmpty else { return }
         let days = Int(newTaskCustomDays)
@@ -611,7 +598,7 @@ struct CleaningControlView: View {
     }
 
     private func deleteArea(_ area: CleaningArea) {
-        guard isMaster else { return }
+        guard canUseCleaningConfig else { return }
         for task in scopedTasks where task.areaId == area.id {
             modelContext.delete(task)
         }
@@ -620,13 +607,12 @@ struct CleaningControlView: View {
     }
 
     private func deleteTask(_ task: CleaningTask) {
-        guard isMaster else { return }
+        guard canUseCleaningConfig else { return }
         modelContext.delete(task)
         try? modelContext.save()
     }
 
     private func clearHistory() {
-        guard isMaster else { return }
         for record in scopedRecords { modelContext.delete(record) }
         for c in scopedCriticalities { modelContext.delete(c) }
         try? modelContext.save()

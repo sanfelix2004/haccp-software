@@ -18,6 +18,16 @@ enum TemperatureDeviceType: String, Codable, CaseIterable {
         case .ambient: return "Ambiente"
         }
     }
+
+    var icon: String {
+        switch self {
+        case .fridge: return "thermometer.snowflake"
+        case .freezer: return "snowflake"
+        case .blastChiller: return "wind.snow"
+        case .hotHolding: return "flame.fill"
+        case .ambient: return "sun.max.fill"
+        }
+    }
 }
 
 enum TemperatureUnit: String, Codable {

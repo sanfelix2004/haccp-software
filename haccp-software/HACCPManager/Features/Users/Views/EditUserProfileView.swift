@@ -76,7 +76,7 @@ struct EditUserProfileView: View {
                         Section(header: Text("Gestione Amministrativa (MASTER)")) {
                             Picker("Ruolo Collaboratore", selection: $tempRole) {
                                 ForEach(UserRole.allCases.filter { $0 != .master }, id: \.self) { role in
-                                    Text(role.rawValue).tag(role)
+                                    Text(role.displayName).tag(role)
                                 }
                             }
                             .pickerStyle(.menu)

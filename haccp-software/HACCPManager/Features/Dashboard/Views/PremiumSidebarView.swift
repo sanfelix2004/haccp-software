@@ -9,7 +9,7 @@ struct PremiumSidebarView: View {
     @Binding var selectedItem: SidebarItem?
     let activeRestaurant: Restaurant?
     let restaurantsCount: Int
-    let isMaster: Bool
+    let permissions: UserPermissions
     let onSwitchRestaurant: () -> Void
     let onLogout: () -> Void
 
@@ -37,11 +37,7 @@ struct PremiumSidebarView: View {
 
                 Section {
                     ForEach(SidebarItem.toolsInOrder) { item in
-                        if item == .users {
-                            if isMaster { sidebarRow(item) }
-                        } else {
-                            sidebarRow(item)
-                        }
+                        sidebarRow(item)
                     }
                 } header: {
                     sectionHeader("Sistema")
@@ -77,7 +73,7 @@ struct PremiumSidebarView: View {
 
     private var restaurantCard: some View {
         Button(action: {
-            if restaurantsCount > 1 {
+            if restaurantsCount > 1, permissions.can(.switchRestaurant) {
                 HapticManager.shared.selection()
                 onSwitchRestaurant()
             }
@@ -100,7 +96,7 @@ struct PremiumSidebarView: View {
                     }
                 }
                 Spacer(minLength: 0)
-                if restaurantsCount > 1 {
+                if restaurantsCount > 1, permissions.can(.switchRestaurant) {
                     Image(systemName: "chevron.up.chevron.down")
                         .font(.caption.weight(.bold))
                         .foregroundStyle(theme.colorTextSecondary)
@@ -163,6 +159,11 @@ struct PremiumSidebarView: View {
             Text(item.rawValue)
                 .font(theme.typography.body)
                 .foregroundStyle(selectedItem == item ? theme.colorTextPrimary : theme.colorTextSecondary)
+            if item.needsMasterAuthToAccess(by: permissions) {
+                Image(systemName: "lock.fill")
+                    .font(.caption2)
+                    .foregroundStyle(theme.colorWarning)
+            }
             Spacer(minLength: 0)
         }
         .contentShape(Rectangle())

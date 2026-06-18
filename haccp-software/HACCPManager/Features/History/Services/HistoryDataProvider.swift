@@ -111,9 +111,10 @@ struct TraceabilityHistoryProvider {
                     .init(label: "Lotto", value: record.lotCode),
                     .init(label: "Fornitore", value: HistoryFormat.text(record.supplier)),
                     .init(label: "Evento", value: action),
+                    .init(label: "Dettaglio", value: HistoryFormat.text(log.detail)),
                     .init(label: "Produzione collegata", value: log.productionId.map { String($0.uuidString.prefix(8)).uppercased() } ?? "—")
                 ],
-                hasCriticality: log.actionType == .nonCompliance || log.actionType == .expired || log.actionType == .rejected
+                hasCriticality: log.actionType == .nonCompliance || log.actionType == .expired || log.actionType == .rejected || log.actionType == .withdrawn
             )
         }
         return recordEntries + eventEntries
@@ -126,6 +127,7 @@ struct TraceabilityHistoryProvider {
         case .expired: return "Scadenza"
         case .rejected: return "Respinto"
         case .nonCompliance: return "Non conformità"
+        case .withdrawn: return "Ritiro / scarto"
         }
     }
 }
@@ -218,6 +220,7 @@ struct BlastChillingHistoryProvider: HistoryDataProvider {
                     .init(label: "Target", value: HistoryFormat.temp(record.targetTemperature)),
                     .init(label: "Inizio", value: HistoryFormat.dateTime(record.startedAt)),
                     .init(label: "Fine", value: HistoryFormat.dateTime(record.endedAt)),
+                    .init(label: "Durata", value: record.durationText),
                     .init(label: "Esito", value: record.status.label),
                     .init(label: "Azione correttiva", value: HistoryFormat.text(record.correctiveAction)),
                     .init(label: "Note", value: HistoryFormat.text(record.notes))
@@ -271,7 +274,7 @@ struct ExpiryHistoryProvider {
                         .init(label: "Lotto", value: record.lotCode),
                         .init(label: "Scadenza", value: HistoryFormat.date(record.expiryDate)),
                         .init(label: "Stato", value: record.productStatus.label),
-                        .init(label: "Azione", value: record.productStatus == .expired ? "Verificare ritiro/scarto" : "Monitoraggio"),
+                        .init(label: "Azione", value: record.productStatus == .expired ? "Registrare ritiro/scarto" : (record.productStatus == .used ? "Archiviato" : "Monitoraggio")),
                         .init(label: "Operatore", value: record.createdByNameSnapshot)
                     ],
                     hasCriticality: record.productStatus == .expired

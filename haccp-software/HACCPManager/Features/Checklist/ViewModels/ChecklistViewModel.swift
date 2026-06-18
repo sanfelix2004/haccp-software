@@ -5,6 +5,7 @@ import Combine
 final class ChecklistViewModel: ObservableObject {
     @Published var selectedTab: ChecklistTab = .dashboard
     @Published var showCreateTemplate = false
+    @Published var showQuickTaskSheet = false
     @Published var errorMessage: String?
 
     let service = ChecklistService()
@@ -19,9 +20,10 @@ final class ChecklistViewModel: ObservableObject {
 }
 
 enum ChecklistTab: String, CaseIterable, Identifiable {
-    case dashboard = "Checklist"
+    case dashboard = "Oggi"
     case templates = "Modelli"
-    case alerts = "Criticita"
+    case history = "Storico"
+    case alerts = "Criticità"
 
     var id: String { rawValue }
 }

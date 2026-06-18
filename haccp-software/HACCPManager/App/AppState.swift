@@ -31,6 +31,9 @@ class AppState: ObservableObject {
         activeRestaurantId = nil
         isAuthenticated = false
         showRestaurantOnboarding = false
+        Task { @MainActor in
+            PrivilegedSession.shared.clearAll()
+        }
     }
     
     @MainActor

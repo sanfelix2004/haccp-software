@@ -7,6 +7,7 @@ struct SettingsView: View {
     @Query private var users: [LocalUser]
     
     @State private var viewModel = SettingsViewModel()
+    @State private var masterAuth = MasterAuthCoordinator()
     private var storage = SettingsStorageService.shared
     
     let columns = [
@@ -22,6 +23,10 @@ struct SettingsView: View {
     var masterUser: LocalUser? {
         users.first { $0.role == .master }
     }
+
+    private var permissions: UserPermissions {
+        currentUser.permissions
+    }
     
     var body: some View {
         ZStack {
@@ -31,13 +36,19 @@ struct SettingsView: View {
                 VStack(alignment: .leading, spacing: 32) {
                     // Header
                     VStack(alignment: .leading, spacing: 12) {
-                        Text("Impostazioni")
-                            .font(.system(size: 44, weight: .black, design: .rounded))
-                            .foregroundColor(ThemeManager.shared.colorTextPrimary)
-                        
-                        Text("Configura e personalizza il tuo sistema gestionale HACCP certificato.")
-                            .font(.title3)
-                            .foregroundColor(ThemeManager.shared.colorTextSecondary)
+                        HStack(alignment: .top) {
+                            VStack(alignment: .leading, spacing: 12) {
+                                Text("Impostazioni")
+                                    .font(.system(size: 44, weight: .black, design: .rounded))
+                                    .foregroundColor(ThemeManager.shared.colorTextPrimary)
+                                
+                                Text("Le sezioni con lucchetto richiedono il PIN del responsabile MASTER.")
+                                    .font(.title3)
+                                    .foregroundColor(ThemeManager.shared.colorTextSecondary)
+                            }
+                            Spacer(minLength: 0)
+                            ModuleHelpButton(help: ModuleHelpLibrary.sidebar(.settings), size: 44)
+                        }
                     }
                     .padding(.horizontal, 30)
                     .padding(.top, 40)
@@ -45,8 +56,11 @@ struct SettingsView: View {
                     // Grid of Sections
                     LazyVGrid(columns: columns, spacing: 24) {
                         ForEach(SettingsSection.allCases) { section in
-                            SettingsCardView(section: section) {
-                                viewModel.sectionTapped(section, isMaster: currentUser?.role == .master)
+                            SettingsCardView(
+                                section: section,
+                                locked: section.needsMasterAuth(for: permissions)
+                            ) {
+                                viewModel.sectionTapped(section, permissions: permissions)
                             }
                         }
                     }
@@ -95,13 +109,9 @@ struct SettingsView: View {
             if let master = masterUser {
                 MasterAuthOverlay(
                     master: master,
-                    operation: .accessSettings,
-                    onAuthorized: {
-                        viewModel.handleMasterAuthorized()
-                    },
-                    onCancel: {
-                        viewModel.showMasterAuth = false
-                    }
+                    operation: viewModel.masterOperation,
+                    onAuthorized: { viewModel.handleMasterAuthorized() },
+                    onCancel: { viewModel.handleMasterCancelled() }
                 ) { EmptyView() }
             }
         }
@@ -139,6 +149,8 @@ struct SettingsDetailContainer: View {
                 }
                 
                 Spacer()
+                
+                ModuleHelpButton(help: ModuleHelpLibrary.settings(section), size: 36)
                 
                 Button(action: onDismiss) {
                     Image(systemName: "xmark.circle.fill")

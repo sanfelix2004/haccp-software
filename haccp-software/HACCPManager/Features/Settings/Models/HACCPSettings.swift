@@ -17,6 +17,12 @@ public struct HACCPSettings: Codable {
     var oilPolarMaximumLimit: Double = 25.0
     var oilNonCompliancePhotoRequired: Bool = false
 
+    var defrostFridgeRecommendedHours: Int = PerformanceConfig.defrostFridgeRecommendedHours
+    var defrostControlledTempRecommendedHours: Int = PerformanceConfig.defrostControlledTempRecommendedHours
+    var defrostColdWaterRecommendedHours: Int = PerformanceConfig.defrostColdWaterRecommendedHours
+    var defrostMicrowaveRecommendedHours: Int = PerformanceConfig.defrostMicrowaveRecommendedHours
+    var defrostOtherRecommendedHours: Int = PerformanceConfig.defrostOtherRecommendedHours
+
     var warningThresholdValue: Double {
         warningThreshold ?? 0.8
     }
@@ -37,6 +43,11 @@ public struct HACCPSettings: Codable {
         case oilPolarAttentionLimit
         case oilPolarMaximumLimit
         case oilNonCompliancePhotoRequired
+        case defrostFridgeRecommendedHours
+        case defrostControlledTempRecommendedHours
+        case defrostColdWaterRecommendedHours
+        case defrostMicrowaveRecommendedHours
+        case defrostOtherRecommendedHours
     }
 
     public init(from decoder: Decoder) throws {
@@ -54,5 +65,22 @@ public struct HACCPSettings: Codable {
         oilPolarAttentionLimit = try container.decodeIfPresent(Double.self, forKey: .oilPolarAttentionLimit) ?? oilPolarAttentionLimit
         oilPolarMaximumLimit = try container.decodeIfPresent(Double.self, forKey: .oilPolarMaximumLimit) ?? oilPolarMaximumLimit
         oilNonCompliancePhotoRequired = try container.decodeIfPresent(Bool.self, forKey: .oilNonCompliancePhotoRequired) ?? oilNonCompliancePhotoRequired
+        defrostFridgeRecommendedHours = try container.decodeIfPresent(Int.self, forKey: .defrostFridgeRecommendedHours) ?? defrostFridgeRecommendedHours
+        defrostControlledTempRecommendedHours = try container.decodeIfPresent(Int.self, forKey: .defrostControlledTempRecommendedHours) ?? defrostControlledTempRecommendedHours
+        defrostColdWaterRecommendedHours = try container.decodeIfPresent(Int.self, forKey: .defrostColdWaterRecommendedHours) ?? defrostColdWaterRecommendedHours
+        defrostMicrowaveRecommendedHours = try container.decodeIfPresent(Int.self, forKey: .defrostMicrowaveRecommendedHours) ?? defrostMicrowaveRecommendedHours
+        defrostOtherRecommendedHours = try container.decodeIfPresent(Int.self, forKey: .defrostOtherRecommendedHours) ?? defrostOtherRecommendedHours
+    }
+}
+
+extension HACCPSettings {
+    func recommendedDefrostHours(for method: DefrostMethod) -> Int {
+        switch method {
+        case .frigorifero: return defrostFridgeRecommendedHours
+        case .temperaturaControllata: return defrostControlledTempRecommendedHours
+        case .acquaFredda: return defrostColdWaterRecommendedHours
+        case .fornoMicroonde: return defrostMicrowaveRecommendedHours
+        case .altro: return defrostOtherRecommendedHours
+        }
     }
 }

@@ -5,7 +5,9 @@ import SwiftData
 final class BlastChillingRecord {
     @Attribute(.unique) var id: UUID
     var restaurantId: UUID
-    var productionId: UUID
+    var productionId: UUID?
+    var traceabilityItemId: UUID?
+    var lotNumberSnapshot: String?
     var productionNameSnapshot: String
     var productionCategorySnapshot: String
     var startedAt: Date
@@ -27,7 +29,9 @@ final class BlastChillingRecord {
     init(
         id: UUID = UUID(),
         restaurantId: UUID,
-        productionId: UUID,
+        productionId: UUID? = nil,
+        traceabilityItemId: UUID? = nil,
+        lotNumberSnapshot: String? = nil,
         productionNameSnapshot: String,
         productionCategorySnapshot: String,
         startedAt: Date,
@@ -47,6 +51,8 @@ final class BlastChillingRecord {
         self.id = id
         self.restaurantId = restaurantId
         self.productionId = productionId
+        self.traceabilityItemId = traceabilityItemId
+        self.lotNumberSnapshot = lotNumberSnapshot
         self.productionNameSnapshot = productionNameSnapshot
         self.productionCategorySnapshot = productionCategorySnapshot
         self.startedAt = startedAt
@@ -77,5 +83,21 @@ final class BlastChillingRecord {
     var outcome: String {
         get { status.label }
         set { statusRaw = BlastChillingStatus.allCases.first(where: { $0.label == newValue || $0.rawValue == newValue })?.rawValue ?? newValue }
+    }
+}
+
+extension BlastChillingRecord {
+    var isActive: Bool {
+        status == .inCorso && endedAt == nil
+    }
+
+    var duration: TimeInterval? {
+        guard let end = endedAt else { return nil }
+        return max(0, end.timeIntervalSince(startedAt))
+    }
+
+    var durationText: String {
+        guard let duration else { return "—" }
+        return ProcessElapsedFormatter.formatReadable(elapsed: duration)
     }
 }

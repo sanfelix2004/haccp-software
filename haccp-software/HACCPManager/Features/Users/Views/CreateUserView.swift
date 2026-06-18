@@ -78,7 +78,7 @@ struct CreateUserView: View {
                                     
                                     Picker("Ruolo", selection: $role) {
                                         ForEach(UserRole.allCases.filter { $0 != .master }, id: \.self) { r in
-                                            Text(r.rawValue).tag(r)
+                                            Text(r.displayName).tag(r)
                                         }
                                     }
                                     .pickerStyle(.segmented)

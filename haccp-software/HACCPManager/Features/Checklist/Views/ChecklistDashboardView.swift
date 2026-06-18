@@ -7,15 +7,20 @@ struct ChecklistDashboardView: View {
     let alerts: [ChecklistAlert]
     let counts: (todo: Int, inProgress: Int, completed: Int, critical: Int)
     let onCreateTemplate: () -> Void
+    let onCreateQuickTask: () -> Void
     let canCreate: Bool
     let onOpenRun: (ChecklistRun) -> Void
+    let onGoToTemplates: () -> Void
+
+    @Environment(\.theme) private var theme
 
     private var activeRuns: [ChecklistRun] {
         runs.filter { $0.status != .completed && $0.status != .archived && $0.status != .failed }
     }
 
     private var overdueRuns: [ChecklistRun] {
-        activeRuns.filter { $0.status == .overdue }.sorted(by: { ($0.dueAt ?? .distantFuture) < ($1.dueAt ?? .distantFuture) })
+        activeRuns.filter { $0.status == .overdue }
+            .sorted { ($0.dueAt ?? .distantFuture) < ($1.dueAt ?? .distantFuture) }
     }
 
     private var todayRuns: [ChecklistRun] {
@@ -23,7 +28,7 @@ struct ChecklistDashboardView: View {
         return activeRuns.filter {
             guard let dueAt = $0.dueAt else { return false }
             return calendar.isDateInToday(dueAt) && $0.status != .overdue && frequency(for: $0) == .daily
-        }.sorted(by: { ($0.dueAt ?? .distantFuture) < ($1.dueAt ?? .distantFuture) })
+        }.sorted { ($0.dueAt ?? .distantFuture) < ($1.dueAt ?? .distantFuture) }
     }
 
     private var weeklyUpcomingRuns: [ChecklistRun] {
@@ -32,7 +37,7 @@ struct ChecklistDashboardView: View {
         return activeRuns.filter {
             guard let dueAt = $0.dueAt else { return false }
             return dueAt >= now && dueAt <= limit && frequency(for: $0) == .weekly
-        }.sorted(by: { ($0.dueAt ?? .distantFuture) < ($1.dueAt ?? .distantFuture) })
+        }.sorted { ($0.dueAt ?? .distantFuture) < ($1.dueAt ?? .distantFuture) }
     }
 
     private var monthlyUpcomingRuns: [ChecklistRun] {
@@ -41,166 +46,162 @@ struct ChecklistDashboardView: View {
         return activeRuns.filter {
             guard let dueAt = $0.dueAt else { return false }
             return dueAt >= now && dueAt <= limit && frequency(for: $0) == .monthly
-        }.sorted(by: { ($0.dueAt ?? .distantFuture) < ($1.dueAt ?? .distantFuture) })
+        }.sorted { ($0.dueAt ?? .distantFuture) < ($1.dueAt ?? .distantFuture) }
+    }
+
+    private var inProgressRuns: [ChecklistRun] {
+        activeRuns.filter { $0.status == .inProgress }
+            .sorted { $0.startedAt > $1.startedAt }
+    }
+
+    private var activeAlerts: [ChecklistAlert] {
+        alerts.filter(\.isActive).sorted { $0.createdAt > $1.createdAt }
     }
 
     private var hasAnySectionContent: Bool {
-        !overdueRuns.isEmpty || !todayRuns.isEmpty || !weeklyUpcomingRuns.isEmpty || !monthlyUpcomingRuns.isEmpty
+        !overdueRuns.isEmpty || !todayRuns.isEmpty || !weeklyUpcomingRuns.isEmpty
+            || !monthlyUpcomingRuns.isEmpty || !inProgressRuns.isEmpty
     }
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 14) {
-                HStack(spacing: 12) {
-                    metric("Da fare", value: counts.todo, color: .yellow)
-                    metric("In corso", value: counts.inProgress, color: .orange)
-                    metric("Completate", value: counts.completed, color: .green)
-                    metric("Criticita", value: counts.critical, color: .red)
-                }
+            LazyVStack(spacing: theme.spacing.sectionSpacing) {
+                ModuleScreenHeader(
+                    title: "Checklist operative",
+                    subtitle: "Controlli giornalieri, settimanali e mensili HACCP",
+                    systemImage: "checklist"
+                )
+                .padding(.horizontal, theme.spacing.screenPadding)
+
+                statsRow
+                    .padding(.horizontal, theme.spacing.screenPadding)
 
                 if !hasAnySectionContent {
-                    ChecklistEmptyStateView(
-                        title: "Nessuna checklist attiva oggi",
-                        message: "Avvia una checklist dalla sezione Modelli.",
-                        actionTitle: canCreate ? "Crea checklist" : nil,
-                        action: canCreate ? onCreateTemplate : nil
-                    )
+                    DashboardCardView(title: "Nessuna checklist in scadenza", subtitle: "Avvia da un modello") {
+                        DashboardEmptyStateView(state: .init(
+                            title: "Tutto aggiornato",
+                            message: "Non ci sono checklist da completare ora. Avvia un controllo dai modelli o creane uno nuovo.",
+                            actionTitle: "Vai ai modelli"
+                        )) {
+                            onGoToTemplates()
+                        }
+                        if canCreate {
+                            VStack(spacing: 8) {
+                                SecondaryButton(title: "Attività rapida", icon: "bolt.circle") {
+                                    onCreateQuickTask()
+                                }
+                                SecondaryButton(title: "Crea modello", icon: "plus.circle") {
+                                    onCreateTemplate()
+                                }
+                            }
+                            .padding(.top, 8)
+                        }
+                    }
+                    .padding(.horizontal, theme.spacing.screenPadding)
                 } else {
-                    VStack(spacing: 10) {
-                        if !overdueRuns.isEmpty {
-                            section(title: "Checklist in ritardo", runs: overdueRuns)
-                        }
-                        if !todayRuns.isEmpty {
-                            section(title: "Checklist di oggi", runs: todayRuns)
-                        }
-                        if !weeklyUpcomingRuns.isEmpty {
-                            section(title: "Checklist settimanali in scadenza", runs: weeklyUpcomingRuns)
-                        }
-                        if !monthlyUpcomingRuns.isEmpty {
-                            section(title: "Checklist mensili in scadenza", runs: monthlyUpcomingRuns)
-                        }
+                    if !inProgressRuns.isEmpty {
+                        runSection(title: "Riprendi in corso", subtitle: "\(inProgressRuns.count) avviate", runs: inProgressRuns)
+                    }
+                    if !overdueRuns.isEmpty {
+                        runSection(title: "In ritardo", subtitle: "Da completare subito", runs: overdueRuns)
+                    }
+                    if !todayRuns.isEmpty {
+                        runSection(title: "Oggi", subtitle: "Checklist giornaliere", runs: todayRuns)
+                    }
+                    if !weeklyUpcomingRuns.isEmpty {
+                        runSection(title: "Settimana", subtitle: "Prossimi 7 giorni", runs: weeklyUpcomingRuns)
+                    }
+                    if !monthlyUpcomingRuns.isEmpty {
+                        runSection(title: "Mese", subtitle: "Prossimi 30 giorni", runs: monthlyUpcomingRuns)
                     }
                 }
 
-                if !alerts.isEmpty {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Alert checklist attivi").foregroundStyle(ThemeManager.shared.colorTextPrimary).font(.headline)
-                        ForEach(alerts.prefix(5)) { alert in
-                            HStack {
-                                Image(systemName: "exclamationmark.triangle.fill").foregroundColor(.red)
-                                Text(alert.message).foregroundStyle(ThemeManager.shared.colorTextPrimary)
-                                Spacer()
+                if !activeAlerts.isEmpty {
+                    DashboardCardView(title: "Criticità aperte", subtitle: "\(activeAlerts.count) da gestire") {
+                        VStack(spacing: 10) {
+                            ForEach(activeAlerts.prefix(4)) { alert in
+                                HStack(alignment: .top, spacing: 10) {
+                                    Image(systemName: "exclamationmark.triangle.fill")
+                                        .foregroundStyle(theme.colorError)
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text(alert.message)
+                                            .font(theme.typography.subheadline)
+                                            .foregroundStyle(theme.colorTextPrimary)
+                                        Text(alert.createdAt.formatted(date: .abbreviated, time: .shortened))
+                                            .font(theme.typography.caption)
+                                            .foregroundStyle(theme.colorTextSecondary)
+                                    }
+                                    Spacer(minLength: 0)
+                                }
+                                .padding(12)
+                                .background(theme.colorError.opacity(0.08))
+                                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                             }
-                            .padding(10)
-                            .background(Color.red.opacity(0.12))
-                            .cornerRadius(10)
                         }
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, theme.spacing.screenPadding)
                 }
             }
-            .padding(.vertical, 4)
+            .padding(.vertical, theme.spacing.screenPadding)
         }
     }
 
-    private func metric(_ title: String, value: Int, color: Color) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(title).font(.caption).foregroundStyle(ThemeManager.shared.colorTextSecondary)
-            Text("\(value)").font(.title2.bold()).foregroundStyle(ThemeManager.shared.colorTextPrimary)
+    private var statsRow: some View {
+        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
+            StatCard(
+                title: "Da fare",
+                value: "\(counts.todo)",
+                subtitle: "Non iniziate / ritardo",
+                icon: "clock.badge.exclamationmark",
+                accent: counts.todo > 0 ? theme.colorWarning : theme.colorTextSecondary
+            )
+            StatCard(
+                title: "In corso",
+                value: "\(counts.inProgress)",
+                subtitle: "Avviate",
+                icon: "play.circle.fill",
+                accent: theme.colorInfo
+            )
+            StatCard(
+                title: "Completate",
+                value: "\(counts.completed)",
+                subtitle: "Ciclo corrente",
+                icon: "checkmark.seal.fill",
+                accent: theme.colorSuccess
+            )
+            StatCard(
+                title: "Criticità",
+                value: "\(counts.critical)",
+                subtitle: "Alert attivi",
+                icon: "exclamationmark.triangle.fill",
+                accent: counts.critical > 0 ? theme.colorError : theme.colorTextSecondary
+            )
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(12)
-        .background(color.opacity(0.14))
-        .cornerRadius(12)
     }
 
     @ViewBuilder
-    private func section(title: String, runs: [ChecklistRun]) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(title)
-                .font(.headline)
-                .foregroundStyle(ThemeManager.shared.colorTextPrimary)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            ForEach(runs.prefix(8)) { run in
-                let summary = progressSummary(for: run)
-                Button {
-                    onOpenRun(run)
-                } label: {
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack {
-                            Text(run.templateTitleSnapshot).foregroundStyle(ThemeManager.shared.colorTextPrimary).font(.headline)
-                            Spacer()
-                            Text(statusLabel(for: run, progress: summary.progressPercentage))
-                                .font(.caption.bold())
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 5)
-                                .background(run.status.color.opacity(0.25))
-                                .foregroundStyle(ThemeManager.shared.colorTextPrimary)
-                                .cornerRadius(8)
-                        }
-                        Text("\(summary.completed)/\(summary.total) completati · \(summary.progressPercentage)%")
-                            .font(.caption)
-                            .foregroundStyle(ThemeManager.shared.colorTextSecondary)
-                        ProgressView(value: Double(summary.progressPercentage), total: 100)
-                            .tint(progressTint(for: summary.progressPercentage))
-                        if summary.hasFailures {
-                            Text("Con criticita")
-                                .font(.caption2.bold())
-                                .foregroundStyle(ThemeManager.shared.colorTextPrimary)
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 4)
-                                .background(Color.red.opacity(0.25))
-                                .cornerRadius(8)
-                        }
-                    }
-                    .padding(12)
-                    .background(ThemeManager.shared.colorSurface)
-                    .cornerRadius(12)
+    private func runSection(title: String, subtitle: String, runs: [ChecklistRun]) -> some View {
+        DashboardCardView(title: title, subtitle: subtitle) {
+            LazyVStack(spacing: 10) {
+                ForEach(runs.prefix(8)) { run in
+                    ChecklistRunCard(
+                        run: run,
+                        summary: ChecklistProgressSummary.from(run: run, results: itemResults),
+                        category: template(for: run)?.category,
+                        frequency: frequency(for: run),
+                        onTap: { onOpenRun(run) }
+                    )
                 }
-                .buttonStyle(.plain)
             }
         }
+        .padding(.horizontal, theme.spacing.screenPadding)
     }
 
-    private func statusLabel(for run: ChecklistRun, progress: Int) -> String {
-        if progress <= 0 {
-            return "Da iniziare"
-        }
-        if progress >= 100 {
-            return "Completata"
-        }
-
-        switch run.status {
-        case .inProgress, .notStarted, .overdue, .failed:
-            return "\(progress)% completata"
-        case .completed:
-            return "Completata"
-        case .archived:
-            return "Archiviata"
-        }
-    }
-
-    private func progressSummary(for run: ChecklistRun) -> (completed: Int, total: Int, progressPercentage: Int, hasFailures: Bool) {
-        let scoped = itemResults.filter { $0.checklistRunId == run.id }
-        let total = scoped.count
-        guard total > 0 else {
-            return (0, 0, 0, false)
-        }
-        let completed = scoped.filter {
-            $0.result == .pass || $0.result == .fail || $0.result == .notApplicable
-        }.count
-        let hasFailures = scoped.contains(where: { $0.result == .fail })
-        let percentage = Int((Double(completed) / Double(total) * 100).rounded())
-        return (completed, total, percentage, hasFailures)
-    }
-
-    private func progressTint(for percentage: Int) -> Color {
-        if percentage >= 100 { return .green }
-        if percentage >= 50 { return .yellow }
-        return .orange
+    private func template(for run: ChecklistRun) -> ChecklistTemplate? {
+        templates.first(where: { $0.id == run.templateId })
     }
 
     private func frequency(for run: ChecklistRun) -> ChecklistFrequency? {
-        templates.first(where: { $0.id == run.templateId })?.frequency
+        template(for: run)?.frequency
     }
 }

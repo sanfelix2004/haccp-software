@@ -47,6 +47,7 @@ enum DocumentCompletenessValidator {
         case (.mensile, .tracciabilita): return .giornalieroTracciabilita
         case (.mensile, .haccpCombinato): return .mensileHACCPCombinato
         case (.annuale, .haccpCombinato): return .annualeHACCPCombinato
+        case (.mensile, .nonConformita): return .registroNonConformitaMensile
         case (.nonConformita, _): return .registroNonConformitaMensile
         default: return nil
         }
@@ -55,16 +56,13 @@ enum DocumentCompletenessValidator {
     static func requiredSections(for flavor: OfficialReportFlavor) -> OfficialReportSectionFlags {
         switch flavor {
         case .giornalieroHACCPCombinato:
-            return [
-                .intestazione, .ricezioneMerci, .tracciabilita, .nonConformita,
-                .auditLog, .riepilogo
-            ]
+            return [.intestazione, .riepilogo, .nonConformita, .auditLog, .allegatoPeriodo]
         case .giornalieroRicezione:
             return [.intestazione, .ricezioneMerci, .auditLog, .riepilogo]
         case .giornalieroTracciabilita:
             return [.intestazione, .tracciabilita, .auditLog, .riepilogo]
         case .mensileHACCPCombinato:
-            return [.intestazione, .ricezioneMerci, .tracciabilita, .nonConformita, .riepilogo, .allegatoPeriodo]
+            return [.intestazione, .riepilogo, .nonConformita, .auditLog, .allegatoPeriodo]
         case .annualeHACCPCombinato:
             return [.intestazione, .riepilogo, .allegatoPeriodo, .indiceMensile]
         case .registroNonConformitaMensile:

@@ -58,7 +58,8 @@ struct AlertsView: View {
                 title: "Temperatura fuori range · \(alert.deviceName)",
                 detail: alert.message,
                 date: alert.createdAt,
-                severity: .nonConforme,
+                severity: badgeStyle(for: alert.severity),
+                navigationTarget: .fridges,
                 resolve: { resolveTemperatureAlert(alert) }
             )
         }
@@ -71,6 +72,7 @@ struct AlertsView: View {
                 detail: "\(c.taskName) — Azione: \(c.correctiveAction)",
                 date: c.createdAt,
                 severity: .nonConforme,
+                navigationTarget: .cleaningControl,
                 resolve: { resolveCriticality(c) }
             )
         }
@@ -83,6 +85,7 @@ struct AlertsView: View {
                 detail: "\(c.reason) — Azione: \(c.correctiveAction)",
                 date: c.createdAt,
                 severity: .warning,
+                navigationTarget: .defrost,
                 resolve: { resolveDefrostCriticality(c) }
             )
         }
@@ -95,6 +98,7 @@ struct AlertsView: View {
                 detail: alert.message,
                 date: alert.createdAt,
                 severity: .warning,
+                navigationTarget: .oilControl,
                 resolve: { resolveOilAlert(alert) }
             )
         }
@@ -106,7 +110,8 @@ struct AlertsView: View {
                 title: alert.message,
                 detail: nil,
                 date: alert.createdAt,
-                severity: .warning,
+                severity: badgeStyle(for: alert.severity),
+                navigationTarget: .checklist,
                 checklistAlert: alert
             )
         }
@@ -189,6 +194,13 @@ struct AlertsView: View {
     private var mainScroll: some View {
         ScrollView {
             LazyVStack(spacing: theme.spacing.sectionSpacing) {
+                ModuleScreenHeader(
+                    title: "Avvisi",
+                    subtitle: "Criticità aperte da temperature, pulizie, olio, decongelamento e checklist",
+                    systemImage: "bell.badge.fill",
+                    help: ModuleHelpLibrary.sidebar(.alerts)
+                )
+
                 statsRow
 
                 if allAlerts.isEmpty {
@@ -204,6 +216,8 @@ struct AlertsView: View {
                         LazyVStack(spacing: 10) {
                             ForEach(allAlerts) { alert in
                                 AlertRowView(alert: alert) {
+                                    openModule(for: alert)
+                                } onResolveTap: {
                                     if alert.checklistAlert != nil {
                                         checklistAlertToResolve = alert.checklistAlert
                                         checklistResolveError = nil
@@ -252,13 +266,30 @@ struct AlertsView: View {
 
     // MARK: - Resolve actions
 
+    private func openModule(for alert: UnifiedAlert) {
+        guard let target = alert.navigationTarget else { return }
+        HapticManager.shared.selection()
+        appState.pendingSidebarNavigation = target
+    }
+
+    private func badgeStyle(for severity: TemperatureSeverity) -> HACCPBadgeStyle {
+        switch severity {
+        case .critical, .high: return .nonConforme
+        case .warning: return .warning
+        case .info: return .info
+        }
+    }
+
+    private func badgeStyle(for severity: ChecklistAlertSeverity) -> HACCPBadgeStyle {
+        switch severity {
+        case .critical: return .nonConforme
+        case .high, .warning: return .warning
+        }
+    }
+
     private func resolveDefrostCriticality(_ criticality: DefrostCriticality) {
         guard let user = currentUser else { return }
-        criticality.isResolved = true
-        criticality.resolvedAt = Date()
-        criticality.resolvedByUserId = user.id
-        criticality.resolvedByNameSnapshot = user.name
-        try? modelContext.save()
+        try? DefrostService().resolveCriticality(criticality, user: user, modelContext: modelContext)
     }
 
     private func resolveCriticality(_ criticality: CleaningCriticality) {
@@ -330,6 +361,7 @@ private struct UnifiedAlert: Identifiable {
     let detail: String?
     let date: Date
     let severity: HACCPBadgeStyle
+    var navigationTarget: SidebarItem? = nil
     var checklistAlert: ChecklistAlert? = nil
     var resolve: (() -> Void)? = nil
 
@@ -340,6 +372,7 @@ private struct UnifiedAlert: Identifiable {
 
 private struct AlertRowView: View {
     let alert: UnifiedAlert
+    let onOpenTap: () -> Void
     let onResolveTap: () -> Void
 
     @Environment(\.theme) private var theme
@@ -355,6 +388,25 @@ private struct AlertRowView: View {
     }
 
     var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            rowLeading
+        }
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: theme.spacing.cornerMedium, style: .continuous)
+                .fill(theme.colorSurface)
+        )
+        .overlay(alignment: .leading) {
+            RoundedRectangle(cornerRadius: 2)
+                .fill(accent)
+                .frame(width: 4)
+                .padding(.vertical, 8)
+        }
+        .contentShape(RoundedRectangle(cornerRadius: theme.spacing.cornerMedium, style: .continuous))
+        .onTapGesture(perform: onOpenTap)
+    }
+
+    private var rowLeading: some View {
         HStack(alignment: .top, spacing: 12) {
             ZStack {
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
@@ -392,18 +444,12 @@ private struct AlertRowView: View {
                     .buttonStyle(.plain)
                     .padding(.top, 2)
                 }
+                if alert.navigationTarget != nil {
+                    Text("Tocca per aprire il modulo")
+                        .font(theme.typography.caption)
+                        .foregroundStyle(theme.colorTextSecondary)
+                }
             }
-        }
-        .padding(14)
-        .background(
-            RoundedRectangle(cornerRadius: theme.spacing.cornerMedium, style: .continuous)
-                .fill(theme.colorSurface)
-        )
-        .overlay(alignment: .leading) {
-            RoundedRectangle(cornerRadius: 2)
-                .fill(accent)
-                .frame(width: 4)
-                .padding(.vertical, 8)
         }
     }
 }

@@ -10,8 +10,10 @@ struct ChecklistTemplatesView: View {
     let onDelete: (ChecklistTemplate) -> Void
     let currentRole: UserRole?
 
+    @Environment(\.theme) private var theme
     @State private var categoryFilter: ChecklistCategory?
     @State private var frequencyFilter: ChecklistFrequency?
+    @State private var searchText = ""
 
     private var filtered: [ChecklistTemplate] {
         templates
@@ -23,91 +25,73 @@ struct ChecklistTemplatesView: View {
                 guard let frequencyFilter else { return true }
                 return template.frequency == frequencyFilter
             }
-            .sorted(by: { $0.updatedAt > $1.updatedAt })
+            .filter { template in
+                let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !query.isEmpty else { return true }
+                return template.title.localizedCaseInsensitiveContains(query)
+                    || template.checklistDescription.localizedCaseInsensitiveContains(query)
+            }
+            .sorted { $0.updatedAt > $1.updatedAt }
     }
 
     var body: some View {
-        VStack(spacing: 12) {
-            HStack {
-                Menu("Categoria") {
-                    Button("Tutte") { categoryFilter = nil }
-                    ForEach(ChecklistCategory.allCases, id: \.self) { category in
-                        Button(category.label) { categoryFilter = category }
-                    }
-                }
-                .buttonStyle(.bordered)
-                .tint(ThemeManager.shared.colorPrimary)
-
-                Menu("Frequenza") {
-                    Button("Tutte") { frequencyFilter = nil }
-                    ForEach(ChecklistFrequency.allCases, id: \.self) { frequency in
-                        Button(frequency.label) { frequencyFilter = frequency }
-                    }
-                }
-                .buttonStyle(.bordered)
-                .tint(ThemeManager.shared.colorPrimary)
-
-                Spacer()
+        ScrollView {
+            LazyVStack(spacing: theme.spacing.sectionSpacing) {
+                ModuleScreenHeader(
+                    title: "Modelli checklist",
+                    subtitle: "Procedure ripetibili per apertura, pulizie, HACCP",
+                    systemImage: "doc.text.fill"
+                )
 
                 if canManage {
-                    Button("Crea checklist", action: onCreate)
-                        .buttonStyle(.borderedProminent)
-                        .tint(.red)
+                    PrimaryButton(title: "Nuovo modello", icon: "plus.circle.fill", action: onCreate)
                 }
-            }
 
-            if filtered.isEmpty {
-                ChecklistEmptyStateView(
-                    title: "Nessun modello checklist",
-                    message: "Crea o attiva un modello per iniziare.",
-                    actionTitle: canManage ? "Nuovo modello" : nil,
-                    action: canManage ? onCreate : nil
-                )
-            } else {
-                ScrollView {
-                    VStack(spacing: 10) {
+                DashboardCardView(title: "Filtra modelli", subtitle: "\(filtered.count) risultati") {
+                    VStack(alignment: .leading, spacing: 12) {
+                        HStack(spacing: 10) {
+                            Image(systemName: "magnifyingglass")
+                                .foregroundStyle(theme.colorTextSecondary)
+                            TextField("Cerca modello…", text: $searchText)
+                                .textInputAutocapitalization(.never)
+                                .autocorrectionDisabled()
+                        }
+                        .padding(12)
+                        .background(theme.colorSurfaceElevated)
+                        .clipShape(RoundedRectangle(cornerRadius: theme.spacing.cornerMedium, style: .continuous))
+
+                        ChecklistFilterBar(
+                            categoryFilter: $categoryFilter,
+                            frequencyFilter: $frequencyFilter
+                        )
+                    }
+                }
+
+                if filtered.isEmpty {
+                    DashboardEmptyStateView(state: .init(
+                        title: "Nessun modello",
+                        message: "Crea un modello checklist per standardizzare i controlli in cucina.",
+                        actionTitle: canManage ? "Nuovo modello" : nil
+                    )) {
+                        if canManage { onCreate() }
+                    }
+                } else {
+                    LazyVStack(spacing: 10) {
                         ForEach(filtered) { template in
-                            HStack {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(template.title).foregroundStyle(ThemeManager.shared.colorTextPrimary).font(.headline)
-                                    Text("\(template.category.label) - \(template.frequency.label)")
-                                        .foregroundStyle(ThemeManager.shared.colorTextSecondary)
-                                        .font(.caption)
-                                }
-                                Spacer()
-
-                                if canExecute {
-                                    Button("Avvia") {
-                                        onStartRun(template)
-                                    }
-                                    .buttonStyle(.borderedProminent)
-                                    .tint(ThemeManager.shared.colorPrimary)
-                                }
-
-                                if canManage {
-                                    Button {
-                                        onEdit(template)
-                                    } label: {
-                                        Image(systemName: "pencil.circle.fill").foregroundColor(.blue)
-                                    }
-                                    .buttonStyle(.plain)
-                                    if currentRole == .master {
-                                        Button {
-                                            onDelete(template)
-                                        } label: {
-                                            Image(systemName: "trash.circle.fill").foregroundColor(.red)
-                                        }
-                                        .buttonStyle(.plain)
-                                    }
-                                }
-                            }
-                            .padding(12)
-                            .background(ThemeManager.shared.colorSurface)
-                            .cornerRadius(12)
+                            ChecklistTemplateCard(
+                                template: template,
+                                canExecute: canExecute && template.isActive,
+                                canManage: canManage,
+                                canDelete: canManage,
+                                onStart: { onStartRun(template) },
+                                onEdit: { onEdit(template) },
+                                onDelete: { onDelete(template) }
+                            )
                         }
                     }
                 }
             }
+            .padding(theme.spacing.screenPadding)
         }
     }
 }

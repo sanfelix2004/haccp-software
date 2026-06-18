@@ -17,7 +17,6 @@ struct DashboardView: View {
         (.fridges, "Temperature e allarmi", "thermometer.medium"),
         (.cleaningControl, "Piani pulizia", "sparkles"),
         (.blastChilling, "Abbattimento termico", "wind.snow"),
-        (.scheduling, "Attività periodiche", "calendar.badge.clock"),
         (.expiryControl, "Scadenze prodotti", "calendar.badge.exclamationmark"),
         (.defrost, "Decongelamenti", "snowflake"),
         (.oilControl, "Olio frittura", "drop.fill"),
@@ -47,12 +46,15 @@ struct DashboardView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: theme.spacing.sectionSpacing) {
-                DashboardHeaderView(
-                    user: currentUser,
-                    restaurant: activeRestaurant,
-                    dateTimeText: viewModel.formattedDateTime,
-                    systemStateMessage: "Sistema pronto · \(activeRestaurant?.name ?? "HACCP")"
-                )
+                HStack(alignment: .top, spacing: 12) {
+                    DashboardHeaderView(
+                        user: currentUser,
+                        restaurant: activeRestaurant,
+                        dateTimeText: viewModel.formattedDateTime,
+                        systemStateMessage: "Sistema pronto · \(activeRestaurant?.name ?? "HACCP")"
+                    )
+                    ModuleHelpButton(help: ModuleHelpLibrary.sidebar(.dashboard), size: 44)
+                }
                 .opacity(appeared ? 1 : 0)
                 .offset(y: appeared ? 0 : 16)
 
@@ -62,7 +64,7 @@ struct DashboardView: View {
 
                 DashboardCardView(title: "Moduli HACCP", subtitle: "Accesso rapido alle registrazioni") {
                     LazyVGrid(columns: columns, spacing: 16) {
-                        ForEach(haccpDashboardModules, id: \.item) { row in
+                        ForEach(visibleHaccpModules, id: \.item) { row in
                             Button {
                                 HapticManager.shared.selection()
                                 appState.pendingSidebarNavigation = row.item
@@ -81,7 +83,7 @@ struct DashboardView: View {
 
                 DashboardCardView(title: "Strumenti", subtitle: "Checklist, documenti, grafici e avvisi") {
                     LazyVGrid(columns: columns, spacing: 16) {
-                        ForEach(toolModules, id: \.item) { row in
+                        ForEach(visibleToolModules, id: \.item) { row in
                             Button {
                                 HapticManager.shared.selection()
                                 appState.pendingSidebarNavigation = row.item
@@ -98,14 +100,16 @@ struct DashboardView: View {
                     }
                 }
 
-                DashboardCardView(title: "Storia", subtitle: "Archivio registrazioni centralizzato") {
-                    archiveTile(
-                        title: "Storia",
-                        icon: "clock.arrow.circlepath",
-                        description: "Tutte le registrazioni HACCP",
-                        badge: nil,
-                        target: .history
-                    )
+                if SidebarItem.history.isAccessible(by: permissions) {
+                    DashboardCardView(title: "Storia", subtitle: "Archivio registrazioni centralizzato") {
+                        archiveTile(
+                            title: "Storia",
+                            icon: "clock.arrow.circlepath",
+                            description: "Tutte le registrazioni HACCP",
+                            badge: nil,
+                            target: .history
+                        )
+                    }
                 }
             }
             .padding(theme.spacing.screenPadding + 8)
@@ -141,10 +145,10 @@ struct DashboardView: View {
                 accent: activeAlertsCount > 0 ? theme.colorError : theme.colorSuccess
             )
             StatCard(
-                title: "Task aperti",
+                title: "Checklist aperte",
                 value: "\(openTasksCount)",
-                subtitle: "Programmazione",
-                icon: "calendar.badge.clock",
+                subtitle: "Da completare",
+                icon: "checklist",
                 accent: theme.colorInfo
             )
             StatCard(
@@ -178,6 +182,18 @@ struct DashboardView: View {
         users.first { $0.id == appState.currentUserId }
     }
 
+    private var permissions: UserPermissions {
+        currentUser.permissions
+    }
+
+    private var visibleHaccpModules: [(item: SidebarItem, description: String, icon: String)] {
+        haccpDashboardModules.filter { $0.item.isAccessible(by: permissions) }
+    }
+
+    private var visibleToolModules: [(item: SidebarItem, description: String, icon: String)] {
+        toolModules.filter { $0.item.isAccessible(by: permissions) }
+    }
+
     private var activeRestaurant: Restaurant? {
         if let activeId = stores.first?.activeRestaurantId {
             return restaurants.first { $0.id == activeId }
@@ -206,7 +222,7 @@ struct DashboardView: View {
 
     private func badgeCount(for item: SidebarItem) -> Int? {
         switch item {
-        case .scheduling: return countForScheduling
+        case .checklist: return countForChecklist
         case .traceability: return countForTraceability
         case .fridges: return countForFridges
         case .cleaningControl: return countForCleaning
@@ -215,14 +231,14 @@ struct DashboardView: View {
         }
     }
 
-    private var countForScheduling: Int? {
+    private var countForChecklist: Int? {
         metrics.openTasks > 0 ? metrics.openTasks : nil
     }
     private var countForTraceability: Int? {
         metrics.traceabilityCount > 0 ? metrics.traceabilityCount : nil
     }
     private var countForFridges: Int? {
-        metrics.activeAlerts > 0 ? metrics.activeAlerts : nil
+        metrics.temperatureAlerts > 0 ? metrics.temperatureAlerts : nil
     }
     private var countForCleaning: Int? {
         metrics.incompleteCleaning > 0 ? metrics.incompleteCleaning : nil

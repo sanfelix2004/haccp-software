@@ -2,7 +2,6 @@ import SwiftUI
 
 struct BlastChillingHistoryView: View {
     let records: [BlastChillingRecord]
-    var onCreateLabel: ((BlastChillingRecord) -> Void)? = nil
 
     var body: some View {
         DashboardCardView(title: "Storico abbattimenti") {
@@ -33,10 +32,11 @@ struct BlastChillingHistoryView: View {
                                 )
                             }
                             HStack(spacing: 10) {
-                                Text("Data: \(record.startedAt.formatted(date: .abbreviated, time: .shortened))")
-                                Text("Inizio: \(record.initialTemperature, specifier: "%.1f") °C")
-                                Text("Fine: \(record.finalTemperature.map { String(format: "%.1f °C", $0) } ?? "—")")
-                                Text("Fine ora: \(record.endedAt?.formatted(date: .abbreviated, time: .shortened) ?? "—")")
+                                Text("Inizio: \(record.startedAt.formatted(date: .abbreviated, time: .shortened))")
+                                Text("Durata: \(record.durationText)")
+                                Text("Inizio temp: \(record.initialTemperature, specifier: "%.1f") °C")
+                                Text("Fine temp: \(record.finalTemperature.map { String(format: "%.1f °C", $0) } ?? "—")")
+                                Text("Fine: \(record.endedAt?.formatted(date: .abbreviated, time: .shortened) ?? "—")")
                                 Text("Operatore: \(record.createdByNameSnapshot)")
                             }
                             .font(.caption2)
@@ -50,11 +50,6 @@ struct BlastChillingHistoryView: View {
                                 Text("Azione correttiva: \(action)")
                                     .font(.caption2)
                                     .foregroundStyle(ThemeManager.shared.colorWarning)
-                            }
-                            if record.endedAt != nil, let onCreateLabel {
-                                CreateProductionLabelLink {
-                                    onCreateLabel(record)
-                                }
                             }
                         }
                         .padding(10)

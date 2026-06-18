@@ -25,11 +25,17 @@ enum GoodsReceiptRegister {
             .sorted { $0.receivedAt > $1.receivedAt }
 
         return filtered.map { r in
-            let checklistText = r.checklistResults.map { c in
-                let note = (c.note ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-                let suffix = note.isEmpty ? "" : " (\(note))"
-                return "\(c.item.rawValue): \(c.value.label)\(suffix)"
-            }.joined(separator: "; ")
+            let checklistIssues = r.checklistResults.filter { $0.value == .notOk }
+            let checklistText: String = {
+                if checklistIssues.isEmpty {
+                    return r.checklistResults.isEmpty ? "—" : "Conforme"
+                }
+                return checklistIssues.map { c in
+                    let note = (c.note ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                    let suffix = note.isEmpty ? "" : " (\(note))"
+                    return "\(c.item.rawValue): NON OK\(suffix)"
+                }.joined(separator: "; ")
+            }()
 
             let temp = r.temperatureValue.map { String(format: "%.1f °C", $0) } ?? "—"
             let range: String = {

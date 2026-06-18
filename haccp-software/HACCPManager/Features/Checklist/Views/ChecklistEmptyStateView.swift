@@ -6,26 +6,15 @@ struct ChecklistEmptyStateView: View {
     let actionTitle: String?
     var action: (() -> Void)?
 
+    @Environment(\.theme) private var theme
+
     var body: some View {
-        VStack(spacing: 14) {
-            Image(systemName: "checklist.checked")
-                .font(.system(size: 44))
-                .foregroundColor(.red.opacity(0.9))
-            Text(title)
-                .font(.title3.bold())
-                .foregroundStyle(ThemeManager.shared.colorTextPrimary)
-            Text(message)
-                .multilineTextAlignment(.center)
-                .foregroundStyle(ThemeManager.shared.colorTextSecondary)
-                .frame(maxWidth: 420)
-            if let actionTitle, let action {
-                Button(actionTitle, action: action)
-                    .buttonStyle(.borderedProminent)
-                    .tint(.red)
-            }
+        DashboardEmptyStateView(state: .init(
+            title: title,
+            message: message,
+            actionTitle: actionTitle
+        )) {
+            action?()
         }
-        .frame(maxWidth: .infinity, minHeight: 220)
-        .background(ThemeManager.shared.colorSurface)
-        .cornerRadius(14)
     }
 }

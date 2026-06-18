@@ -2,64 +2,120 @@ import SwiftUI
 import SwiftData
 
 struct TemperatureRootView: View {
+    @EnvironmentObject private var appState: AppState
+    @Environment(\.theme) private var theme
+
+    var body: some View {
+        Group {
+            if let restaurantId = appState.activeRestaurantId {
+                TemperatureRestaurantPanel(restaurantId: restaurantId)
+            } else {
+                DashboardEmptyStateView(state: .init(
+                    title: "Seleziona un ristorante",
+                    message: "I controlli temperatura sono legati al ristorante attivo.",
+                    actionTitle: nil
+                ))
+                .padding(theme.spacing.screenPadding)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+        }
+        .navigationTitle("Frigoriferi")
+    }
+}
+
+private struct TemperatureRestaurantPanel: View {
     @Environment(\.modelContext) private var modelContext
     @EnvironmentObject var appState: AppState
+    let restaurantId: UUID
+
     @Query private var users: [LocalUser]
-    @Query private var restaurants: [Restaurant]
     @Query private var devices: [TemperatureDevice]
     @Query private var records: [TemperatureRecord]
     @Query private var alerts: [TemperatureAlert]
 
+    init(restaurantId: UUID) {
+        self.restaurantId = restaurantId
+        let rid = restaurantId
+        _users = Query()
+        _devices = Query(
+            filter: #Predicate<TemperatureDevice> { $0.restaurantId == rid && $0.isActive },
+            sort: [SortDescriptor(\TemperatureDevice.name)]
+        )
+        _records = Query(
+            filter: #Predicate<TemperatureRecord> { $0.restaurantId == rid },
+            sort: [SortDescriptor(\TemperatureRecord.measuredAt, order: .reverse)]
+        )
+        _alerts = Query(
+            filter: #Predicate<TemperatureAlert> { $0.restaurantId == rid && $0.isActive },
+            sort: [SortDescriptor(\TemperatureAlert.createdAt, order: .reverse)]
+        )
+    }
+
     @StateObject private var viewModel = TemperatureDashboardViewModel()
+    @State private var masterAuth = MasterAuthCoordinator()
     @State private var showMasterAuthForDelete = false
     @State private var devicePendingDeletion: TemperatureDevice?
     @State private var deviceToEdit: TemperatureDevice?
     @State private var showEditDeviceSheet = false
-    @State private var historyPage = 0
-    @State private var historyDateFilter = Calendar.current.date(byAdding: .day, value: -30, to: Date()) ?? Date.distantPast
-    @State private var showShareSheet = false
-    @State private var selectedShareURLs: [URL] = []
+    @State private var historyRange: TemperatureHistoryRange = .week
+    @State private var operationError: String?
 
-    private let pageSize = 30
+    @Environment(\.theme) private var theme
 
     private var currentUser: LocalUser? {
         users.first(where: { $0.id == appState.currentUserId })
     }
 
-    private var activeRestaurant: Restaurant? {
-        guard let restaurantId = appState.activeRestaurantId else { return restaurants.first }
-        return restaurants.first(where: { $0.id == restaurantId })
+    private var permissions: UserPermissions { currentUser.permissions }
+
+    private func requestAddDevice() {
+        masterAuth.request(permission: .manageTemperatureDevices, permissions: permissions) {
+            viewModel.showAddDeviceSheet = true
+        }
     }
 
-    private var restaurantId: UUID? { activeRestaurant?.id }
-
-    private var scopedDevices: [TemperatureDevice] {
-        guard let restaurantId else { return [] }
-        return devices.filter { $0.restaurantId == restaurantId && $0.isActive }
-            .sorted(by: { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending })
+    private func requestEditDevice(_ device: TemperatureDevice) {
+        masterAuth.request(permission: .manageTemperatureDevices, permissions: permissions) {
+            deviceToEdit = device
+            showEditDeviceSheet = true
+        }
     }
 
-    private var scopedRecords: [TemperatureRecord] {
-        guard let restaurantId else { return [] }
-        return records.filter { $0.restaurantId == restaurantId }
+    private func requestDeleteDevice(_ device: TemperatureDevice) {
+        masterAuth.request(permission: .manageTemperatureDevices, permissions: permissions) {
+            devicePendingDeletion = device
+            handleDeleteDeviceConfirmed()
+        }
     }
 
-    private var activeAlerts: [TemperatureAlert] {
-        guard let restaurantId else { return [] }
-        return alerts
-            .filter { $0.restaurantId == restaurantId && $0.isActive }
-            .sorted(by: { $0.createdAt > $1.createdAt })
+    /// Record già ordinati per `measuredAt` desc — prima occorrenza per device = ultima misura.
+    private var latestRecordsByDeviceId: [UUID: TemperatureRecord] {
+        var result: [UUID: TemperatureRecord] = [:]
+        result.reserveCapacity(devices.count)
+        for record in records {
+            if result[record.deviceId] == nil {
+                result[record.deviceId] = record
+            }
+        }
+        return result
     }
 
     var body: some View {
-        VStack(spacing: 18) {
-            header
+        VStack(spacing: theme.spacing.sectionSpacing) {
+            ModuleScreenHeader(
+                title: "Controlli temperatura",
+                subtitle: "Registra le temperature e monitora le non conformità HACCP",
+                systemImage: "thermometer.medium",
+                help: ModuleHelpLibrary.sidebar(.fridges)
+            )
+
             Picker("Sezione", selection: $viewModel.selectedTab) {
                 ForEach(TemperatureTab.allCases) { tab in
                     Text(tab.rawValue).tag(tab)
                 }
             }
             .pickerStyle(.segmented)
+            .accessibilityLabel("Sezione frigoriferi")
 
             Group {
                 switch viewModel.selectedTab {
@@ -74,15 +130,41 @@ struct TemperatureRootView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .animation(theme.spring, value: viewModel.selectedTab)
         }
-        .padding(24)
-        .background(ThemeManager.shared.colorBackground.ignoresSafeArea())
-        .navigationTitle("Frigoriferi")
+        .padding(theme.spacing.screenPadding)
+        .background(theme.colorBackground.ignoresSafeArea())
+        .toolbar {
+            ToolbarItemGroup(placement: .topBarTrailing) {
+                if !devices.isEmpty {
+                    Button {
+                        masterAuth.request(permission: .executeRecords, permissions: permissions) {
+                            presentNewMeasurement()
+                        }
+                    } label: {
+                        Label("Misura", systemImage: "thermometer.medium")
+                    }
+                }
+                Button {
+                    masterAuth.request(permission: .manageTemperatureDevices, permissions: permissions) {
+                        viewModel.showAddDeviceSheet = true
+                    }
+                } label: {
+                    Label("Aggiungi frigo", systemImage: "plus.circle.fill")
+                }
+            }
+        }
         .sheet(isPresented: $viewModel.showAddDeviceSheet) {
             TemperatureDeviceEditView(
                 restaurantId: restaurantId,
                 user: currentUser,
-                deviceToEdit: nil
+                deviceToEdit: nil,
+                onSaved: { device in
+                    guard let device else { return }
+                    if devices.count == 1 {
+                        presentNewMeasurement(preselected: device)
+                    }
+                }
             )
         }
         .sheet(isPresented: $showEditDeviceSheet) {
@@ -95,17 +177,28 @@ struct TemperatureRootView: View {
             }
         }
         .sheet(isPresented: $viewModel.showAddRecordSheet) {
-            if let selectedDevice = viewModel.selectedDevice, let currentUser, let restaurantId {
+            if let selectedDevice = viewModel.selectedDevice, let currentUser {
                 AddTemperatureRecordView(
-                    devices: scopedDevices,
+                    devices: devices,
                     initialDeviceId: selectedDevice.id,
                     user: currentUser,
                     restaurantId: restaurantId
                 )
             }
         }
-        .sheet(isPresented: $showShareSheet) {
-            ShareSheet(items: selectedShareURLs)
+        .sheet(isPresented: $viewModel.showDevicePickerSheet) {
+            TemperatureDevicePickerSheet(
+                devices: devices,
+                records: records,
+                onSelect: { device in
+                    viewModel.showDevicePickerSheet = false
+                    viewModel.selectedDevice = device
+                    viewModel.showAddRecordSheet = true
+                },
+                onCancel: {
+                    viewModel.showDevicePickerSheet = false
+                }
+            )
         }
         .fullScreenCover(isPresented: $showMasterAuthForDelete) {
             if let master = users.first(where: { $0.role == .master }) {
@@ -123,322 +216,433 @@ struct TemperatureRootView: View {
                 ) { EmptyView() }
             }
         }
-        .alert("Report", isPresented: Binding(get: {
-            viewModel.reportError != nil || viewModel.reportReadyMessage != nil
-        }, set: { _ in
-            viewModel.reportError = nil
-            viewModel.reportReadyMessage = nil
-        })) {
+        .masterAuthCover(coordinator: masterAuth, master: users.first(where: { $0.role == .master }))
+        .haccpControlTint()
+        .alert("Frigoriferi", isPresented: Binding(
+            get: { operationError != nil },
+            set: { if !$0 { operationError = nil } }
+        )) {
             Button("OK", role: .cancel) {}
-            if !viewModel.reportFiles.isEmpty {
-                Button("Condividi") {
-                    selectedShareURLs = viewModel.reportFiles.map(\.url)
-                    showShareSheet = true
-                }
-            }
         } message: {
-            Text(viewModel.reportError ?? viewModel.reportReadyMessage ?? "")
+            Text(operationError ?? "")
         }
     }
 
-    private var header: some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Controlli temperatura")
-                    .font(.system(size: 34, weight: .black, design: .rounded))
-                    .foregroundStyle(ThemeManager.shared.colorTextPrimary)
-                Text("Monitoraggio HACCP locale e tracciabile")
-                    .foregroundStyle(ThemeManager.shared.colorTextSecondary)
+    private var quickActionsCard: some View {
+        DashboardCardView(title: "Azioni rapide", subtitle: "Operazioni frequenti in cucina") {
+            VStack(spacing: 12) {
+                PrimaryButton(title: "Nuova misurazione", icon: "thermometer.medium") {
+                    masterAuth.request(permission: .executeRecords, permissions: permissions) {
+                        presentNewMeasurement()
+                    }
+                }
+                SecondaryButton(title: "Aggiungi frigo", icon: "plus.circle") {
+                    requestAddDevice()
+                }
             }
-            Spacer()
-            Button {
-                viewModel.selectedDevice = scopedDevices.first
-                viewModel.showAddRecordSheet = true
-            } label: {
-                Label("Nuova misurazione", systemImage: "plus")
-                    .font(.headline)
-                    .foregroundStyle(ThemeManager.shared.colorTextOnPrimary)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 12).background(ThemeManager.shared.colorPrimary)
-                    .cornerRadius(12)
-            }
-            .disabled(scopedDevices.isEmpty)
         }
+    }
+
+    private func presentNewMeasurement(preselected: TemperatureDevice? = nil) {
+        if devices.isEmpty {
+            requestAddDevice()
+            return
+        }
+        if let preselected {
+            viewModel.selectedDevice = preselected
+            viewModel.showAddRecordSheet = true
+            return
+        }
+        if devices.count == 1, let only = devices.first {
+            viewModel.selectedDevice = only
+            viewModel.showAddRecordSheet = true
+            return
+        }
+        viewModel.showDevicePickerSheet = true
+    }
+
+    private func allowedRange(for device: TemperatureDevice) -> (min: Double, max: Double) {
+        TemperatureValidationService().allowedRange(
+            for: device,
+            settings: SettingsStorageService.shared.haccp
+        )
     }
 
     private var dashboardContent: some View {
         ScrollView {
             VStack(spacing: 16) {
-                if scopedDevices.isEmpty {
-                    emptyCard(text: "Configura un dispositivo per iniziare")
-                } else {
-                    HStack(spacing: 12) {
-                        metricCard(title: "Dispositivi", value: "\(scopedDevices.count)")
-                        metricCard(title: "Alert attivi", value: "\(activeAlerts.count)")
-                        metricCard(title: "Misurazioni", value: "\(scopedRecords.count)")
+                quickActionsCard
+
+                if devices.isEmpty {
+                    DashboardEmptyStateView(state: .init(
+                        title: "Nessun frigorifero configurato",
+                        message: "Aggiungi frigoriferi, freezer e abbattitori per iniziare i controlli HACCP.",
+                        actionTitle: "Aggiungi frigo"
+                    )) {
+                        requestAddDevice()
                     }
-                    let problemMap = viewModel.problematicDevices(records: scopedRecords)
-                    ForEach(scopedDevices) { device in
-                        Button {
-                            viewModel.selectedDevice = device
-                            viewModel.showAddRecordSheet = true
-                        } label: {
-                            HStack {
-                                VStack(alignment: .leading, spacing: 6) {
-                                    Text(device.name).font(.headline).foregroundStyle(ThemeManager.shared.colorTextPrimary)
-                                    Text(device.type.label).font(.caption).foregroundStyle(ThemeManager.shared.colorTextSecondary)
-                                }
-                                Spacer()
-                                if let status = problemMap[device.id] {
-                                    Text(status.label)
-                                        .font(.caption.bold())
-                                        .foregroundStyle(ThemeManager.shared.colorTextPrimary)
-                                        .padding(.horizontal, 10)
-                                        .padding(.vertical, 6)
-                                        .background(status.color)
-                                        .cornerRadius(10)
-                                } else {
-                                    Text("Nessuna misurazione")
-                                        .foregroundStyle(ThemeManager.shared.colorTextSecondary)
-                                        .font(.caption)
-                                }
-                            }
-                            .padding(14)
-                            .background(ThemeManager.shared.colorSurface)
-                            .cornerRadius(14)
-                        }
+                } else {
+                    LazyVGrid(columns: [
+                        GridItem(.flexible()),
+                        GridItem(.flexible()),
+                        GridItem(.flexible())
+                    ], spacing: 12) {
+                        StatCard(
+                            title: "Frigoriferi",
+                            value: "\(devices.count)",
+                            subtitle: "Attivi",
+                            icon: "thermometer.medium",
+                            accent: theme.colorPrimary
+                        )
+                        StatCard(
+                            title: "Avvisi",
+                            value: "\(alerts.count)",
+                            subtitle: alerts.isEmpty ? "Tutto ok" : "Da gestire",
+                            icon: "exclamationmark.triangle.fill",
+                            accent: alerts.isEmpty ? theme.colorSuccess : theme.colorError
+                        )
+                        StatCard(
+                            title: "Oggi",
+                            value: "\(todayRecordCount)",
+                            subtitle: "Misurazioni",
+                            icon: "clock.fill",
+                            accent: theme.colorInfo
+                        )
+                    }
+
+                    Text("Tocca un frigorifero per registrare una nuova temperatura")
+                        .font(.caption)
+                        .foregroundStyle(theme.colorTextSecondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+
+                    let problemMap = viewModel.problematicDevices(records: records)
+                    ForEach(devices) { device in
+                        deviceDashboardCard(device: device, status: problemMap[device.id])
                     }
                 }
 
-                if !activeAlerts.isEmpty {
+                if !alerts.isEmpty {
                     VStack(alignment: .leading, spacing: 10) {
-                        Text("Dispositivi con problemi").foregroundStyle(ThemeManager.shared.colorTextPrimary).font(.headline)
-                        ForEach(activeAlerts.prefix(5)) { alert in
-                            HStack {
-                                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(ThemeManager.shared.colorError)
-                                VStack(alignment: .leading) {
-                                    Text(alert.deviceName).foregroundStyle(ThemeManager.shared.colorTextPrimary)
-                                    Text(alert.message).font(.caption).foregroundStyle(ThemeManager.shared.colorTextSecondary)
-                                }
-                                Spacer()
+                        HStack {
+                            Text("Avvisi recenti")
+                                .font(.headline)
+                                .foregroundStyle(theme.colorTextPrimary)
+                            Spacer()
+                            Button("Vedi tutti") {
+                                viewModel.selectedTab = .alerts
                             }
-                            .padding(10)
-                            .background(ThemeManager.shared.colorError.opacity(0.12))
-                            .cornerRadius(10)
+                            .font(.caption.weight(.semibold))
+                        }
+                        ForEach(alerts.prefix(3)) { alert in
+                            alertRow(alert)
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
-
-                reportCard
             }
         }
     }
 
-    private var reportCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Report Temperature").font(.headline).foregroundStyle(ThemeManager.shared.colorTextPrimary)
-            Text("Genera PDF/CSV del periodo selezionato. I record inclusi verranno marcati come archiviati.")
-                .font(.caption)
-                .foregroundStyle(ThemeManager.shared.colorTextSecondary)
-            HStack {
-                Button("Genera PDF") {
-                    export(includeCSV: false)
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(ThemeManager.shared.colorPrimary)
+    private func deviceDashboardCard(device: TemperatureDevice, status: TemperatureStatus?) -> some View {
+        Button {
+            presentNewMeasurement(preselected: device)
+        } label: {
+            HStack(spacing: 14) {
+                Image(systemName: device.type.icon)
+                    .font(.title2)
+                    .foregroundStyle(theme.colorPrimary)
+                    .frame(width: 36)
 
-                Button("Genera PDF + CSV") {
-                    export(includeCSV: true)
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(device.name)
+                        .font(.headline)
+                        .foregroundStyle(theme.colorTextPrimary)
+                    Text(device.type.label)
+                        .font(.caption)
+                        .foregroundStyle(theme.colorTextSecondary)
+                    let range = allowedRange(for: device)
+                    Text("Range \(range.min, specifier: "%.0f") – \(range.max, specifier: "%.0f") °C")
+                        .font(.caption2)
+                        .foregroundStyle(theme.colorTextSecondary)
+                    if let latest = latestRecordsByDeviceId[device.id] {
+                        Text("Ultima: \(latest.measuredAt.formatted(date: .abbreviated, time: .shortened))")
+                            .font(.caption2)
+                            .foregroundStyle(theme.colorTextSecondary)
+                    }
                 }
-                .buttonStyle(.bordered)
-                .tint(ThemeManager.shared.colorPrimary)
+                Spacer()
+                if let latest = latestRecordsByDeviceId[device.id] {
+                    VStack(alignment: .trailing, spacing: 6) {
+                        Text("\(latest.value, specifier: "%.1f")°")
+                            .font(.system(size: 28, weight: .bold, design: .rounded))
+                            .foregroundStyle(theme.colorTextPrimary)
+                        HACCPBadge(title: latest.status.label, style: latest.status.badgeStyle)
+                    }
+                } else if let status {
+                    HACCPBadge(title: status.label, style: status.badgeStyle)
+                } else {
+                    HACCPBadge(title: "Da misurare", style: .neutral)
+                }
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(theme.colorTextSecondary)
             }
+            .padding(14)
+            .background(theme.colorSurface)
+            .cornerRadius(14)
+            .overlay(
+                RoundedRectangle(cornerRadius: 14)
+                    .stroke((status ?? .ok).borderColor.opacity(0.35), lineWidth: 1)
+            )
         }
-        .padding(14)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(ThemeManager.shared.colorSurface)
-        .cornerRadius(14)
+        .buttonStyle(PremiumPressButtonStyle())
+    }
+
+    private var todayRecordCount: Int {
+        let start = Calendar.current.startOfDay(for: Date())
+        return records.filter { $0.measuredAt >= start }.count
     }
 
     private var devicesContent: some View {
-        VStack(spacing: 14) {
-            HStack {
-                Text("Dispositivi").foregroundStyle(ThemeManager.shared.colorTextPrimary).font(.title3.bold())
-                Spacer()
-                if currentUser?.role == .master {
-                    Button {
-                        viewModel.showAddDeviceSheet = true
-                    } label: {
-                        Label("Aggiungi dispositivo", systemImage: "plus.circle.fill")
-                            .foregroundStyle(ThemeManager.shared.colorTextOnPrimary)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 8).background(ThemeManager.shared.colorPrimary)
-                            .cornerRadius(10)
-                    }
+        ScrollView {
+            VStack(spacing: 14) {
+                PrimaryButton(title: "Aggiungi frigo", icon: "plus.circle.fill") {
+                    requestAddDevice()
                 }
-            }
-            if currentUser?.role != .master {
-                Text("Solo il responsabile può creare, modificare o eliminare dispositivi.")
-                    .font(.caption)
-                    .foregroundStyle(ThemeManager.shared.colorTextSecondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            if scopedDevices.isEmpty {
-                emptyCard(text: "Configura un dispositivo per iniziare")
-            } else {
-                ScrollView {
-                    VStack(spacing: 10) {
-                        ForEach(scopedDevices) { device in
-                            NavigationLink {
-                                TemperatureDeviceDetailView(device: device)
-                            } label: {
-                                HStack {
-                                    VStack(alignment: .leading) {
-                                        Text(device.name).foregroundStyle(ThemeManager.shared.colorTextPrimary).font(.headline)
-                                        Text(device.type.label).foregroundStyle(ThemeManager.shared.colorTextSecondary).font(.caption)
-                                    }
-                                    Spacer()
-                                    if currentUser?.role == .master {
-                                        Button {
-                                            deviceToEdit = device
-                                            showEditDeviceSheet = true
-                                        } label: {
-                                            Image(systemName: "pencil.circle.fill").foregroundStyle(ThemeManager.shared.colorInfo)
-                                        }
-                                        .buttonStyle(.plain)
-                                        Button(role: .destructive) {
-                                            devicePendingDeletion = device
-                                            showMasterAuthForDelete = true
-                                        } label: {
-                                            Image(systemName: "trash.fill").foregroundStyle(ThemeManager.shared.colorError)
-                                        }
-                                        .buttonStyle(.plain)
-                                    }
-                                }
-                                .padding(12)
-                                .background(ThemeManager.shared.colorSurface)
-                                .cornerRadius(12)
+
+                if devices.isEmpty {
+                    DashboardEmptyStateView(state: .init(
+                        title: "Nessun frigorifero",
+                        message: "Aggiungi frigoriferi, freezer e abbattitori da monitorare ogni giorno.",
+                        actionTitle: "Aggiungi frigo"
+                    )) {
+                        requestAddDevice()
+                    }
+                } else {
+                    DashboardCardView(
+                        title: "Frigoriferi configurati",
+                        subtitle: "\(devices.count) dispositivi attivi"
+                    ) {
+                        VStack(spacing: 10) {
+                            ForEach(devices) { device in
+                                deviceManagementRow(device)
                             }
-                            .buttonStyle(.plain)
                         }
                     }
                 }
             }
         }
+    }
+
+    private func deviceManagementRow(_ device: TemperatureDevice) -> some View {
+        let latest = latestRecordsByDeviceId[device.id]
+        let range = allowedRange(for: device)
+
+        return VStack(spacing: 10) {
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: device.type.icon)
+                    .font(.title3)
+                    .foregroundStyle(theme.colorPrimary)
+                    .frame(width: 28)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(device.name)
+                        .font(.headline)
+                        .foregroundStyle(theme.colorTextPrimary)
+                    Text("\(device.type.label) · Range \(range.min, specifier: "%.0f")–\(range.max, specifier: "%.0f") °C")
+                        .font(.caption)
+                        .foregroundStyle(theme.colorTextSecondary)
+                    if let latest {
+                        HStack(spacing: 6) {
+                            Text("Ultima: \(latest.value, specifier: "%.1f") °C")
+                            HACCPBadge(title: latest.status.label, style: latest.status.badgeStyle, showIcon: false)
+                        }
+                        .font(.caption2)
+                    } else {
+                        Text("Nessuna misurazione registrata")
+                            .font(.caption2)
+                            .foregroundStyle(theme.colorWarning)
+                    }
+                }
+                Spacer()
+                NavigationLink {
+                    TemperatureDeviceDetailView(device: device)
+                } label: {
+                    Image(systemName: "clock.arrow.circlepath")
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(theme.colorInfo)
+                        .padding(8)
+                }
+                .buttonStyle(.plain)
+            }
+
+            HStack(spacing: 10) {
+                Button {
+                    masterAuth.request(permission: .executeRecords, permissions: permissions) {
+                        presentNewMeasurement(preselected: device)
+                    }
+                } label: {
+                    Label("Misura ora", systemImage: "thermometer.medium")
+                        .font(.subheadline.weight(.semibold))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(theme.colorPrimary)
+
+                Button {
+                    requestEditDevice(device)
+                } label: {
+                    Image(systemName: "pencil")
+                        .frame(width: 44, height: 40)
+                }
+                .buttonStyle(.bordered)
+
+                Button(role: .destructive) {
+                    requestDeleteDevice(device)
+                } label: {
+                    Image(systemName: "trash")
+                        .frame(width: 44, height: 40)
+                }
+                .buttonStyle(.bordered)
+            }
+        }
+        .padding(12)
+        .background(theme.colorSurfaceElevated)
+        .cornerRadius(12)
     }
 
     private var historyContent: some View {
         VStack(spacing: 12) {
-            HStack {
-                DatePicker("Dal", selection: $historyDateFilter, displayedComponents: .date)
-                    .labelsHidden()
-                Spacer()
-                Button("Pagina prec.") {
-                    historyPage = max(0, historyPage - 1)
-                }
-                .disabled(historyPage == 0)
-                Button("Pagina succ.") {
-                    historyPage += 1
+            Picker("Periodo", selection: $historyRange) {
+                ForEach(TemperatureHistoryRange.allCases) { range in
+                    Text(range.rawValue).tag(range)
                 }
             }
-            .foregroundStyle(ThemeManager.shared.colorTextPrimary)
+            .pickerStyle(.segmented)
 
-            let filtered = scopedRecords.filter { $0.measuredAt >= historyDateFilter }
-            let page = viewModel.paginatedHistory(filtered, page: historyPage, pageSize: pageSize)
+            let filtered = viewModel.records(records, matching: historyRange)
 
-            if page.isEmpty {
-                emptyCard(text: "Nessuna misurazione registrata")
+            if filtered.isEmpty {
+                DashboardEmptyStateView(state: .init(
+                    title: "Nessuna misurazione",
+                    message: historyRange == .all
+                        ? "Registra la prima temperatura dalla panoramica."
+                        : "Nessun dato nel periodo selezionato. Prova un intervallo più ampio.",
+                    actionTitle: devices.isEmpty ? "Aggiungi frigo" : "Nuova misurazione"
+                )) {
+                    if devices.isEmpty {
+                        requestAddDevice()
+                    } else {
+                        masterAuth.request(permission: .executeRecords, permissions: permissions) {
+                            presentNewMeasurement()
+                        }
+                    }
+                }
             } else {
+                HStack {
+                    Text("\(filtered.count) misurazioni")
+                        .font(.caption)
+                        .foregroundStyle(theme.colorTextSecondary)
+                    Spacer()
+                }
+
                 ScrollView {
-                    VStack(spacing: 10) {
-                        ForEach(page) { record in
-                            VStack(alignment: .leading, spacing: 6) {
-                                HStack {
-                                    Text(record.deviceName).foregroundStyle(ThemeManager.shared.colorTextPrimary).font(.headline)
-                                    Spacer()
-                                    Text("\(record.value, specifier: "%.1f") °C")
-                                        .foregroundStyle(ThemeManager.shared.colorTextPrimary)
-                                        .padding(.horizontal, 10)
-                                        .padding(.vertical, 4)
-                                        .background(record.status.color)
-                                        .cornerRadius(8)
-                                }
-                                Text("\(record.measuredByName) - \(record.measuredAt.formatted(date: .abbreviated, time: .shortened))")
-                                    .foregroundStyle(ThemeManager.shared.colorTextSecondary)
-                                    .font(.caption)
-                                if let corrective = record.correctiveAction, !corrective.isEmpty {
-                                    Text("Azione: \(corrective)")
-                                        .foregroundStyle(ThemeManager.shared.colorWarning)
-                                        .font(.caption)
-                                }
-                            }
-                            .padding(12)
-                            .background(ThemeManager.shared.colorSurface)
-                            .cornerRadius(12)
+                    LazyVStack(spacing: 10) {
+                        ForEach(filtered.prefix(80)) { record in
+                            historyRow(record)
+                        }
+                        if filtered.count > 80 {
+                            Text("Mostrate le ultime 80 misurazioni. Usa Documenti per l'archivio completo.")
+                                .font(.caption)
+                                .foregroundStyle(theme.colorTextSecondary)
+                                .frame(maxWidth: .infinity, alignment: .center)
+                                .padding(.top, 8)
                         }
                     }
                 }
             }
         }
-        .onChange(of: historyDateFilter) { _, _ in
-            historyPage = 0
+    }
+
+    private func historyRow(_ record: TemperatureRecord) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(record.deviceName)
+                    .font(.headline)
+                    .foregroundStyle(theme.colorTextPrimary)
+                Spacer()
+                Text("\(record.value, specifier: "%.1f") °C")
+                    .font(.title3.weight(.bold))
+                    .foregroundStyle(theme.colorTextPrimary)
+                HACCPBadge(title: record.status.label, style: record.status.badgeStyle, showIcon: false)
+            }
+            Text("\(record.measuredByName) · \(record.measuredAt.formatted(date: .abbreviated, time: .shortened))")
+                .font(.caption)
+                .foregroundStyle(theme.colorTextSecondary)
+            if let corrective = record.correctiveAction, !corrective.isEmpty {
+                Label(corrective, systemImage: "wrench.and.screwdriver.fill")
+                    .font(.caption)
+                    .foregroundStyle(theme.colorWarning)
+            }
         }
+        .padding(12)
+        .background(theme.colorSurface)
+        .cornerRadius(12)
     }
 
     private var alertsContent: some View {
-        if activeAlerts.isEmpty {
-            return AnyView(emptyCard(text: "Nessun alert attivo"))
-        }
-        return AnyView(
-            ScrollView {
-                VStack(spacing: 10) {
-                    ForEach(activeAlerts) { alert in
-                        HStack(alignment: .top) {
-                            Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(ThemeManager.shared.colorError)
-                            VStack(alignment: .leading, spacing: 6) {
-                                Text(alert.deviceName).foregroundStyle(ThemeManager.shared.colorTextPrimary).font(.headline)
-                                Text(alert.message).foregroundStyle(ThemeManager.shared.colorTextSecondary).font(.caption)
-                                Text(alert.createdAt.formatted(date: .abbreviated, time: .shortened))
-                                    .foregroundStyle(ThemeManager.shared.colorTextSecondary.opacity(0.8))
-                                    .font(.caption2)
-                            }
-                            Spacer()
-                            Button("Risolvi") {
-                                resolve(alert: alert)
-                            }
-                            .buttonStyle(.bordered)
+        Group {
+            if alerts.isEmpty {
+                DashboardEmptyStateView(state: .init(
+                    title: "Nessun avviso attivo",
+                    message: "Tutte le temperature sono nei limiti HACCP. Gli avvisi compaiono automaticamente in caso di non conformità.",
+                    actionTitle: nil
+                )) {}
+            } else {
+                ScrollView {
+                    VStack(spacing: 10) {
+                        ForEach(alerts) { alert in
+                            alertRow(alert, showResolve: true)
                         }
-                        .padding(12)
-                        .background(ThemeManager.shared.colorError.opacity(0.12))
-                        .cornerRadius(12)
                     }
                 }
             }
-        )
-    }
-
-    private func emptyCard(text: String) -> some View {
-        Text(text)
-            .foregroundStyle(ThemeManager.shared.colorTextSecondary)
-            .frame(maxWidth: .infinity, minHeight: 160)
-            .background(ThemeManager.shared.colorSurface)
-            .cornerRadius(12)
-    }
-
-    private func metricCard(title: String, value: String) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(title).font(.caption).foregroundStyle(ThemeManager.shared.colorTextSecondary)
-            Text(value).font(.title2.bold()).foregroundStyle(ThemeManager.shared.colorTextPrimary)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func alertRow(_ alert: TemperatureAlert, showResolve: Bool = false) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(theme.colorError)
+                .padding(.top, 2)
+            VStack(alignment: .leading, spacing: 6) {
+                Text(alert.deviceName)
+                    .font(.headline)
+                    .foregroundStyle(theme.colorTextPrimary)
+                Text(alert.message)
+                    .font(.caption)
+                    .foregroundStyle(theme.colorTextSecondary)
+                Text(alert.createdAt.formatted(date: .abbreviated, time: .shortened))
+                    .font(.caption2)
+                    .foregroundStyle(theme.colorTextSecondary.opacity(0.8))
+            }
+            Spacer()
+            if showResolve {
+                Button("Risolvi") {
+                    resolve(alert: alert)
+                }
+                .buttonStyle(.bordered)
+                .tint(theme.colorPrimary)
+            }
+        }
         .padding(12)
-        .background(ThemeManager.shared.colorSurface)
+        .background(theme.colorError.opacity(0.1))
         .cornerRadius(12)
     }
 
     private func resolve(alert: TemperatureAlert) {
-        guard let currentUser, let restaurantId else { return }
+        guard let currentUser else { return }
         do {
             try viewModel.moduleService.resolveAlert(
                 alert,
@@ -447,12 +651,12 @@ struct TemperatureRootView: View {
                 modelContext: modelContext
             )
         } catch {
-            viewModel.reportError = "Impossibile risolvere alert"
+            operationError = "Impossibile risolvere l'avviso."
         }
     }
 
     private func handleDeleteDeviceConfirmed() {
-        guard let device = devicePendingDeletion, let currentUser, let restaurantId else { return }
+        guard let device = devicePendingDeletion, let currentUser else { return }
         do {
             try viewModel.moduleService.deleteDevice(
                 device,
@@ -462,28 +666,8 @@ struct TemperatureRootView: View {
             )
             devicePendingDeletion = nil
         } catch {
-            viewModel.reportError = "Impossibile eliminare dispositivo"
+            operationError = "Impossibile eliminare il dispositivo."
         }
-    }
-
-    private func export(includeCSV: Bool) {
-        guard let activeRestaurant else { return }
-        let end = Date()
-        let start = Calendar.current.date(byAdding: .day, value: -30, to: end) ?? end
-        let rows = scopedRecords.filter { $0.measuredAt >= start && $0.measuredAt <= end }
-        guard !rows.isEmpty else {
-            viewModel.reportError = "Nessuna misurazione nel periodo selezionato."
-            return
-        }
-        viewModel.exportReport(
-            restaurant: activeRestaurant,
-            records: rows,
-            devices: scopedDevices,
-            startDate: start,
-            endDate: end,
-            includeCSV: includeCSV,
-            modelContext: modelContext
-        )
     }
 }
 
@@ -491,46 +675,76 @@ struct TemperatureDeviceDetailView: View {
     let device: TemperatureDevice
     @Query private var records: [TemperatureRecord]
 
+    private let theme = ThemeManager.shared
+
     var body: some View {
         let scoped = records.filter { $0.deviceId == device.id }.sorted(by: { $0.measuredAt > $1.measuredAt })
+        let latest = scoped.first
         ScrollView {
-            VStack(alignment: .leading, spacing: 12) {
-                Text(device.name).font(.largeTitle.bold()).foregroundStyle(ThemeManager.shared.colorTextPrimary)
-                Text(device.type.label).foregroundStyle(ThemeManager.shared.colorTextSecondary)
-                Divider().overlay(ThemeManager.shared.colorDivider)
+            VStack(alignment: .leading, spacing: 16) {
+                HStack(alignment: .top) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(device.name)
+                            .font(.largeTitle.bold())
+                            .foregroundStyle(theme.colorTextPrimary)
+                        Text(device.type.label)
+                            .foregroundStyle(theme.colorTextSecondary)
+                    }
+                    Spacer()
+                    if let latest {
+                        VStack(alignment: .trailing, spacing: 6) {
+                            Text("\(latest.value, specifier: "%.1f") °C")
+                                .font(.title.weight(.bold))
+                            HACCPBadge(title: latest.status.label, style: latest.status.badgeStyle)
+                        }
+                    }
+                }
+                Divider().overlay(theme.colorDivider)
                 if scoped.isEmpty {
-                    Text("Nessuna misurazione registrata").foregroundStyle(ThemeManager.shared.colorTextSecondary)
+                    Text("Nessuna misurazione registrata")
+                        .foregroundStyle(theme.colorTextSecondary)
                 } else {
+                    Text("Storico misurazioni")
+                        .font(.headline)
+                        .foregroundStyle(theme.colorTextPrimary)
                     ForEach(scoped.prefix(100)) { record in
                         HStack {
-                            Text(record.measuredAt.formatted(date: .abbreviated, time: .shortened))
-                                .foregroundStyle(ThemeManager.shared.colorTextSecondary).font(.caption)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(record.measuredAt.formatted(date: .abbreviated, time: .shortened))
+                                    .foregroundStyle(theme.colorTextSecondary)
+                                    .font(.caption)
+                                if let notes = record.notes, !notes.isEmpty {
+                                    Text(notes)
+                                        .font(.caption2)
+                                        .foregroundStyle(theme.colorTextSecondary)
+                                }
+                            }
                             Spacer()
-                            Text("\(record.value, specifier: "%.1f") °C").foregroundStyle(ThemeManager.shared.colorTextPrimary)
-                            Text(record.status.label)
-                                .font(.caption.bold())
-                                .foregroundStyle(ThemeManager.shared.colorTextPrimary)
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 4)
-                                .background(record.status.color)
-                                .cornerRadius(8)
+                            Text("\(record.value, specifier: "%.1f") °C")
+                                .foregroundStyle(theme.colorTextPrimary)
+                                .font(.subheadline.weight(.semibold))
+                            HACCPBadge(title: record.status.label, style: record.status.badgeStyle, showIcon: false)
                         }
-                        .padding(.vertical, 4)
+                        .padding(.vertical, 6)
                     }
                 }
             }
             .padding(20)
         }
-        .background(ThemeManager.shared.colorBackground.ignoresSafeArea())
+        .background(theme.colorBackground.ignoresSafeArea())
+        .navigationTitle(device.name)
+        .navigationBarTitleDisplayMode(.inline)
     }
 }
 
 struct TemperatureDeviceEditView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.theme) private var theme
     let restaurantId: UUID?
     let user: LocalUser?
     let deviceToEdit: TemperatureDevice?
+    var onSaved: ((TemperatureDevice?) -> Void)? = nil
 
     @State private var name = ""
     @State private var type: TemperatureDeviceType = .fridge
@@ -538,25 +752,87 @@ struct TemperatureDeviceEditView: View {
     @State private var customMax = ""
     @State private var validationError: String?
 
+    private var isNew: Bool { deviceToEdit == nil }
+
+    private var previewRange: (min: Double, max: Double) {
+        let minTemp = parseOptionalTemperature(customMin)
+        let maxTemp = parseOptionalTemperature(customMax)
+        let preview = TemperatureDevice(
+            restaurantId: restaurantId ?? UUID(),
+            name: name.isEmpty ? "Anteprima" : name,
+            type: type,
+            customMinTemp: minTemp,
+            customMaxTemp: maxTemp
+        )
+        return TemperatureValidationService().allowedRange(
+            for: preview,
+            settings: SettingsStorageService.shared.haccp
+        )
+    }
+
     var body: some View {
         NavigationStack {
-            Form {
-                TextField("Nome dispositivo", text: $name)
-                Picker("Tipo", selection: $type) {
-                    ForEach(TemperatureDeviceType.allCases, id: \.self) { item in
-                        Text(item.label).tag(item)
+            ScrollView {
+                VStack(spacing: theme.spacing.sectionSpacing) {
+                    DashboardCardView(title: "Identificazione", subtitle: "Nome riconoscibile in cucina") {
+                        VStack(alignment: .leading, spacing: 12) {
+                            TextField("Es. Frigo cucina, Freezer magazzino…", text: $name)
+                                .textFieldStyle(.roundedBorder)
+
+                            Picker("Tipo dispositivo", selection: $type) {
+                                ForEach(TemperatureDeviceType.allCases, id: \.self) { item in
+                                    Label(item.label, systemImage: item.icon).tag(item)
+                                }
+                            }
+                            .pickerStyle(.menu)
+                        }
+                    }
+
+                    DashboardCardView(title: "Limiti temperatura", subtitle: "Lascia vuoto per usare i limiti HACCP predefiniti") {
+                        VStack(alignment: .leading, spacing: 12) {
+                            HStack(spacing: 12) {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text("Minimo °C")
+                                        .font(.caption)
+                                        .foregroundStyle(theme.colorTextSecondary)
+                                    TextField("Opzionale", text: $customMin)
+                                        .keyboardType(.decimalPad)
+                                        .textFieldStyle(.roundedBorder)
+                                }
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text("Massimo °C")
+                                        .font(.caption)
+                                        .foregroundStyle(theme.colorTextSecondary)
+                                    TextField("Opzionale", text: $customMax)
+                                        .keyboardType(.decimalPad)
+                                        .textFieldStyle(.roundedBorder)
+                                }
+                            }
+                            Text("Range attivo: \(previewRange.min, specifier: "%.1f") – \(previewRange.max, specifier: "%.1f") °C")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(theme.colorInfo)
+                        }
+                    }
+
+                    if isNew {
+                        Text("Dopo il salvataggio potrai registrare subito la prima misurazione.")
+                            .font(.caption)
+                            .foregroundStyle(theme.colorTextSecondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }
-                TextField("Min custom (opzionale)", text: $customMin).keyboardType(.decimalPad)
-                TextField("Max custom (opzionale)", text: $customMax).keyboardType(.decimalPad)
+                .padding(theme.spacing.screenPadding + 8)
             }
-            .navigationTitle("Dispositivo")
+            .background(theme.colorBackground.ignoresSafeArea())
+            .navigationTitle(isNew ? "Nuovo frigo" : "Modifica frigo")
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Annulla") { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Salva") { save() }.disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
+                    Button("Salva") { save() }
+                        .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
             }
             .alert("Dati non validi", isPresented: Binding(get: {
@@ -580,23 +856,29 @@ struct TemperatureDeviceEditView: View {
 
     private func save() {
         guard let restaurantId, let user else { return }
+        guard user.permissions.canPerform(.manageTemperatureDevices) else {
+            validationError = "Serve l'autorizzazione MASTER per gestire i frigoriferi."
+            return
+        }
         let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedName.isEmpty else { return }
         let minTemp = parseOptionalTemperature(customMin)
         let maxTemp = parseOptionalTemperature(customMax)
         if (minTemp == nil) != (maxTemp == nil) {
-            validationError = "Inserisci sia il limite minimo sia il limite massimo, oppure lascia entrambi vuoti."
+            validationError = "Inserisci sia il minimo sia il massimo, oppure lascia entrambi vuoti."
             return
         }
         if let minTemp, let maxTemp, minTemp >= maxTemp {
-            validationError = "Il limite minimo deve essere più basso del limite massimo."
+            validationError = "Il minimo deve essere più basso del massimo."
             return
         }
+        let savedDevice: TemperatureDevice
         if let deviceToEdit {
             deviceToEdit.name = trimmedName
             deviceToEdit.type = type
             deviceToEdit.customMinTemp = minTemp
             deviceToEdit.customMaxTemp = maxTemp
+            savedDevice = deviceToEdit
             TemperatureModuleService().log(
                 action: "TEMPERATURE_DEVICE_UPDATED",
                 user: user,
@@ -614,6 +896,7 @@ struct TemperatureDeviceEditView: View {
                 customMaxTemp: maxTemp
             )
             modelContext.insert(device)
+            savedDevice = device
             TemperatureModuleService().log(
                 action: "TEMPERATURE_DEVICE_CREATED",
                 user: user,
@@ -624,6 +907,7 @@ struct TemperatureDeviceEditView: View {
             )
         }
         try? modelContext.save()
+        onSaved?(savedDevice)
         dismiss()
     }
 
@@ -674,25 +958,70 @@ struct AddTemperatureRecordView: View {
                 let keypadButtonHeight = min(max((geo.size.height - 420) / 4, 48), 58)
                 let correctiveEditorHeight = min(max(geo.size.height * 0.16, 92), 120)
                 VStack(spacing: 10) {
-                    Picker("Dispositivo", selection: $selectedDeviceId) {
-                        ForEach(devices) { device in
-                            Text(device.name).tag(device.id)
+                    if devices.count > 1 {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 8) {
+                                ForEach(devices) { device in
+                                    Button {
+                                        selectedDeviceId = device.id
+                                    } label: {
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text(device.name)
+                                                .font(.subheadline.weight(.semibold))
+                                                .lineLimit(1)
+                                            Text(device.type.label)
+                                                .font(.caption2)
+                                        }
+                                        .foregroundStyle(
+                                            selectedDeviceId == device.id
+                                                ? ThemeManager.shared.colorPrimary
+                                                : ThemeManager.shared.colorTextPrimary
+                                        )
+                                        .padding(.horizontal, 12)
+                                        .padding(.vertical, 8)
+                                        .background(
+                                            selectedDeviceId == device.id
+                                                ? ThemeManager.shared.colorPrimary.opacity(0.15)
+                                                : ThemeManager.shared.colorSurface
+                                        )
+                                        .cornerRadius(10)
+                                        .overlay(
+                                            RoundedRectangle(cornerRadius: 10)
+                                                .stroke(
+                                                    selectedDeviceId == device.id
+                                                        ? ThemeManager.shared.colorPrimary
+                                                        : ThemeManager.shared.colorDivider,
+                                                    lineWidth: 1
+                                                )
+                                        )
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
                         }
                     }
-                    .pickerStyle(.menu)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 8)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(ThemeManager.shared.colorDivider)
-                    .cornerRadius(12)
-                    .tint(ThemeManager.shared.colorPrimary)
 
-                    Text(selectedDevice?.name ?? "Dispositivo")
-                        .font(.title3.bold())
-                        .foregroundStyle(ThemeManager.shared.colorTextPrimary)
-                    Text(selectedDevice?.type.label ?? "-")
-                        .foregroundStyle(ThemeManager.shared.colorTextSecondary)
-                        .font(.caption)
+                    HStack(spacing: 10) {
+                        Image(systemName: selectedDevice?.type.icon ?? "thermometer.medium")
+                            .font(.title2)
+                            .foregroundStyle(ThemeManager.shared.colorPrimary)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(selectedDevice?.name ?? "Dispositivo")
+                                .font(.title3.bold())
+                                .foregroundStyle(ThemeManager.shared.colorTextPrimary)
+                            Text(selectedDevice?.type.label ?? "-")
+                                .foregroundStyle(ThemeManager.shared.colorTextSecondary)
+                                .font(.caption)
+                        }
+                        Spacer()
+                    }
+                    if let device = selectedDevice {
+                        let range = validationService.allowedRange(for: device, settings: SettingsStorageService.shared.haccp)
+                        Text("Range HACCP: \(range.min, specifier: "%.1f") – \(range.max, specifier: "%.1f") °C")
+                            .font(.caption)
+                            .foregroundStyle(ThemeManager.shared.colorTextSecondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
 
                     Text(valueText.isEmpty ? "--.-" : valueText)
                         .font(.system(size: 52, weight: .black, design: .rounded))
@@ -858,6 +1187,7 @@ struct AddTemperatureRecordView: View {
                 restaurantId: restaurantId,
                 modelContext: modelContext
             )
+            HapticManager.shared.notification(.success)
             dismiss()
         } catch {
             errorText = "Salvataggio fallito"
@@ -893,14 +1223,100 @@ private extension TemperatureStatus {
         case .critical: return Color(hex: "#8B0000")
         }
     }
-}
 
-struct ShareSheet: UIViewControllerRepresentable {
-    let items: [Any]
-
-    func makeUIViewController(context: Context) -> UIActivityViewController {
-        UIActivityViewController(activityItems: items, applicationActivities: nil)
+    var badgeStyle: HACCPBadgeStyle {
+        switch self {
+        case .ok: return .conforme
+        case .warning: return .warning
+        case .outOfRange, .critical: return .nonConforme
+        }
     }
 
-    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
+    var borderColor: Color {
+        switch self {
+        case .ok: return ThemeManager.shared.colorSuccess
+        case .warning: return ThemeManager.shared.colorWarning
+        case .outOfRange, .critical: return ThemeManager.shared.colorError
+        }
+    }
+}
+
+// MARK: - Selezione frigorifero per misurazione
+
+private struct TemperatureDevicePickerSheet: View {
+    let devices: [TemperatureDevice]
+    let records: [TemperatureRecord]
+    let onSelect: (TemperatureDevice) -> Void
+    let onCancel: () -> Void
+
+    @Environment(\.theme) private var theme
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                LazyVStack(spacing: 10) {
+                    Text("Scegli il frigorifero da controllare")
+                        .font(.subheadline)
+                        .foregroundStyle(theme.colorTextSecondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.bottom, 4)
+
+                    ForEach(devices) { device in
+                        Button {
+                            onSelect(device)
+                        } label: {
+                            pickerRow(device)
+                        }
+                        .buttonStyle(PremiumPressButtonStyle())
+                    }
+                }
+                .padding(theme.spacing.screenPadding + 8)
+            }
+            .background(theme.colorBackground.ignoresSafeArea())
+            .navigationTitle("Nuova misurazione")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Annulla", action: onCancel)
+                }
+            }
+        }
+    }
+
+    private func pickerRow(_ device: TemperatureDevice) -> some View {
+        let latest = records.filter { $0.deviceId == device.id }.max(by: { $0.measuredAt < $1.measuredAt })
+        let range = TemperatureValidationService().allowedRange(
+            for: device,
+            settings: SettingsStorageService.shared.haccp
+        )
+
+        return HStack(spacing: 12) {
+            Image(systemName: device.type.icon)
+                .font(.title2)
+                .foregroundStyle(theme.colorPrimary)
+                .frame(width: 32)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(device.name)
+                    .font(.headline)
+                    .foregroundStyle(theme.colorTextPrimary)
+                Text("\(device.type.label) · \(range.min, specifier: "%.0f")–\(range.max, specifier: "%.0f") °C")
+                    .font(.caption)
+                    .foregroundStyle(theme.colorTextSecondary)
+                if let latest {
+                    Text("Ultima: \(latest.value, specifier: "%.1f") °C · \(latest.measuredAt.formatted(date: .omitted, time: .shortened))")
+                        .font(.caption2)
+                        .foregroundStyle(theme.colorTextSecondary)
+                }
+            }
+            Spacer()
+            if let latest {
+                HACCPBadge(title: latest.status.label, style: latest.status.badgeStyle, showIcon: false)
+            }
+            Image(systemName: "chevron.right")
+                .foregroundStyle(theme.colorTextSecondary)
+        }
+        .padding(14)
+        .background(theme.colorSurface)
+        .cornerRadius(12)
+    }
 }

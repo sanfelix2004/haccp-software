@@ -32,6 +32,15 @@ enum DefrostMethod: String, Codable, CaseIterable, Identifiable {
         if lower.contains("controll") { return .temperaturaControllata }
         return .altro
     }
+
+    /// Durata massima consigliata prima dello stato «In ritardo».
+    func recommendedDurationHours(settings: HACCPSettings) -> Int {
+        settings.recommendedDefrostHours(for: self)
+    }
+
+    func expectedEndAt(from startAt: Date, settings: HACCPSettings) -> Date {
+        startAt.addingTimeInterval(TimeInterval(recommendedDurationHours(settings: settings) * 3600))
+    }
 }
 
 enum DefrostStatus: String, Codable, CaseIterable {

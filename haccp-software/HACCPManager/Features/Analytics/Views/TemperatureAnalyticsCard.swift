@@ -15,7 +15,6 @@ struct TemperatureAnalyticsCard: View {
                     TemperatureDevicePicker(devices: devices, selectedDeviceId: $selectedDeviceId)
                     Spacer()
                 }
-                AnalyticsPeriodPicker(selection: $selectedPeriod)
 
                 if points.isEmpty {
                     AnalyticsEmptyStateView(
@@ -70,21 +69,6 @@ struct TemperatureAnalyticsCard: View {
     }
 
     private var kpiGrid: some View {
-        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
-            ForEach(kpis) { kpi in
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(kpi.title)
-                        .font(.caption)
-                        .foregroundStyle(ThemeManager.shared.colorTextSecondary)
-                    Text(kpi.value)
-                        .font(.headline)
-                        .foregroundColor(kpi.color)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(10)
-                .background(ThemeManager.shared.colorSurface)
-                .cornerRadius(10)
-            }
-        }
+        AnalyticsKPIGrid(kpis: kpis, columns: 3)
     }
 }

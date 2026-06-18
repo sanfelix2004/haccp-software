@@ -3,6 +3,7 @@ import SwiftData
 
 struct ChecklistRunView: View {
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.theme) private var theme
     @EnvironmentObject var appState: AppState
     @Environment(\.dismiss) private var dismiss
     @Query private var users: [LocalUser]
@@ -22,36 +23,94 @@ struct ChecklistRunView: View {
             .sorted(by: { $0.orderIndex < $1.orderIndex })
     }
 
-    var body: some View {
-        VStack(spacing: 12) {
-            ProgressView(value: run.progressPercentage, total: 100)
-                .tint(progressTint)
-            Text("\(completedItems)/\(totalItems) completati · \(Int(run.progressPercentage))%")
-                .foregroundStyle(ThemeManager.shared.colorTextPrimary)
-                .frame(maxWidth: .infinity, alignment: .leading)
+    private var summary: ChecklistProgressSummary {
+        ChecklistProgressSummary.from(run: run, results: scopedResults)
+    }
 
-            ScrollView {
-                VStack(spacing: 10) {
-                    ForEach(scopedResults) { result in
-                        ChecklistRunItemCard(
-                            result: result,
-                            onSave: { value, note in
-                                save(result: result, value: value, note: note)
-                            }
-                        )
+    var body: some View {
+        ScrollView {
+            LazyVStack(spacing: theme.spacing.sectionSpacing) {
+                progressCard
+
+                DashboardCardView(
+                    title: "Attività da verificare",
+                    subtitle: "\(summary.completed) di \(summary.total) completate"
+                ) {
+                    LazyVStack(spacing: 10) {
+                        ForEach(Array(scopedResults.enumerated()), id: \.element.id) { index, result in
+                            ChecklistRunItemCard(
+                                index: index + 1,
+                                result: result,
+                                onSave: { value, note in
+                                    save(result: result, value: value, note: note)
+                                }
+                            )
+                        }
                     }
                 }
             }
-
+            .padding(theme.spacing.screenPadding)
         }
-        .padding(20)
-        .background(ThemeManager.shared.colorBackground.ignoresSafeArea())
+        .background(theme.colorBackground.ignoresSafeArea())
         .navigationTitle(run.templateTitleSnapshot)
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .cancellationAction) {
+                Button("Chiudi") { dismiss() }
+            }
+        }
         .alert("Checklist", isPresented: Binding(get: { vm.completionError != nil }, set: { _ in vm.completionError = nil })) {
             Button("OK", role: .cancel) {}
         } message: {
             Text(vm.completionError ?? "")
         }
+        .onChange(of: run.progressPercentage) { _, progress in
+            guard progress >= 100 else { return }
+            HapticManager.shared.notification(.success)
+        }
+    }
+
+    private var progressCard: some View {
+        DashboardCardView(title: "Avanzamento", subtitle: statusSubtitle) {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    Text("\(Int(run.progressPercentage))%")
+                        .font(theme.typography.title2.weight(.bold))
+                        .foregroundStyle(theme.colorTextPrimary)
+                    Spacer()
+                    HACCPBadge(title: run.status.label, style: run.status.badgeStyle, showIcon: false)
+                }
+                ProgressView(value: run.progressPercentage, total: 100)
+                    .tint(progressTint)
+                if let dueAt = run.dueAt {
+                    Label(
+                        "Scadenza \(dueAt.formatted(date: .abbreviated, time: .shortened))",
+                        systemImage: "clock"
+                    )
+                    .font(theme.typography.caption)
+                    .foregroundStyle(run.status == .overdue ? theme.colorWarning : theme.colorTextSecondary)
+                }
+                if summary.hasFailures {
+                    Label("Sono presenti attività NON OK", systemImage: "exclamationmark.triangle.fill")
+                        .font(theme.typography.caption)
+                        .foregroundStyle(theme.colorError)
+                }
+            }
+        }
+    }
+
+    private var statusSubtitle: String {
+        if run.progressPercentage >= 100 {
+            return summary.hasFailures ? "Completata con criticità" : "Completata"
+        }
+        return "Segna ogni voce e salva"
+    }
+
+    private var progressTint: Color {
+        if summary.hasFailures { return theme.colorError }
+        if run.progressPercentage >= 100 { return theme.colorSuccess }
+        if run.progressPercentage >= 50 { return theme.colorWarning }
+        return theme.colorInfo
     }
 
     private func save(result: ChecklistItemResult, value: ChecklistItemResultValue, note: String?) {
@@ -67,46 +126,66 @@ struct ChecklistRunView: View {
                 modelContext: modelContext
             )
         } catch {
-            vm.completionError = "Salvataggio item non riuscito."
+            vm.completionError = "Salvataggio non riuscito."
         }
     }
 }
 
-private struct ChecklistRunItemCard: View {
+struct ChecklistRunItemCard: View {
+    let index: Int
     let result: ChecklistItemResult
     let onSave: (ChecklistItemResultValue, String?) -> Void
 
+    @Environment(\.theme) private var theme
     @State private var selectedValue: ChecklistItemResultValue = .pending
     @State private var note: String = ""
     @State private var initialized = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(result.titleSnapshot).foregroundStyle(ThemeManager.shared.colorTextPrimary).font(.headline)
-            Picker("Esito", selection: $selectedValue) {
-                Text(ChecklistItemResultValue.pass.label).tag(ChecklistItemResultValue.pass)
-                Text(ChecklistItemResultValue.fail.label).tag(ChecklistItemResultValue.fail)
-                Text(ChecklistItemResultValue.notApplicable.label).tag(ChecklistItemResultValue.notApplicable)
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top, spacing: 10) {
+                Text("\(index)")
+                    .font(theme.typography.caption.weight(.bold))
+                    .foregroundStyle(theme.colorTextOnPrimary)
+                    .frame(width: 26, height: 26)
+                    .background(theme.colorPrimary.opacity(0.85))
+                    .clipShape(Circle())
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(result.titleSnapshot)
+                        .font(theme.typography.headline)
+                        .foregroundStyle(theme.colorTextPrimary)
+                    HACCPBadge(title: selectedValue.label, style: selectedValue.badgeStyle, showIcon: true)
+                }
+                Spacer(minLength: 0)
             }
-            .pickerStyle(.segmented)
+
+            HStack(spacing: 8) {
+                outcomeButton(.pass, title: "OK", tint: theme.colorSuccess)
+                outcomeButton(.fail, title: "NON OK", tint: theme.colorError)
+                outcomeButton(.notApplicable, title: "N/A", tint: theme.colorTextSecondary)
+            }
+
             if selectedValue == .fail {
-                Text("Criticita")
-                    .font(.caption2.bold())
-                    .foregroundStyle(ThemeManager.shared.colorTextPrimary)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(Color.red.opacity(0.3))
-                    .cornerRadius(8)
+                TextField("Nota criticità (consigliata)", text: $note, axis: .vertical)
+                    .textFieldStyle(.roundedBorder)
+                    .lineLimit(2...4)
+            } else {
+                TextField("Nota opzionale", text: $note)
+                    .textFieldStyle(.roundedBorder)
             }
-            TextField("Nota (opzionale)", text: $note)
-                .textFieldStyle(.roundedBorder)
-            Text("Autosalvataggio attivo")
-                .font(.caption2)
-                .foregroundStyle(ThemeManager.shared.colorTextSecondary)
+
+            Text("Salvataggio automatico")
+                .font(theme.typography.caption2)
+                .foregroundStyle(theme.colorTextSecondary)
         }
-        .padding(12)
-        .background(ThemeManager.shared.colorSurface)
-        .cornerRadius(12)
+        .padding(14)
+        .background(theme.colorSurface)
+        .clipShape(RoundedRectangle(cornerRadius: theme.spacing.cornerMedium, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: theme.spacing.cornerMedium, style: .continuous)
+                .stroke(borderColor.opacity(0.7), lineWidth: 1)
+        )
         .onAppear {
             selectedValue = result.result
             note = result.note ?? ""
@@ -121,15 +200,29 @@ private struct ChecklistRunItemCard: View {
             onSave(selectedValue, note.isEmpty ? nil : note)
         }
     }
-}
 
-private extension ChecklistRunView {
-    var totalItems: Int { scopedResults.count }
-    var completedItems: Int { scopedResults.filter { $0.result != .pending }.count }
-    var progressTint: Color {
-        let p = run.progressPercentage
-        if p >= 100 { return .green }
-        if p >= 50 { return .yellow }
-        return .red
+    private var borderColor: Color {
+        switch selectedValue {
+        case .fail: return theme.colorError
+        case .pass: return theme.colorSuccess
+        case .notApplicable: return theme.colorDivider
+        case .pending: return theme.colorDivider
+        }
+    }
+
+    private func outcomeButton(_ value: ChecklistItemResultValue, title: String, tint: Color) -> some View {
+        Button {
+            selectedValue = value
+            HapticManager.shared.trigger(.light)
+        } label: {
+            Text(title)
+                .font(theme.typography.caption.weight(.semibold))
+                .foregroundStyle(selectedValue == value ? theme.colorTextOnPrimary : tint)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 10)
+                .background(selectedValue == value ? tint : tint.opacity(0.12))
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        }
+        .buttonStyle(.plain)
     }
 }

@@ -3,6 +3,7 @@ import SwiftData
 
 struct BlastChillingView: View {
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.theme) private var theme
     @EnvironmentObject var appState: AppState
     @EnvironmentObject private var blastManager: ActiveBlastChillingManager
     @Query private var users: [LocalUser]
@@ -10,13 +11,11 @@ struct BlastChillingView: View {
     @Query private var categories: [ProductionCategory]
     @Query private var productions: [Production]
     @StateObject private var vm = BlastChillingViewModel()
-    @State private var showMasterEditAuth = false
-    @State private var showMasterDeleteAuth = false
-    @State private var productionPendingDeletion: Production?
+    @State private var showNewSheet = false
+    @State private var pendingSubject: KitchenProcessSubject?
     @State private var recordToComplete: BlastChillingRecord?
-    @State private var labelDraft: ProductionLabelDraft?
 
-    private let labelService = ProductionLabelsService()
+    private let libraryService = ProductionLibraryService()
 
     private var scopedRecords: [BlastChillingRecord] {
         guard let rid = appState.activeRestaurantId else { return [] }
@@ -33,26 +32,12 @@ struct BlastChillingView: View {
         return productions.filter { $0.restaurantId == rid }
     }
 
-    private var filteredProductions: [Production] {
-        if let selectedCategoryId = vm.selectedCategoryId {
-            return scopedProductions
-                .filter { $0.categoryId == selectedCategoryId }
-                .sorted(by: productionNameSort)
-        }
-        return scopedProductions.sorted(by: productionCategorySort)
-    }
-
     private var currentUser: LocalUser? {
         users.first { $0.id == appState.currentUserId }
     }
 
-    private var isMaster: Bool {
-        currentUser?.role == .master
-    }
-
-    private var categoryOrderById: [UUID: Int] {
-        Dictionary(uniqueKeysWithValues: scopedCategories.map { ($0.id, $0.orderIndex) })
-    }
+    private var permissions: UserPermissions { currentUser.permissions }
+    private var canExecute: Bool { permissions.can(.executeRecords) }
 
     private var filteredHistory: [BlastChillingRecord] {
         let calendar = Calendar.current
@@ -84,143 +69,89 @@ struct BlastChillingView: View {
             .sorted { $0.startedAt > $1.startedAt }
     }
 
-    private func refreshGlobalActiveBlasts() {
-        blastManager.refresh(context: modelContext, restaurantId: appState.activeRestaurantId)
-    }
-
-    private var selectedInProgressRecord: BlastChillingRecord? {
-        guard let production = vm.selectedProduction else { return nil }
-        return inProgressRecords.first { $0.productionId == production.id }
+    private var stats: (inProgress: Int, completedToday: Int) {
+        let today = Calendar.current.startOfDay(for: Date())
+        let completedToday = scopedRecords.filter {
+            guard let end = $0.endedAt else { return false }
+            return end >= today && $0.status != .inCorso && $0.status != .annullato
+        }.count
+        return (inProgressRecords.count, completedToday)
     }
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 14) {
-                DashboardCardView(title: "Abbattimento in negativo") {
-                    VStack(spacing: 14) {
-                        categoryTabs
-                        if filteredProductions.isEmpty {
-                            DashboardEmptyStateView(state: .init(
-                                title: "Nessuna produzione disponibile",
-                                message: "Aggiungi una produzione nella categoria selezionata.",
-                                actionTitle: nil
-                            ))
-                        } else {
-                            BlastChillingProductionGridView(
-                                productions: filteredProductions,
-                                selectedProductionId: vm.selectedProduction?.id,
-                                onSelect: { vm.selectedProduction = $0 }
-                            )
-                        }
-                        actionBar
-                    }
-                }
-
-                if !inProgressRecords.isEmpty {
-                    SecondaryButton(title: "Termina abbattimento", icon: "checkmark.circle.fill") {
-                        blastManager.showActiveListSheet = true
-                    }
-                }
-
-                inProgressCard
-                filtersCard
-                BlastChillingHistoryView(records: filteredHistory) { record in
-                    labelDraft = labelService.draft(from: record)
-                }
+        Group {
+            if appState.activeRestaurantId == nil {
+                DashboardEmptyStateView(state: .init(
+                    title: "Seleziona un ristorante",
+                    message: "Gli abbattimenti sono legati al ristorante attivo.",
+                    actionTitle: nil
+                ))
+                .padding(theme.spacing.screenPadding)
+            } else {
+                mainScroll
             }
-            .padding(24)
         }
-        .background(ThemeManager.shared.colorBackground.ignoresSafeArea())
+        .background(theme.colorBackground.ignoresSafeArea())
         .navigationTitle("Abbattimento")
+        .haccpControlTint()
         .onAppear {
             ensureProductions()
-            refreshGlobalActiveBlasts()
+            blastManager.refresh(context: modelContext, restaurantId: appState.activeRestaurantId)
         }
         .onChange(of: appState.activeRestaurantId) { _, _ in
             ensureProductions()
         }
+        .sheet(isPresented: $showNewSheet) {
+            if currentUser != nil {
+                BlastChillingNewSheet(
+                    productions: scopedProductions,
+                    categories: scopedCategories,
+                    onContinue: { subject in
+                        showNewSheet = false
+                        pendingSubject = subject
+                        recordToComplete = nil
+                        vm.showRecordSheet = true
+                    },
+                    onCancel: { showNewSheet = false }
+                )
+            }
+        }
         .sheet(isPresented: $vm.showRecordSheet) {
             if let user = currentUser,
-               let rid = appState.activeRestaurantId,
-               let production = recordToComplete.flatMap(productionForRecord) ?? vm.selectedProduction {
-                BlastChillingRecordSheet(
-                    production: production,
-                    existingRecord: recordToComplete,
-                    operatorName: user.name,
-                    validationService: BlastChillingValidationService(),
-                    onCancel: {
-                        vm.showRecordSheet = false
-                        recordToComplete = nil
-                    },
-                    onStart: { startedAt, initial, target in
-                        startRecord(
-                            restaurantId: rid,
-                            production: production,
-                            user: user,
-                            startedAt: startedAt,
-                            initial: initial,
-                            target: target
-                        )
-                    },
-                    onComplete: { record, endedAt, final, notes, action in
-                        completeRecord(
-                            record,
-                            endedAt: endedAt,
-                            final: final,
-                            notes: notes,
-                            action: action
-                        )
-                    }
-                )
-            }
-        }
-        .sheet(isPresented: $vm.showAddProductionSheet) {
-            productionEditor(title: "Nuova produzione", production: nil)
-        }
-        .sheet(isPresented: $vm.showEditProductionSheet) {
-            if let production = vm.productionToEdit {
-                productionEditor(title: "Modifica produzione", production: production)
-            }
-        }
-        .sheet(isPresented: Binding(
-            get: { labelDraft != nil },
-            set: { if !$0 { labelDraft = nil } }
-        )) {
-            if let draft = labelDraft,
-               let rid = appState.activeRestaurantId,
-               let user = currentUser {
-                ProductionLabelEditorSheet(
-                    mode: .create(draft),
-                    restaurantId: rid,
-                    user: user,
-                    onSaved: { labelDraft = nil },
-                    onCancel: { labelDraft = nil }
-                )
-            }
-        }
-        .fullScreenCover(isPresented: $showMasterEditAuth) {
-            masterOverlay {
-                showMasterEditAuth = false
-                if let selected = vm.selectedProduction {
-                    vm.productionToEdit = selected
-                    vm.newProductionName = selected.name
-                    vm.newProductionCategoryId = selected.categoryId
-                    vm.showEditProductionSheet = true
+               let rid = appState.activeRestaurantId {
+                let subject = recordToComplete.map(subjectForRecord) ?? pendingSubject
+                if let subject {
+                    BlastChillingRecordSheet(
+                        production: subject.pseudoProduction(restaurantId: rid),
+                        existingRecord: recordToComplete,
+                        operatorName: user.name,
+                        validationService: BlastChillingValidationService(),
+                        onCancel: {
+                            vm.showRecordSheet = false
+                            recordToComplete = nil
+                            pendingSubject = nil
+                        },
+                        onStart: { startedAt, initial, target in
+                            startRecord(
+                                restaurantId: rid,
+                                subject: subject,
+                                user: user,
+                                startedAt: startedAt,
+                                initial: initial,
+                                target: target
+                            )
+                        },
+                        onComplete: { record, endedAt, final, notes, action in
+                            completeRecord(
+                                record,
+                                endedAt: endedAt,
+                                final: final,
+                                notes: notes,
+                                action: action
+                            )
+                        }
+                    )
                 }
-            } onCancel: {
-                showMasterEditAuth = false
-            }
-        }
-        .fullScreenCover(isPresented: $showMasterDeleteAuth) {
-            masterOverlay {
-                showMasterDeleteAuth = false
-                if let production = productionPendingDeletion {
-                    deleteProduction(production)
-                }
-                productionPendingDeletion = nil
-            } onCancel: {
-                showMasterDeleteAuth = false
-                productionPendingDeletion = nil
             }
         }
         .alert("Abbattimento", isPresented: Binding(get: { vm.errorMessage != nil }, set: { _ in vm.errorMessage = nil })) {
@@ -230,122 +161,110 @@ struct BlastChillingView: View {
         }
     }
 
-    private var categoryTabs: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 10) {
-                categoryButton(nil, title: "Tutti")
-                ForEach(scopedCategories) { category in
-                    categoryButton(category.id, title: category.name)
+    private var mainScroll: some View {
+        ScrollView {
+            LazyVStack(spacing: theme.spacing.sectionSpacing) {
+                ModuleScreenHeader(
+                    title: "Abbattimento in negativo",
+                    subtitle: "Registra temperature e tempi per ogni piatto del catalogo",
+                    systemImage: "wind.snow",
+                    help: ModuleHelpLibrary.sidebar(.blastChilling)
+                )
+
+                statsRow
+
+                if canExecute {
+                    PrimaryButton(title: "Nuovo abbattimento", icon: "plus.circle.fill") {
+                        showNewSheet = true
+                    }
                 }
-            }
-        }
-    }
 
-    private func categoryButton(_ id: UUID?, title: String) -> some View {
-        Button {
-            vm.selectedCategoryId = id
-        } label: {
-            Text(title)
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(vm.selectedCategoryId == id ? ThemeManager.shared.colorTextOnPrimary : ThemeManager.shared.colorTextSecondary)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(vm.selectedCategoryId == id ? ThemeManager.shared.colorPrimary : ThemeManager.shared.colorDivider)
-                .cornerRadius(10)
-        }
-        .buttonStyle(.plain)
-    }
+                SecondaryButton(title: "Gestisci catalogo piatti", icon: "fork.knife") {
+                    appState.pendingSidebarNavigation = .productionCatalog
+                }
 
-    private func productionNameSort(_ lhs: Production, _ rhs: Production) -> Bool {
-        lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
-    }
+                if !inProgressRecords.isEmpty {
+                    SecondaryButton(title: "Termina abbattimento", icon: "checkmark.circle.fill") {
+                        blastManager.showActiveListSheet = true
+                    }
+                }
 
-    private func productionCategorySort(_ lhs: Production, _ rhs: Production) -> Bool {
-        let lhsOrder = categoryOrderById[lhs.categoryId] ?? Int.max
-        let rhsOrder = categoryOrderById[rhs.categoryId] ?? Int.max
-        if lhsOrder != rhsOrder {
-            return lhsOrder < rhsOrder
-        }
-        return productionNameSort(lhs, rhs)
-    }
-
-    private var actionBar: some View {
-        HStack(spacing: 10) {
-            Button("Aggiungi") {
-                vm.newProductionName = ""
-                vm.newProductionCategoryId = vm.selectedCategoryId ?? scopedCategories.first?.id
-                vm.showAddProductionSheet = true
-            }
-            .buttonStyle(.bordered)
-            .tint(ThemeManager.shared.colorPrimary)
-
-            Button("Modifica") {
-                guard vm.selectedProduction != nil else { return }
-                showMasterEditAuth = true
-            }
-            .buttonStyle(.bordered)
-            .tint(ThemeManager.shared.colorPrimary)
-            .disabled(vm.selectedProduction == nil)
-
-            Button("Elimina", role: .destructive) {
-                guard let selected = vm.selectedProduction else { return }
-                productionPendingDeletion = selected
-                showMasterDeleteAuth = true
-            }
-            .buttonStyle(.bordered)
-            .disabled(vm.selectedProduction == nil)
-
-            Spacer()
-
-            Button("Annulla") {
-                vm.selectedProduction = nil
-            }
-            .buttonStyle(.bordered)
-            .tint(ThemeManager.shared.colorTextSecondary)
-
-            Button(selectedInProgressRecord == nil ? "Inizia abbattimento" : "Termina abbattimento") {
-                if let inProgress = selectedInProgressRecord {
-                    recordToComplete = inProgress
+                if inProgressRecords.isEmpty && filteredHistory.isEmpty {
+                    DashboardEmptyStateView(state: .init(
+                        title: "Nessun abbattimento registrato",
+                        message: "Avvia un nuovo abbattimento scegliendo un piatto dal catalogo.",
+                        actionTitle: canExecute ? "Nuovo abbattimento" : nil
+                    )) {
+                        showNewSheet = true
+                    }
                 } else {
-                    recordToComplete = nil
+                    inProgressCard
+                    filtersCard
+                    BlastChillingHistoryView(records: filteredHistory)
                 }
-                vm.showRecordSheet = true
             }
-            .buttonStyle(.borderedProminent)
-            .tint(vm.selectedProduction == nil ? ThemeManager.shared.colorTextSecondary : (selectedInProgressRecord == nil ? ThemeManager.shared.colorSuccess : ThemeManager.shared.colorWarning))
-            .disabled(vm.selectedProduction == nil)
+            .padding(theme.spacing.screenPadding)
+        }
+    }
+
+    private var statsRow: some View {
+        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 16) {
+            StatCard(
+                title: "In corso",
+                value: "\(stats.inProgress)",
+                subtitle: "Da terminare",
+                icon: "wind.snow",
+                accent: theme.colorInfo
+            )
+            StatCard(
+                title: "Completati",
+                value: "\(stats.completedToday)",
+                subtitle: "Oggi",
+                icon: "checkmark.circle.fill",
+                accent: theme.colorSuccess
+            )
         }
     }
 
     private var inProgressCard: some View {
-        DashboardCardView(title: "Abbattimenti in corso") {
+        DashboardCardView(title: "Abbattimenti in corso", subtitle: "\(inProgressRecords.count) attivi") {
             if inProgressRecords.isEmpty {
-                DashboardEmptyStateView(state: .init(
-                    title: "Nessun abbattimento in corso",
-                    message: "Seleziona una produzione e premi Inizia abbattimento.",
-                    actionTitle: nil
-                ))
+                Text("Nessun abbattimento in corso.")
+                    .font(theme.typography.body)
+                    .foregroundStyle(theme.colorTextSecondary)
             } else {
                 VStack(spacing: 10) {
                     ForEach(inProgressRecords) { record in
-                        HStack {
-                            VStack(alignment: .leading, spacing: 4) {
+                        HStack(alignment: .top) {
+                            VStack(alignment: .leading, spacing: 6) {
                                 Text(record.productionNameSnapshot)
                                     .font(.headline)
-                                    .foregroundStyle(ThemeManager.shared.colorTextPrimary)
-                                Text("\(record.productionCategorySnapshot) · Inizio \(record.startedAt.formatted(date: .abbreviated, time: .shortened)) · \(record.initialTemperature, specifier: "%.1f") °C")
+                                    .foregroundStyle(theme.colorTextPrimary)
+                                Text(recordSubtitle(record))
                                     .font(.caption)
-                                    .foregroundStyle(ThemeManager.shared.colorTextSecondary)
+                                    .foregroundStyle(theme.colorTextSecondary)
+                                HStack(spacing: 6) {
+                                    Image(systemName: "timer")
+                                        .font(.caption2)
+                                    LiveProcessDurationText(
+                                        since: record.startedAt,
+                                        font: .caption.weight(.semibold).monospacedDigit(),
+                                        color: theme.colorInfo
+                                    )
+                                }
+                                .foregroundStyle(theme.colorTextSecondary)
                             }
                             Spacer()
-                            Button("Termina abbattimento") {
-                                blastManager.recordIdPendingComplete = record.id
+                            Button("Termina") {
+                                recordToComplete = record
+                                pendingSubject = subjectForRecord(record)
+                                vm.showRecordSheet = true
                             }
                             .buttonStyle(.borderedProminent)
-                            .tint(ThemeManager.shared.colorWarning)
+                            .tint(theme.colorWarning)
                         }
                         .padding(10)
-                        .background(ThemeManager.shared.colorSurface)
+                        .background(theme.colorSurface)
                         .cornerRadius(10)
                     }
                 }
@@ -354,7 +273,7 @@ struct BlastChillingView: View {
     }
 
     private var filtersCard: some View {
-        DashboardCardView(title: "Filtri storico abbattimenti") {
+        DashboardCardView(title: "Filtri storico") {
             HStack(spacing: 10) {
                 Picker("Categoria", selection: Binding(
                     get: { vm.selectedHistoryCategoryId },
@@ -388,64 +307,35 @@ struct BlastChillingView: View {
                 DatePicker("Dal", selection: $vm.historyStartDate, displayedComponents: .date)
                 DatePicker("Al", selection: $vm.historyEndDate, displayedComponents: .date)
             }
-            .foregroundStyle(ThemeManager.shared.colorTextPrimary)
+            .foregroundStyle(theme.colorTextPrimary)
         }
     }
 
-    private func productionEditor(title: String, production: Production?) -> some View {
-        NavigationStack {
-            Form {
-                Section(title) {
-                    TextField("Nome produzione", text: $vm.newProductionName)
-                    Picker("Categoria", selection: Binding(
-                        get: { vm.newProductionCategoryId ?? scopedCategories.first?.id ?? UUID() },
-                        set: { vm.newProductionCategoryId = $0 }
-                    )) {
-                        ForEach(scopedCategories) { category in
-                            Text(category.name).tag(category.id)
-                        }
-                    }
-                }
-                if production != nil {
-                    Section {
-                        Text("Per eliminare usa il pulsante Elimina nella schermata principale. Anche l'eliminazione richiede autorizzazione MASTER.")
-                            .font(.caption)
-                    }
-                }
-            }
-            .navigationTitle(title)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Annulla") {
-                        vm.showAddProductionSheet = false
-                        vm.showEditProductionSheet = false
-                    }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Salva") {
-                        saveProduction(production)
-                    }
-                    .disabled(vm.newProductionName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                }
-            }
+    private func recordSubtitle(_ record: BlastChillingRecord) -> String {
+        var parts = [record.productionCategorySnapshot]
+        if let lot = record.lotNumberSnapshot, !lot.isEmpty {
+            parts.append("Lotto \(lot)")
         }
+        parts.append("Inizio \(record.startedAt.formatted(date: .abbreviated, time: .shortened))")
+        parts.append(String(format: "%.1f °C", record.initialTemperature))
+        return parts.joined(separator: " · ")
     }
 
-    @ViewBuilder
-    private func masterOverlay(onAuthorized: @escaping () -> Void, onCancel: @escaping () -> Void) -> some View {
-        if let master = users.first(where: { $0.role == .master }) {
-            MasterAuthOverlay(
-                master: master,
-                operation: .privilegedAction,
-                onAuthorized: onAuthorized,
-                onCancel: onCancel
-            ) { EmptyView() }
-        }
+    private func subjectForRecord(_ record: BlastChillingRecord) -> KitchenProcessSubject {
+        KitchenProcessSubject(
+            source: record.traceabilityItemId != nil ? .traceability : .production,
+            traceabilityItemId: record.traceabilityItemId,
+            productTemplateId: nil,
+            productionId: record.productionId,
+            productName: record.productionNameSnapshot,
+            lotNumber: record.lotNumberSnapshot,
+            categoryName: record.productionCategorySnapshot
+        )
     }
 
     private func ensureProductions() {
         guard let rid = appState.activeRestaurantId else { return }
-        vm.productionService.ensureDefaults(
+        libraryService.ensureDefaults(
             restaurantId: rid,
             categories: categories,
             productions: productions,
@@ -453,13 +343,9 @@ struct BlastChillingView: View {
         )
     }
 
-    private func productionForRecord(_ record: BlastChillingRecord) -> Production? {
-        scopedProductions.first { $0.id == record.productionId }
-    }
-
     private func startRecord(
         restaurantId: UUID,
-        production: Production,
+        subject: KitchenProcessSubject,
         user: LocalUser,
         startedAt: Date,
         initial: Double,
@@ -468,7 +354,7 @@ struct BlastChillingView: View {
         do {
             _ = try vm.service.startRecord(
                 restaurantId: restaurantId,
-                production: production,
+                subject: subject,
                 startedAt: startedAt,
                 initialTemperature: initial,
                 targetTemperature: target,
@@ -476,7 +362,7 @@ struct BlastChillingView: View {
                 modelContext: modelContext
             )
             vm.showRecordSheet = false
-            vm.selectedProduction = nil
+            pendingSubject = nil
             vm.historyEndDate = Date()
             blastManager.refresh(context: modelContext, restaurantId: restaurantId)
         } catch {
@@ -501,55 +387,10 @@ struct BlastChillingView: View {
                 modelContext: modelContext
             )
             vm.showRecordSheet = false
-            vm.selectedProduction = nil
+            pendingSubject = nil
             recordToComplete = nil
             vm.historyEndDate = Date()
             blastManager.refresh(context: modelContext, restaurantId: record.restaurantId)
-        } catch {
-            vm.errorMessage = error.localizedDescription
-        }
-    }
-
-    private func saveProduction(_ production: Production?) {
-        guard let rid = appState.activeRestaurantId,
-              let categoryId = vm.newProductionCategoryId,
-              let category = scopedCategories.first(where: { $0.id == categoryId }) else { return }
-        do {
-            if let production {
-                guard isMaster else { return }
-                try vm.service.updateProduction(
-                    production,
-                    name: vm.newProductionName,
-                    category: category,
-                    existingProductions: scopedProductions,
-                    modelContext: modelContext
-                )
-                vm.selectedProduction = production
-            } else {
-                try vm.service.addProduction(
-                    name: vm.newProductionName,
-                    category: category,
-                    restaurantId: rid,
-                    existingProductions: scopedProductions,
-                    modelContext: modelContext
-                )
-            }
-            vm.showAddProductionSheet = false
-            vm.showEditProductionSheet = false
-            vm.newProductionName = ""
-        } catch {
-            vm.errorMessage = error.localizedDescription
-        }
-    }
-
-    private func deleteProduction(_ production: Production) {
-        do {
-            try vm.service.deleteProductionIfUnused(
-                production,
-                records: scopedRecords,
-                modelContext: modelContext
-            )
-            vm.selectedProduction = nil
         } catch {
             vm.errorMessage = error.localizedDescription
         }

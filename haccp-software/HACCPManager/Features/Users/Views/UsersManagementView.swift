@@ -111,6 +111,7 @@ struct UsersManagementView: View {
             }
         }
         .navigationTitle("Collaboratori")
+        .moduleHelpToolbar(ModuleHelpLibrary.sidebar(.users))
         .alert("Conferma Eliminazione", isPresented: $showDeleteAlert) {
             Button("Annulla", role: .cancel) { userToDelete = nil }
             Button("Elimina", role: .destructive) {

@@ -2,44 +2,68 @@ import Foundation
 import SwiftData
 
 struct BlastChillingService {
+
+    private static let activeDuplicateFetchLimit = 1
+
     func startRecord(
         restaurantId: UUID,
-        production: Production,
+        subject: KitchenProcessSubject,
         startedAt: Date,
         initialTemperature: Double,
         targetTemperature: Double,
         user: LocalUser,
         modelContext: ModelContext
     ) throws -> BlastChillingRecord {
+        guard subject.isValid else {
+            throw blastError(
+                code: 9008,
+                message: "Seleziona un prodotto valido per l'abbattimento."
+            )
+        }
         let validation = BlastChillingValidationService().validateStart(
             startedAt: startedAt,
             initialTemperature: initialTemperature
         )
         guard validation.canSubmit else {
-            throw NSError(
-                domain: "BlastChillingService",
+            throw blastError(
                 code: 9001,
-                userInfo: [NSLocalizedDescriptionKey: validation.message ?? "Controlla i dati abbattimento."]
+                message: validation.message ?? "Controlla i dati abbattimento."
             )
         }
-        let existingInProgress = (try? modelContext.fetch(FetchDescriptor<BlastChillingRecord>()))?
-            .contains {
-                $0.restaurantId == restaurantId &&
-                $0.productionId == production.id &&
-                $0.status == .inCorso
-            } ?? false
-        guard !existingInProgress else {
-            throw NSError(domain: "BlastChillingService", code: 9005, userInfo: [NSLocalizedDescriptionKey: "Esiste già un abbattimento in corso per questa produzione."])
+
+        if let productionId = subject.productionId,
+           try hasActiveInProgress(
+               restaurantId: restaurantId,
+               productionId: productionId,
+               modelContext: modelContext
+           ) {
+            throw blastError(
+                code: 9005,
+                message: "Esiste già un abbattimento in corso per questo piatto."
+            )
+        }
+
+        if let traceId = subject.traceabilityItemId,
+           try hasActiveInProgress(
+               restaurantId: restaurantId,
+               traceabilityItemId: traceId,
+               modelContext: modelContext
+           ) {
+            throw blastError(
+                code: 9009,
+                message: "Esiste già un abbattimento in corso per questo lotto tracciato."
+            )
         }
 
         let now = Date()
-        let safeStartedAt = min(startedAt, now)
         let record = BlastChillingRecord(
             restaurantId: restaurantId,
-            productionId: production.id,
-            productionNameSnapshot: production.name,
-            productionCategorySnapshot: production.categoryNameSnapshot,
-            startedAt: safeStartedAt,
+            productionId: subject.productionId,
+            traceabilityItemId: subject.traceabilityItemId,
+            lotNumberSnapshot: subject.lotNumber,
+            productionNameSnapshot: subject.displayTitle,
+            productionCategorySnapshot: subject.categoryName ?? (subject.source == .traceability ? "Tracciabilità" : "—"),
+            startedAt: startedAt,
             initialTemperature: initialTemperature,
             targetTemperature: targetTemperature,
             status: .inCorso,
@@ -53,6 +77,26 @@ struct BlastChillingService {
         try modelContext.save()
         KitchenProcessNotifications.postRecordsDidChange()
         return record
+    }
+
+    func startRecord(
+        restaurantId: UUID,
+        production: Production,
+        startedAt: Date,
+        initialTemperature: Double,
+        targetTemperature: Double,
+        user: LocalUser,
+        modelContext: ModelContext
+    ) throws -> BlastChillingRecord {
+        try startRecord(
+            restaurantId: restaurantId,
+            subject: .from(production: production),
+            startedAt: startedAt,
+            initialTemperature: initialTemperature,
+            targetTemperature: targetTemperature,
+            user: user,
+            modelContext: modelContext
+        )
     }
 
     func completeRecord(
@@ -78,7 +122,7 @@ struct BlastChillingService {
                 userInfo: [NSLocalizedDescriptionKey: validation.message ?? "Controlla i dati di fine abbattimento."]
             )
         }
-        record.endedAt = max(endedAt, record.startedAt)
+        record.endedAt = max(Date(), record.startedAt)
         record.finalTemperature = finalTemperature
         record.status = validation.status
         record.notes = trimmedOrNil(notes)
@@ -178,5 +222,51 @@ struct BlastChillingService {
         value
             .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: Locale(identifier: "it_IT"))
             .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func hasActiveInProgress(
+        restaurantId: UUID,
+        productionId: UUID,
+        modelContext: ModelContext
+    ) throws -> Bool {
+        let rid = restaurantId
+        let pid = productionId
+        let inCorso = BlastChillingStatus.inCorso.rawValue
+        var descriptor = FetchDescriptor<BlastChillingRecord>(
+            predicate: #Predicate { record in
+                record.restaurantId == rid
+                    && record.productionId == pid
+                    && record.statusRaw == inCorso
+                    && record.endedAt == nil
+                    && !record.isArchived
+            }
+        )
+        descriptor.fetchLimit = Self.activeDuplicateFetchLimit
+        return try !modelContext.fetch(descriptor).isEmpty
+    }
+
+    private func hasActiveInProgress(
+        restaurantId: UUID,
+        traceabilityItemId: UUID,
+        modelContext: ModelContext
+    ) throws -> Bool {
+        let rid = restaurantId
+        let traceId = traceabilityItemId
+        let inCorso = BlastChillingStatus.inCorso.rawValue
+        var descriptor = FetchDescriptor<BlastChillingRecord>(
+            predicate: #Predicate { record in
+                record.restaurantId == rid
+                    && record.traceabilityItemId == traceId
+                    && record.statusRaw == inCorso
+                    && record.endedAt == nil
+                    && !record.isArchived
+            }
+        )
+        descriptor.fetchLimit = Self.activeDuplicateFetchLimit
+        return try !modelContext.fetch(descriptor).isEmpty
+    }
+
+    private func blastError(code: Int, message: String) -> NSError {
+        NSError(domain: "BlastChillingService", code: code, userInfo: [NSLocalizedDescriptionKey: message])
     }
 }

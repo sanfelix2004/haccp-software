@@ -54,6 +54,50 @@ struct HACCPSettingsView: View {
             .cornerRadius(16)
             
             VStack(alignment: .leading, spacing: 20) {
+                Text("Decongelamento")
+                    .font(.headline)
+                    .foregroundStyle(ThemeManager.shared.colorTextPrimary)
+
+                Text("Durata massima consigliata per metodo. Oltre questa soglia il processo passa a «In ritardo».")
+                    .font(.caption)
+                    .foregroundStyle(ThemeManager.shared.colorTextSecondary)
+
+                DefrostDurationStepper(
+                    title: DefrostMethod.frigorifero.label,
+                    value: $storage.haccp.defrostFridgeRecommendedHours,
+                    range: 6...72
+                )
+                DefrostDurationStepper(
+                    title: DefrostMethod.temperaturaControllata.label,
+                    value: $storage.haccp.defrostControlledTempRecommendedHours,
+                    range: 2...48
+                )
+                DefrostDurationStepper(
+                    title: DefrostMethod.acquaFredda.label,
+                    value: $storage.haccp.defrostColdWaterRecommendedHours,
+                    range: 1...12
+                )
+                DefrostDurationStepper(
+                    title: DefrostMethod.fornoMicroonde.label,
+                    value: $storage.haccp.defrostMicrowaveRecommendedHours,
+                    range: 1...8
+                )
+                DefrostDurationStepper(
+                    title: DefrostMethod.altro.label,
+                    value: $storage.haccp.defrostOtherRecommendedHours,
+                    range: 6...72
+                )
+            }
+            .padding()
+            .background(ThemeManager.shared.colorSurface)
+            .cornerRadius(16)
+            .onChange(of: storage.haccp.defrostFridgeRecommendedHours) { storage.saveAll() }
+            .onChange(of: storage.haccp.defrostControlledTempRecommendedHours) { storage.saveAll() }
+            .onChange(of: storage.haccp.defrostColdWaterRecommendedHours) { storage.saveAll() }
+            .onChange(of: storage.haccp.defrostMicrowaveRecommendedHours) { storage.saveAll() }
+            .onChange(of: storage.haccp.defrostOtherRecommendedHours) { storage.saveAll() }
+
+            VStack(alignment: .leading, spacing: 20) {
                 Text("Operatività")
                     .font(.headline)
                     .foregroundStyle(ThemeManager.shared.colorTextPrimary)
@@ -89,6 +133,23 @@ struct HACCPSettingsView: View {
             .onChange(of: storage.haccp.oilPolarAttentionLimit) { storage.saveAll() }
             .onChange(of: storage.haccp.oilPolarMaximumLimit) { storage.saveAll() }
             .onChange(of: storage.haccp.oilNonCompliancePhotoRequired) { storage.saveAll() }
+        }
+    }
+}
+
+struct DefrostDurationStepper: View {
+    let title: String
+    @Binding var value: Int
+    let range: ClosedRange<Int>
+
+    var body: some View {
+        Stepper(value: $value, in: range) {
+            HStack {
+                Image(systemName: "snowflake")
+                    .foregroundStyle(ThemeManager.shared.colorPrimary)
+                Text("\(title): \(value) h")
+                    .foregroundStyle(ThemeManager.shared.colorTextPrimary)
+            }
         }
     }
 }

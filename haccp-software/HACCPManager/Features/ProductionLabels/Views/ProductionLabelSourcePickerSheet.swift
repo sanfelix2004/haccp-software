@@ -4,12 +4,14 @@
 //
 
 import SwiftUI
+import SwiftData
 
 struct ProductionLabelSourcePickerSheet: View {
     let dataStore: ProductionLabelsDataStore
     let onSelect: (ProductionLabelDraft) -> Void
     let onCancel: () -> Void
 
+    @Environment(\.modelContext) private var modelContext
     @Environment(\.theme) private var theme
     @State private var segment: SourceSegment = .traceability
 
@@ -41,7 +43,8 @@ struct ProductionLabelSourcePickerSheet: View {
                             sourceRow(
                                 title: item.productName,
                                 subtitle: "Lotto \(item.lotCode) · \(item.supplier)",
-                                icon: "archivebox.fill"
+                                icon: "archivebox.fill",
+                                photoData: traceabilityPhotoData(for: item)
                             ) {
                                 onSelect(service.draft(from: item))
                             }
@@ -51,7 +54,8 @@ struct ProductionLabelSourcePickerSheet: View {
                             sourceRow(
                                 title: item.productNameSnapshot,
                                 subtitle: item.supplierNameSnapshot,
-                                icon: "shippingbox.fill"
+                                icon: "shippingbox.fill",
+                                photoData: item.photoData
                             ) {
                                 onSelect(service.draft(from: item))
                             }
@@ -96,17 +100,40 @@ struct ProductionLabelSourcePickerSheet: View {
         }
     }
 
+    private func traceabilityPhotoData(for item: TraceabilityRecord) -> Data? {
+        var probe = ProductionLabelRecord(
+            restaurantId: item.restaurantId,
+            productName: item.productName,
+            productionDate: item.receivedAt,
+            expiryDate: item.expiryDate ?? item.receivedAt,
+            createdByUserId: item.createdByUserId,
+            createdByNameSnapshot: item.createdByNameSnapshot,
+            traceabilityRecordId: item.id,
+            goodsReceiptId: item.goodsReceiptId
+        )
+        return ProductionLabelImageResolver.imageData(for: probe, context: modelContext)
+    }
+
     private func sourceRow(
         title: String,
         subtitle: String,
         icon: String,
+        photoData: Data? = nil,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
             HStack(spacing: 12) {
-                Image(systemName: icon)
-                    .foregroundStyle(theme.colorPrimary)
-                    .frame(width: 28)
+                if let photoData,
+                   let thumb = HACCPZoomablePhotoThumbnail(data: photoData, size: 40, zoomTitle: title) {
+                    thumb
+                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                } else {
+                    Image(systemName: icon)
+                        .foregroundStyle(theme.colorPrimary)
+                        .frame(width: 40, height: 40)
+                        .background(theme.colorPrimary.opacity(0.12))
+                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                }
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title)
                         .foregroundStyle(theme.colorTextPrimary)

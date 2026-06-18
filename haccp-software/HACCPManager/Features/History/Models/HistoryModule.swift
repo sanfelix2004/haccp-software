@@ -22,7 +22,6 @@ enum HistoryModule: String, CaseIterable, Identifiable {
         .fridges,
         .cleaningControl,
         .blastChilling,
-        .scheduling,
         .expiryControl,
         .defrost,
         .oilControl,

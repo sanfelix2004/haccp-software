@@ -1,60 +1,49 @@
 import SwiftUI
 import SwiftData
-import Combine
 
 struct AnalyticsView: View {
     @EnvironmentObject var appState: AppState
+    @Environment(\.theme) private var theme
+
     @Query private var checklistRuns: [ChecklistRun]
     @Query private var checklistResults: [ChecklistItemResult]
     @Query private var checklistAlerts: [ChecklistAlert]
     @Query private var temperatureRecords: [TemperatureRecord]
     @Query private var temperatureDevices: [TemperatureDevice]
+    @Query private var cleaningRecords: [CleaningRecord]
+    @Query private var cleaningCriticalities: [CleaningCriticality]
+    @Query private var blastRecords: [BlastChillingRecord]
+    @Query private var defrostRecords: [DefrostRecord]
+    @Query private var oilRecords: [OilControlRecord]
+    @Query private var goodsRecords: [GoodsReceivingRecord]
+    @Query private var traceabilityRecords: [TraceabilityRecord]
+    @Query private var labelRecords: [ProductionLabelRecord]
 
     @StateObject private var vm = AnalyticsViewModel()
-
-    private var restaurantId: UUID? {
-        appState.activeRestaurantId
-    }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Grafici")
-                        .font(.largeTitle.bold())
-                        .foregroundStyle(ThemeManager.shared.colorTextPrimary)
-                    Text("Analizza controlli, checklist e temperature del ristorante")
-                        .foregroundStyle(ThemeManager.shared.colorTextSecondary)
-                }
+                header
+                periodPicker
 
-                if let restaurantId {
-                    let checklistPoints = vm.checklistPoints(
+                if let restaurantId = appState.activeRestaurantId {
+                    HACCPAnalyticsSectionsView(
                         restaurantId: restaurantId,
-                        runs: checklistRuns,
-                        itemResults: checklistResults,
-                        alerts: checklistAlerts
-                    )
-                    let checklistKpis = vm.checklistKPIs(
-                        points: checklistPoints,
-                        alerts: checklistAlerts,
-                        restaurantId: restaurantId
-                    )
-                    let temperaturePoints = vm.temperaturePoints(
-                        restaurantId: restaurantId,
-                        records: temperatureRecords
-                    )
-                    let temperatureKpis = vm.temperatureKPIs(points: temperaturePoints)
-                    let scopedDevices = temperatureDevices
-                        .filter { $0.restaurantId == restaurantId && $0.isActive }
-                        .sorted(by: { $0.name < $1.name })
-
-                    ChecklistAnalyticsCard(points: checklistPoints, kpis: checklistKpis)
-                    TemperatureAnalyticsCard(
-                        points: temperaturePoints,
-                        kpis: temperatureKpis,
-                        devices: scopedDevices,
-                        selectedDeviceId: $vm.selectedDeviceId,
-                        selectedPeriod: $vm.selectedPeriod
+                        vm: vm,
+                        checklistRuns: checklistRuns,
+                        checklistResults: checklistResults,
+                        checklistAlerts: checklistAlerts,
+                        temperatureRecords: temperatureRecords,
+                        temperatureDevices: temperatureDevices,
+                        cleaningRecords: cleaningRecords,
+                        cleaningCriticalities: cleaningCriticalities,
+                        blastRecords: blastRecords,
+                        defrostRecords: defrostRecords,
+                        oilRecords: oilRecords,
+                        goodsRecords: goodsRecords,
+                        traceabilityRecords: traceabilityRecords,
+                        labelRecords: labelRecords
                     )
                 } else {
                     AnalyticsEmptyStateView(
@@ -65,7 +54,34 @@ struct AnalyticsView: View {
             }
             .padding(24)
         }
-        .background(ThemeManager.shared.colorBackground.ignoresSafeArea())
+        .background(theme.colorBackground.ignoresSafeArea())
         .navigationTitle("Grafici")
+    }
+
+    private var header: some View {
+        HStack(alignment: .top, spacing: 8) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Grafici HACCP")
+                    .font(.largeTitle.bold())
+                    .foregroundStyle(theme.colorTextPrimary)
+                Text("Andamento per ogni area operativa: temperature, pulizie, abbattimento, olio, ricezioni, scadenze e altro.")
+                    .font(.subheadline)
+                    .foregroundStyle(theme.colorTextSecondary)
+            }
+            Spacer(minLength: 0)
+            ModuleHelpButton(help: ModuleHelpLibrary.sidebar(.analytics), size: 40)
+        }
+    }
+
+    private var periodPicker: some View {
+        HStack {
+            Label("Periodo", systemImage: "calendar")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(theme.colorTextSecondary)
+            Spacer()
+            AnalyticsPeriodPicker(selection: $vm.selectedPeriod)
+        }
+        .padding(12)
+        .background(theme.colorSurface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 }

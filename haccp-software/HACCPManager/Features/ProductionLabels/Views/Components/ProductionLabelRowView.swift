@@ -3,21 +3,18 @@
 //
 
 import SwiftUI
+import SwiftData
 
 struct ProductionLabelRowView: View {
     let label: ProductionLabelRecord
 
+    @Environment(\.modelContext) private var modelContext
     @Environment(\.theme) private var theme
+    @State private var photoData: Data?
 
     var body: some View {
         HStack(spacing: 14) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(theme.colorPrimary.opacity(0.12))
-                    .frame(width: 44, height: 44)
-                Image(systemName: label.sourceModule.icon)
-                    .foregroundStyle(theme.colorPrimary)
-            }
+            leadingVisual
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(label.productName)
@@ -48,6 +45,26 @@ struct ProductionLabelRowView: View {
             RoundedRectangle(cornerRadius: theme.spacing.cornerMedium, style: .continuous)
                 .fill(theme.colorSurface)
         )
+        .task(id: label.id) {
+            photoData = ProductionLabelImageResolver.imageData(for: label, context: modelContext)
+        }
+    }
+
+    @ViewBuilder
+    private var leadingVisual: some View {
+        if let photoData,
+           let thumb = HACCPZoomablePhotoThumbnail(data: photoData, size: 44, zoomTitle: label.productName) {
+            thumb
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        } else {
+            ZStack {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(theme.colorPrimary.opacity(0.12))
+                    .frame(width: 44, height: 44)
+                Image(systemName: label.sourceModule.icon)
+                    .foregroundStyle(theme.colorPrimary)
+            }
+        }
     }
 
     private var subtitle: String {

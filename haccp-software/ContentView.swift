@@ -18,6 +18,7 @@ struct ContentView: View {
     @State private var themeManager = ThemeManager.shared
     @State private var settingsStorage = SettingsStorageService.shared
     @State private var didAttachSwiftDataSettings = false
+    @State private var kitchenTimersRefreshTask: Task<Void, Never>?
 
     var body: some View {
         Group {
@@ -57,6 +58,11 @@ struct ContentView: View {
                 appState.activeRestaurantId = restaurants.first?.id
             }
             refreshActiveKitchenTimers()
+            if let currentUserId = appState.currentUserId,
+               let user = users.first(where: { $0.id == currentUserId }),
+               user.role == .master {
+                appState.evaluateMasterFirstAccess(masterId: user.id)
+            }
         }
         .task {
             attachSettingsStorageIfNeeded()
@@ -104,11 +110,6 @@ struct ContentView: View {
             }
             appState.evaluateMasterFirstAccess(masterId: user.id)
         }
-        .onAppear {
-            guard let currentUserId = appState.currentUserId else { return }
-            guard let user = users.first(where: { $0.id == currentUserId }), user.role == .master else { return }
-            appState.evaluateMasterFirstAccess(masterId: user.id)
-        }
     }
 
     private func attachSettingsStorageIfNeeded() {
@@ -118,9 +119,15 @@ struct ContentView: View {
     }
 
     private func refreshActiveKitchenTimers() {
-        let rid = appState.activeRestaurantId
-        blastManager.refresh(context: modelContext, restaurantId: rid)
-        defrostManager.refresh(context: modelContext, restaurantId: rid)
+        kitchenTimersRefreshTask?.cancel()
+        kitchenTimersRefreshTask = Task { @MainActor in
+            // Coalesce burst di notifiche (es. salvataggio + scenePhase) in un solo fetch.
+            try? await Task.sleep(nanoseconds: 32_000_000)
+            guard !Task.isCancelled else { return }
+            let rid = appState.activeRestaurantId
+            blastManager.refresh(context: modelContext, restaurantId: rid)
+            defrostManager.refresh(context: modelContext, restaurantId: rid)
+        }
     }
 }
 

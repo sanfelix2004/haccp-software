@@ -9,7 +9,7 @@ struct OilControlView: View {
     @Query private var records: [OilControlRecord]
     @Query private var alerts: [OilControlAlert]
     @StateObject private var vm = OilControlViewModel()
-    @State private var showMasterAuth = false
+    @State private var masterAuth = MasterAuthCoordinator()
     @State private var pendingMasterAction: MasterAction?
     @State private var recordPendingDeletion: OilControlRecord?
 
@@ -24,9 +24,10 @@ struct OilControlView: View {
         users.first { $0.id == appState.currentUserId }
     }
 
-    private var isMaster: Bool {
-        currentUser?.role == .master
-    }
+    private var permissions: UserPermissions { currentUser.permissions }
+    private var canManagePoints: Bool { permissions.can(.manageOilControlPoints) }
+    private var canDeleteRecords: Bool { permissions.can(.deleteOperationalRecords) }
+    private var canExecute: Bool { permissions.can(.executeRecords) }
 
     private var scopedPoints: [OilPoint] {
         guard let rid = appState.activeRestaurantId else { return [] }
@@ -66,7 +67,14 @@ struct OilControlView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 14) {
-                DashboardCardView(title: "Controllo olio") {
+                ModuleScreenHeader(
+                    title: "Controllo olio",
+                    subtitle: "Polarità, sostituzione olio e storico friggitrici",
+                    systemImage: "drop.fill",
+                    help: ModuleHelpLibrary.sidebar(.oilControl)
+                )
+
+                DashboardCardView(title: "Punti olio", subtitle: "Seleziona e registra un controllo", help: ModuleHelpLibrary.sidebar(.oilControl)) {
                     VStack(spacing: 14) {
                         headerMetrics
                         if scopedPoints.isEmpty {
@@ -88,10 +96,10 @@ struct OilControlView: View {
                 }
 
                 filtersCard
-                OilHistoryView(records: filteredHistory, canDelete: isMaster) { record in
+                OilHistoryView(records: filteredHistory, canDelete: canDeleteRecords) { record in
                     recordPendingDeletion = record
                     pendingMasterAction = .deleteRecord
-                    showMasterAuth = true
+                    performPrivilegedAction()
                 }
             }
             .padding(24)
@@ -118,20 +126,7 @@ struct OilControlView: View {
         .sheet(isPresented: $vm.showPointEditor) {
             pointEditor
         }
-        .fullScreenCover(isPresented: $showMasterAuth) {
-            if let master = users.first(where: { $0.role == .master }) {
-                MasterAuthOverlay(
-                    master: master,
-                    operation: .privilegedAction,
-                    onAuthorized: handleAuthorizedMasterAction,
-                    onCancel: {
-                        showMasterAuth = false
-                        pendingMasterAction = nil
-                        recordPendingDeletion = nil
-                    }
-                ) { EmptyView() }
-            }
-        }
+        .masterAuthCover(coordinator: masterAuth, master: users.first(where: { $0.role == .master }))
         .alert("Controllo olio", isPresented: Binding(get: { vm.errorMessage != nil }, set: { _ in vm.errorMessage = nil })) {
             Button("OK", role: .cancel) {}
         } message: {
@@ -171,44 +166,48 @@ struct OilControlView: View {
     private var actionBar: some View {
         HStack(spacing: 10) {
             Button("Aggiungi") {
-                vm.pointToEdit = nil
-                vm.newPointName = ""
-                pendingMasterAction = .addPoint
-                showMasterAuth = true
-            }
-            .buttonStyle(.bordered)
-            .tint(ThemeManager.shared.colorPrimary)
-
-            Button("Modifica") {
-                guard let selected = vm.selectedPoint else {
-                    vm.errorMessage = "Seleziona un punto olio da modificare."
-                    return
+                    masterAuth.request(permission: .manageOilControlPoints, permissions: permissions) {
+                        vm.pointToEdit = nil
+                        vm.newPointName = ""
+                        vm.showPointEditor = true
+                    }
                 }
-                vm.pointToEdit = selected
-                vm.newPointName = selected.name
-                pendingMasterAction = .editPoint
-                showMasterAuth = true
-            }
-            .buttonStyle(.bordered)
-            .tint(ThemeManager.shared.colorPrimary)
-            .disabled(vm.selectedPoint == nil)
+                .buttonStyle(.bordered)
+                .tint(ThemeManager.shared.colorPrimary)
 
-            Button("Elimina", role: .destructive) {
-                guard vm.selectedPoint != nil else { return }
-                pendingMasterAction = .deletePoint
-                showMasterAuth = true
-            }
-            .buttonStyle(.bordered)
-            .disabled(vm.selectedPoint == nil)
+                Button("Modifica") {
+                    guard let selected = vm.selectedPoint else {
+                        vm.errorMessage = "Seleziona un punto olio da modificare."
+                        return
+                    }
+                    masterAuth.request(permission: .manageOilControlPoints, permissions: permissions) {
+                        vm.pointToEdit = selected
+                        vm.newPointName = selected.name
+                        vm.showPointEditor = true
+                    }
+                }
+                .buttonStyle(.bordered)
+                .tint(ThemeManager.shared.colorPrimary)
+                .disabled(vm.selectedPoint == nil)
+
+                Button("Elimina", role: .destructive) {
+                    guard vm.selectedPoint != nil else { return }
+                    pendingMasterAction = .deletePoint
+                    performPrivilegedAction()
+                }
+                .buttonStyle(.bordered)
+                .disabled(vm.selectedPoint == nil)
 
             Spacer()
 
-            Button("Inserisci controllo") {
-                vm.showCheckSheet = true
-            }
-            .buttonStyle(.borderedProminent)
-            .tint(vm.selectedPoint == nil ? ThemeManager.shared.colorTextSecondary : ThemeManager.shared.colorSuccess)
-            .disabled(vm.selectedPoint == nil)
+                Button("Inserisci controllo") {
+                    masterAuth.request(permission: .executeRecords, permissions: permissions) {
+                        vm.showCheckSheet = true
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(vm.selectedPoint == nil ? ThemeManager.shared.colorTextSecondary : ThemeManager.shared.colorSuccess)
+                .disabled(vm.selectedPoint == nil)
         }
     }
 
@@ -278,8 +277,17 @@ struct OilControlView: View {
         )
     }
 
+    private func performPrivilegedAction() {
+        guard let action = pendingMasterAction else { return }
+        let permission: AppPermission = action == .deleteRecord || action == .deletePoint
+            ? .deleteOperationalRecords
+            : .manageOilControlPoints
+        masterAuth.request(permission: permission, permissions: permissions) {
+            handleAuthorizedMasterAction()
+        }
+    }
+
     private func handleAuthorizedMasterAction() {
-        showMasterAuth = false
         switch pendingMasterAction {
         case .addPoint, .editPoint:
             vm.showPointEditor = true
@@ -307,6 +315,10 @@ struct OilControlView: View {
 
     private func savePoint() {
         guard let rid = appState.activeRestaurantId, let user = currentUser else { return }
+        guard permissions.canPerform(vm.pointToEdit == nil ? .manageOilControlPoints : .manageOilControlPoints) else {
+            vm.errorMessage = "Serve l'autorizzazione MASTER."
+            return
+        }
         do {
             if let point = vm.pointToEdit {
                 try vm.service.updatePoint(

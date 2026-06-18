@@ -70,7 +70,7 @@ final class HACCPReportEngine: ObservableObject {
         let before = fetchDocuments(in: modelContext, restaurantId: restaurant.id)
         let beforeIds = Set(before.map(\.id))
 
-        DocumentGenerationService.shared.syncArchive(
+        await DocumentGenerationService.shared.syncArchive(
             restaurant: restaurant,
             user: user,
             receipts: receipts,

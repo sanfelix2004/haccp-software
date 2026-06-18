@@ -77,13 +77,13 @@ enum HACCPRegisterCSVExporter {
         let rows = GoodsReceiptRegister.rows(in: interval, receipts: receipts, df: df)
         var lines: [String] = []
         lines.append(makeLine([
-            "Prodotto", "Categoria", "Fornitore", "Lotto", "Scadenza", "Temp. rilevata", "Range temp.",
-            "Esito temp.", "Conformità", "Checklist HACCP", "Note", "Operatore", "Data/ora ricezione", "Foto"
+            "Prodotto", "Categoria", "Fornitore", "Lotto", "Scadenza", "Temp. rilevata",
+            "Esito temp.", "Conformità", "Checklist", "Note", "Operatore", "Data/ora ricezione", "Foto"
         ]))
         for r in rows {
             let foto = r.imageData != nil ? "Sì" : "No"
             lines.append(makeLine([
-                r.product, r.category, r.supplier, r.lot, r.expiry, r.temperatureRead, r.temperatureRange,
+                r.product, r.category, r.supplier, r.lot, r.expiry, r.temperatureRead,
                 r.temperatureOutcome, r.conformity, r.checklist, r.notes, r.operatorName, r.receivedAt, foto
             ]))
         }
@@ -111,15 +111,14 @@ enum HACCPRegisterCSVExporter {
         )
         var lines: [String] = []
         lines.append(makeLine([
-            "Prodotto", "Lotto", "Fornitore", "Data ricezione", "Stato", "Produzioni associate", "Non conformità",
-            "Eventi", "Timestamp eventi", "Operatore", "Foto evento", "Foto prodotto"
+            "Prodotto", "Lotto", "Fornitore", "Data ricezione", "Stato", "Produzioni associate", "Note NC",
+            "Operatore", "Foto"
         ]))
         for r in rows {
-            let fotoEv = r.eventImageData != nil ? "Sì" : "No"
-            let fotoPr = r.productImageData != nil ? "Sì" : "No"
+            let foto = r.imageData != nil ? "Sì" : "No"
             lines.append(makeLine([
                 r.product, r.lot, r.supplier, r.receivedAt, r.status, r.productions, r.nonCompliance,
-                r.events, r.eventTimestamps, r.operatorName, fotoEv, fotoPr
+                r.operatorName, foto
             ]))
         }
         if rows.isEmpty { lines.append(escapeRow([HACCPRegisterCopy.noActivityInPeriod])) }

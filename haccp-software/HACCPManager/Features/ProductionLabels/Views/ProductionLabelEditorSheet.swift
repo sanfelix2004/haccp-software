@@ -20,6 +20,8 @@ struct ProductionLabelEditorSheet: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.theme) private var theme
     @State private var draft: ProductionLabelDraft
+    @State private var previewLabelId = UUID()
+    @State private var linkedPhotoData: Data?
     @State private var errorMessage: String?
 
     private let service = ProductionLabelsService()
@@ -46,6 +48,7 @@ struct ProductionLabelEditorSheet: View {
 
     private var previewLabel: ProductionLabelRecord {
         ProductionLabelRecord(
+            id: previewLabelId,
             restaurantId: restaurantId,
             productName: draft.productName.isEmpty ? "Anteprima prodotto" : draft.productName,
             productionDate: draft.productionDate,
@@ -75,6 +78,13 @@ struct ProductionLabelEditorSheet: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: theme.spacing.sectionSpacing) {
+                    if let linkedPhotoData,
+                       let preview = HACCPZoomablePhotoPreview(data: linkedPhotoData, height: 200, zoomTitle: draft.productName) {
+                        DashboardCardView(title: "Foto prodotto", subtitle: "Da modulo HACCP collegato") {
+                            preview
+                        }
+                    }
+
                     DashboardCardView(title: "Anteprima etichetta", subtitle: "Come apparirà l'adesivo HACCP") {
                         ProductionLabelStickerView(label: previewLabel, compact: false)
                     }
@@ -137,7 +147,21 @@ struct ProductionLabelEditorSheet: View {
             } message: {
                 Text(errorMessage ?? "")
             }
+            .task(id: linkedPhotoTaskID) {
+                linkedPhotoData = ProductionLabelImageResolver.imageData(
+                    for: previewLabel,
+                    context: modelContext
+                )
+            }
         }
+    }
+
+    private var linkedPhotoTaskID: String {
+        [
+            draft.traceabilityRecordId?.uuidString ?? "",
+            draft.goodsReceiptId?.uuidString ?? "",
+            draft.defrostRecordId?.uuidString ?? ""
+        ].joined(separator: "|")
     }
 
     private var isEditing: Bool {

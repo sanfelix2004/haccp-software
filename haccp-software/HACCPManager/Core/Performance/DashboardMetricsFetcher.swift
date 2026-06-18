@@ -8,6 +8,7 @@ import SwiftData
 
 struct DashboardMetrics: Equatable {
     var activeAlerts: Int = 0
+    var temperatureAlerts: Int = 0
     var openTasks: Int = 0
     var todayRecords: Int = 0
     var traceabilityCount: Int = 0
@@ -26,12 +27,17 @@ enum DashboardMetricsFetcher {
         var metrics = DashboardMetrics()
 
         metrics.activeAlerts = countActiveAlerts(context, restaurantId: restaurantId, limit: limit)
+        metrics.temperatureAlerts = countTemperatureAlerts(context, restaurantId: restaurantId, limit: limit)
         metrics.openTasks = count(
             context,
             restaurantId: restaurantId,
             limit: limit,
-            type: ScheduledTask.self
-        ) { tasks in tasks.filter { !$0.isCompleted }.count }
+            type: ChecklistRun.self
+        ) { runs in
+            runs.filter {
+                !$0.isArchived && ($0.status == .notStarted || $0.status == .inProgress || $0.status == .overdue)
+            }.count
+        }
         metrics.traceabilityCount = countActive(
             context,
             restaurantId: restaurantId,
@@ -135,6 +141,19 @@ enum DashboardMetricsFetcher {
         let checklist = (try? context.fetch(checklistDesc))?.count ?? 0
 
         return temp + oil + cleaning + defrost + checklist
+    }
+
+    private static func countTemperatureAlerts(
+        _ context: ModelContext,
+        restaurantId: UUID,
+        limit: Int
+    ) -> Int {
+        let rid = restaurantId
+        var descriptor = FetchDescriptor<TemperatureAlert>(
+            predicate: #Predicate { $0.restaurantId == rid && $0.isActive }
+        )
+        descriptor.fetchLimit = limit
+        return (try? context.fetch(descriptor))?.count ?? 0
     }
 
     private static func count<T: PersistentModel>(

@@ -3,7 +3,6 @@ import SwiftUI
 struct HACCPModulesView: View {
     private let columns = [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())]
     private let modules: [DashboardModule] = [
-        .init(name: "Programmazione", description: "Attivita periodiche e promemoria", icon: "calendar.badge.clock", state: .open, isEnabled: true),
         .init(name: "Tracciabilita", description: "Prodotti, lotti e fornitori", icon: "archivebox.fill", state: .open, isEnabled: true),
         .init(name: "Frigoriferi", description: "Controllo temperature frigo/freezer", icon: "thermometer.medium", state: .open, isEnabled: true),
         .init(name: "Controllo pulizia", description: "Piani pulizia e firme operatore", icon: "sparkles", state: .open, isEnabled: true),
@@ -32,14 +31,7 @@ struct HACCPModulesView: View {
 
     @ViewBuilder
     private func moduleCard(_ module: DashboardModule) -> some View {
-        if module.name == "Programmazione" {
-            NavigationLink {
-                SchedulingView()
-            } label: {
-                cardBody(module)
-            }
-            .buttonStyle(.plain)
-        } else if module.name == "Tracciabilita" {
+        if module.name == "Tracciabilita" {
             NavigationLink {
                 TraceabilityView()
             } label: {

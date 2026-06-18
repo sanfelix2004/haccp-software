@@ -57,8 +57,23 @@ final class LocalDocumentStorageService: LocalDocumentStorageProtocol {
         case .mensile:
             let c = calendar.dateComponents([.year, .month], from: start)
             let m = String(format: "%04d-%02d", c.year ?? 0, c.month ?? 0)
+            if module == .nonConformita {
+                return "\(m)_NonConformita_\(slug).pdf"
+            }
             if module == .haccpCombinato {
                 return "\(m)_HACCP_\(slug)_Report_Mensile.pdf"
+            }
+            if module == .combinatoIngressoTracciabilita {
+                return "\(m)_HACCP_\(slug)_Ingresso_Tracciabilita.pdf"
+            }
+            if module == .combinatoCatenaFreddo {
+                return "\(m)_HACCP_\(slug)_Catena_Freddo.pdf"
+            }
+            if module == .combinatoIgieneControlli {
+                return "\(m)_HACCP_\(slug)_Igiene_Controlli.pdf"
+            }
+            if module == .combinatoProduzione {
+                return "\(m)_HACCP_\(slug)_Produzione.pdf"
             }
             if module == .ricezioneMerci {
                 return "\(m)_HACCP_\(slug)_Ricezione.pdf"
@@ -95,12 +110,10 @@ final class LocalDocumentStorageService: LocalDocumentStorageProtocol {
 
     static func periodFolderLabel(type: DocumentType) -> String {
         switch type {
-        case .giornaliero: return "Giornalieri"
-        case .settimanale: return "Settimanali"
-        case .mensile: return "Mensili"
-        case .nonConformita: return "Non conformità"
-        case .annuale: return "Annuali"
-        default: return "Documenti"
+        case .mensile, .nonConformita, .giornaliero, .settimanale, .annuale:
+            return "Mensili"
+        default:
+            return "Documenti"
         }
     }
 }

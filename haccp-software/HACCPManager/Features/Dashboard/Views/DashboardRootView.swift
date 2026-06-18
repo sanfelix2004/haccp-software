@@ -7,7 +7,8 @@ enum SidebarItem: String, Identifiable {
     case fridges = "Frigoriferi"
     case cleaningControl = "Controllo pulizia"
     case blastChilling = "Abbattimento"
-    case scheduling = "Programmazione"
+    case productionCatalog = "Catalogo piatti"
+    case incomingFoodCatalog = "Alimenti in ingresso"
     case expiryControl = "Controllo scadenze"
     case defrost = "Decongelamento"
     case oilControl = "Controllo olio"
@@ -25,8 +26,8 @@ enum SidebarItem: String, Identifiable {
 
     /// Moduli HACCP principali (ordine ufficiale).
     static let haccpModulesInOrder: [SidebarItem] = [
-        .traceability, .fridges, .cleaningControl, .blastChilling, .scheduling,
-        .expiryControl, .defrost, .oilControl, .productionLabels, .goodsReceiving,
+        .traceability, .fridges, .cleaningControl, .blastChilling, .productionCatalog,
+        .incomingFoodCatalog, .expiryControl, .defrost, .oilControl, .productionLabels, .goodsReceiving,
         .checklist
     ]
 
@@ -37,11 +38,12 @@ enum SidebarItem: String, Identifiable {
     var icon: String {
         switch self {
         case .dashboard: return "square.grid.2x2.fill"
-        case .scheduling: return "calendar.badge.clock"
         case .traceability: return "archivebox.fill"
         case .fridges: return "thermometer.medium"
         case .cleaningControl: return "sparkles"
         case .blastChilling: return "wind.snow"
+        case .productionCatalog: return "fork.knife"
+        case .incomingFoodCatalog: return "tray.full.fill"
         case .defrost: return "snowflake"
         case .oilControl: return "drop.fill"
         case .productionLabels: return "tag.fill"
@@ -70,6 +72,8 @@ struct DashboardRootView: View {
     @State private var detailNavigationPath = NavigationPath()
     @State private var showCreateUserFromSidebar = false
     @State private var showMasterAuthForCreate = false
+    @State private var masterAuth = MasterAuthCoordinator()
+    @State private var pendingNavigationItem: SidebarItem?
     private let documentsService = DocumentsService()
     private let productionLibraryService = ProductionLibraryService()
     private let oilControlService = OilControlService()
@@ -87,13 +91,17 @@ struct DashboardRootView: View {
     
     @Environment(\.theme) private var theme
 
+    private var permissions: UserPermissions {
+        currentUser.permissions
+    }
+
     var body: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
             PremiumSidebarView(
                 selectedItem: $selectedItem,
                 activeRestaurant: activeRestaurant,
                 restaurantsCount: restaurants.count,
-                isMaster: currentUser?.role == .master,
+                permissions: permissions,
                 onSwitchRestaurant: {
                     withAnimation(theme.spring) { appState.activeRestaurantId = nil }
                 },
@@ -136,8 +144,15 @@ struct DashboardRootView: View {
             }
         }
         .onChange(of: selectedItem) { oldItem, newItem in
-            guard oldItem?.id != newItem?.id else { return }
+            guard let newItem, oldItem?.id != newItem.id else { return }
             detailNavigationPath = NavigationPath()
+            guard !permissions.isMaster, newItem.needsMasterAuthToAccess(by: permissions) else { return }
+            pendingNavigationItem = newItem
+            selectedItem = oldItem
+            masterAuth.requestModuleAccess(module: newItem, permissions: permissions) {
+                selectedItem = pendingNavigationItem
+                pendingNavigationItem = nil
+            }
         }
         .onChange(of: appState.navigateToGoodsReceiving) { _, go in
             if go {
@@ -147,8 +162,15 @@ struct DashboardRootView: View {
         }
         .onChange(of: appState.pendingSidebarNavigation) { _, target in
             guard let target else { return }
-            selectedItem = target
             appState.pendingSidebarNavigation = nil
+            masterAuth.requestModuleAccess(module: target, permissions: permissions) {
+                selectedItem = target
+            }
+        }
+        .onChange(of: appState.currentUserId) { _, _ in
+            if let selected = selectedItem, !selected.isAccessible(by: permissions) {
+                selectedItem = .dashboard
+            }
         }
         .onChange(of: appState.activeRestaurantId) { _, _ in
             ensureRestaurantDefaults()
@@ -174,6 +196,7 @@ struct DashboardRootView: View {
         .onAppear {
             ensureRestaurantDefaults()
         }
+        .masterAuthCover(coordinator: masterAuth, master: users.first(where: { $0.role == .master }))
     }
 
     private var floatingSidebarPadding: EdgeInsets {
@@ -184,9 +207,11 @@ struct DashboardRootView: View {
 
     private func ensureRestaurantDefaults() {
         guard
-            let rid = appState.activeRestaurantId,
+            let restaurant = activeRestaurant,
             let user = currentUser
         else { return }
+
+        let rid = restaurant.id
 
         Task { @MainActor in
             let ridCapture = rid
@@ -222,6 +247,7 @@ struct DashboardRootView: View {
 
             documentsService.ensureDefaultFolders(
                 restaurantId: rid,
+                restaurantDisplayName: restaurant.name,
                 user: user,
                 existingFolders: folders,
                 existingItems: items,
@@ -247,8 +273,6 @@ struct DashboardRootView: View {
         switch item {
         case .dashboard:
             DashboardView()
-        case .scheduling:
-            SchedulingView()
         case .traceability:
             TraceabilityView()
         case .fridges:
@@ -257,6 +281,10 @@ struct DashboardRootView: View {
             CleaningControlView()
         case .blastChilling:
             BlastChillingView()
+        case .productionCatalog:
+            ProductionCatalogManagementView()
+        case .incomingFoodCatalog:
+            IncomingFoodCatalogManagementView()
         case .expiryControl:
             ExpiryControlView()
         case .defrost:
@@ -278,27 +306,34 @@ struct DashboardRootView: View {
         case .alerts:
             AlertsView()
         case .users:
-            if currentUser?.role == .master {
+            MasterGatedContent(
+                permission: .manageUsers,
+                permissions: permissions,
+                master: users.first(where: { $0.role == .master }),
+                title: "Gestione collaboratori",
+                message: "Solo il responsabile MASTER può creare e modificare gli utenti. Inserisci il PIN MASTER per continuare."
+            ) {
                 UsersManagementView()
-            } else {
-                VStack(spacing: 16) {
-                    Image(systemName: "lock.shield")
-                        .font(.system(size: 56, weight: .medium))
-                        .foregroundStyle(theme.colorPrimary)
-                    Text("Accesso riservato")
-                        .font(theme.typography.title3)
-                        .foregroundStyle(theme.colorTextPrimary)
-                    Text("Solo il responsabile può accedere alla gestione dei collaboratori.")
-                        .font(theme.typography.body)
-                        .foregroundStyle(theme.colorTextSecondary)
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal, 40)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .navigationTitle("Collaboratori")
             }
         case .settings:
             SettingsView()
         }
+    }
+
+    private func accessDeniedView(message: String) -> some View {
+        VStack(spacing: 16) {
+            Image(systemName: "lock.shield")
+                .font(.system(size: 56, weight: .medium))
+                .foregroundStyle(theme.colorPrimary)
+            Text("Accesso riservato")
+                .font(theme.typography.title3)
+                .foregroundStyle(theme.colorTextPrimary)
+            Text(message)
+                .font(theme.typography.body)
+                .foregroundStyle(theme.colorTextSecondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 40)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
