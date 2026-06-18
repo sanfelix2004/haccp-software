@@ -5,6 +5,7 @@ import UIKit
 
 struct DocumentsView: View {
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.theme) private var theme
     @EnvironmentObject var appState: AppState
     @Query private var users: [LocalUser]
     @Query private var restaurants: [Restaurant]
@@ -31,8 +32,8 @@ struct DocumentsView: View {
     @State private var regenerateError: String?
     @State private var isRefreshingArchive = false
     @State private var isPreparingCloudBackup = false
-    @State private var lastFullArchiveRefreshAt: Date?
-    @State private var lastFullArchiveRestaurantId: UUID?
+    @State private var isPurgingArchive = false
+    @State private var folderMetricsById: [UUID: FolderListMetrics] = [:]
 
     private var currentUser: LocalUser? {
         users.first(where: { $0.id == appState.currentUserId })
@@ -73,8 +74,15 @@ struct DocumentsView: View {
         return scopedFolders.first(where: { $0.id == id })
     }
 
+    private var venueFolderName: String? {
+        activeRestaurant.map { DocumentArchiveLayout.venueFolderName(for: $0) }
+    }
+
     private var rootFolders: [DocumentFolder] {
-        scopedFolders.filter { $0.parentId == nil && $0.type != .archive }
+        guard let venueFolderName else { return [] }
+        return scopedFolders.filter {
+            $0.parentId == nil && $0.type != .archive && $0.name == venueFolderName
+        }
     }
 
     private var childFolders: [DocumentFolder] {
@@ -84,25 +92,13 @@ struct DocumentsView: View {
 
     private var visibleItems: [DocumentItem] {
         guard let currentFolder else { return [] }
-        var base = scopedItems.filter { $0.folderId == currentFolder.id }
-        switch vm.selectedPeriodFilter {
-        case .all:
-            break
-        case .giornaliero:
-            base = base.filter { $0.type == .giornaliero }
-        case .settimanale:
-            base = base.filter { $0.type == .settimanale }
-        case .mensile:
-            base = base.filter { $0.type == .mensile }
-        case .annuale:
-            base = base.filter { $0.type == .annuale }
-        }
-        return base.sorted { $0.generatedAt > $1.generatedAt }
+        return scopedItems
+            .filter { $0.folderId == currentFolder.id }
+            .sorted { $0.generatedAt > $1.generatedAt }
     }
 
-    private var isMaster: Bool {
-        currentUser?.role == .master
-    }
+    private var permissions: UserPermissions { currentUser.permissions }
+    private var canManageDocuments: Bool { permissions.can(.manageDocuments) }
 
     private var syncedPdfCount: Int {
         scopedItems.filter { $0.localFilePresent && $0.format == .pdf && $0.isSyncedToICloud }.count
@@ -112,9 +108,22 @@ struct DocumentsView: View {
         scopedItems.filter { $0.localFilePresent && $0.format == .pdf && !$0.isSyncedToICloud }.count
     }
 
+    private var totalPdfCount: Int {
+        scopedItems.filter { $0.format == .pdf && $0.localFilePresent }.count
+    }
+
     var body: some View {
         ScrollView {
-            DashboardCardView(title: "Documenti") {
+            VStack(alignment: .leading, spacing: theme.spacing.lg) {
+                ModuleScreenHeader(
+                    title: "Documenti",
+                    subtitle: activeRestaurant.map {
+                        "Archivio mensile di \($0.name): Singoli (ogni funzione) e Combinati (funzioni affini)."
+                    } ?? "Archivio PDF mensili HACCP.",
+                    systemImage: "doc.text.fill",
+                    help: ModuleHelpLibrary.sidebar(.documents)
+                )
+
                 if scopedFolders.isEmpty && currentFolder == nil {
                     DashboardEmptyStateView(state: .init(
                         title: "Nessuna cartella disponibile",
@@ -122,48 +131,48 @@ struct DocumentsView: View {
                         actionTitle: nil
                     ))
                 } else {
-                    VStack(spacing: 14) {
-                        if currentFolder != nil {
-                            folderNavigationBar
+                    if currentFolder != nil {
+                        folderNavigationBar
+                    }
+
+                    if currentFolder == nil {
+                        statsRow
+                        HACCPReportEngineCard(
+                            stats: reportEngine.currentStats,
+                            lastRunSummary: reportEngine.lastRunSummary,
+                            isRunning: reportEngine.isRunning,
+                            onRunNow: { runEngineNow() }
+                        )
+                        folderGrid(folders: rootFolders)
+                        cloudSyncStatusCard
+                        if canManageDocuments {
+                            masterArchiveToolbar
+                        }
+                    } else {
+                        if !childFolders.isEmpty {
+                            VStack(alignment: .leading, spacing: theme.spacing.sm) {
+                                Text("Sottocartelle")
+                                    .font(theme.typography.subheadline.bold())
+                                    .foregroundStyle(theme.colorTextPrimary)
+                                folderGrid(folders: childFolders)
+                            }
                         }
 
-                        if currentFolder == nil {
-                            HACCPReportEngineCard(
-                                stats: reportEngine.currentStats,
-                                lastRunSummary: reportEngine.lastRunSummary,
-                                isRunning: reportEngine.isRunning,
-                                onRunNow: { runEngineNow() }
-                            )
-                            folderGrid(folders: rootFolders)
-                            cloudSyncStatusCard
-                            if isMaster {
-                                masterArchiveToolbar
-                            }
-                        } else {
-                            if !childFolders.isEmpty {
-                                VStack(alignment: .leading, spacing: 8) {
-                                    Text("Sottocartelle")
-                                        .font(.subheadline.bold())
-                                        .foregroundStyle(ThemeManager.shared.colorTextPrimary)
-                                    folderGrid(folders: childFolders)
-                                }
-                            }
+                        VStack(alignment: .leading, spacing: theme.spacing.sm) {
+                            Text("Registri generati")
+                                .font(theme.typography.subheadline.bold())
+                                .foregroundStyle(theme.colorTextPrimary)
 
-                            VStack(alignment: .leading, spacing: 8) {
-                                Text("Registri generati")
-                                    .font(.subheadline.bold())
-                                    .foregroundStyle(ThemeManager.shared.colorTextPrimary)
-                                if visibleItems.isEmpty {
-                                    DashboardEmptyStateView(state: .init(
-                                        title: "Nessun documento",
-                                        message: "I registri vengono generati automaticamente dai dati HACCP.",
-                                        actionTitle: nil
-                                    ))
-                                } else {
-                                    VStack(spacing: 10) {
-                                        ForEach(visibleItems) { doc in
-                                            documentRow(doc)
-                                        }
+                            if visibleItems.isEmpty {
+                                DashboardEmptyStateView(state: .init(
+                                    title: "Nessun documento",
+                                    message: "I registri vengono generati automaticamente dai dati HACCP.",
+                                    actionTitle: nil
+                                ))
+                            } else {
+                                VStack(spacing: theme.spacing.md) {
+                                    ForEach(visibleItems) { doc in
+                                        documentRow(doc)
                                     }
                                 }
                             }
@@ -171,15 +180,22 @@ struct DocumentsView: View {
                     }
                 }
             }
-            .padding(24)
+            .padding(theme.spacing.screenPadding)
         }
-        .background(ThemeManager.shared.colorBackground.ignoresSafeArea())
+        .background(theme.colorBackground.ignoresSafeArea())
         .navigationTitle("Documenti")
         .onAppear {
-            refreshArchiveLight()
+            Task { @MainActor in
+                await Task.yield()
+                DocumentArchivePurgeService.consumeMarkerAndPurgeIfNeeded(modelContext: modelContext)
+                refreshArchiveLight()
+            }
         }
         .onChange(of: appState.activeRestaurantId) { _, _ in
             refreshArchiveLight()
+        }
+        .onChange(of: scopedItems.count) { _, _ in
+            rebuildFolderMetrics()
         }
         .sheet(item: $documentPreviewItem) { item in
             QuickLookPreviewRepresentable(url: item.url)
@@ -208,6 +224,29 @@ struct DocumentsView: View {
         }
     }
 
+    private var statsRow: some View {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 12)], spacing: 12) {
+            StatCard(
+                title: "PDF in archivio",
+                value: "\(totalPdfCount)",
+                icon: "doc.richtext.fill"
+            )
+            StatCard(
+                title: "Backup cloud",
+                value: "\(syncedPdfCount)",
+                subtitle: "\(pendingPdfCount) in attesa",
+                icon: "icloud.fill",
+                accent: theme.colorInfo
+            )
+            StatCard(
+                title: "Cartelle",
+                value: "\(rootFolders.count)",
+                icon: "folder.fill",
+                accent: theme.colorWarning
+            )
+        }
+    }
+
     private var folderNavigationBar: some View {
         HStack {
             Button {
@@ -220,18 +259,12 @@ struct DocumentsView: View {
                 Label("Indietro", systemImage: "chevron.left")
             }
             .buttonStyle(.bordered)
-            .tint(ThemeManager.shared.colorPrimary)
+            .tint(theme.colorPrimary)
 
             Text(currentFolder?.name ?? "Documenti")
-                .font(.headline)
-                .foregroundStyle(ThemeManager.shared.colorTextPrimary)
+                .font(theme.typography.headline)
+                .foregroundStyle(theme.colorTextPrimary)
             Spacer()
-            Picker("Periodo", selection: $vm.selectedPeriodFilter) {
-                ForEach(DocumentsViewModel.PeriodFilter.allCases) { filter in
-                    Text(filter.rawValue).tag(filter)
-                }
-            }
-            .pickerStyle(.menu)
         }
     }
 
@@ -301,37 +334,54 @@ struct DocumentsView: View {
     }
 
     private var cloudSyncStatusCard: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
-                Image(systemName: "icloud")
-                    .foregroundStyle(ThemeManager.shared.colorInfo)
-                Text("Backup cloud (iCloud Drive via File)")
-                    .font(.subheadline.bold())
-                    .foregroundStyle(ThemeManager.shared.colorTextPrimary)
-                Spacer()
-                if isRefreshingArchive {
-                    ProgressView()
-                        .tint(ThemeManager.shared.colorPrimary)
-                        .scaleEffect(0.8)
+        GlassCard {
+            VStack(alignment: .leading, spacing: theme.spacing.sm) {
+                HStack(spacing: 8) {
+                    Image(systemName: "icloud")
+                        .foregroundStyle(theme.colorInfo)
+                    Text("Backup su iCloud Drive")
+                        .font(theme.typography.subheadline.bold())
+                        .foregroundStyle(theme.colorTextPrimary)
+                    Spacer()
+                    if isRefreshingArchive {
+                        ProgressView()
+                            .tint(theme.colorPrimary)
+                            .scaleEffect(0.8)
+                    }
                 }
+                Text("\(syncedPdfCount) PDF sincronizzati · \(pendingPdfCount) in attesa")
+                    .font(theme.typography.caption)
+                    .foregroundStyle(theme.colorTextSecondary)
             }
-            Text("PDF sincronizzati: \(syncedPdfCount) · in attesa: \(pendingPdfCount)")
-                .font(.caption)
-                .foregroundStyle(ThemeManager.shared.colorTextSecondary)
-            Text("Premi «Backup archivio su iCloud Drive» per salvare tutti i PDF direttamente in File/iCloud Drive senza account developer.")
-                .font(.caption2)
-                .foregroundStyle(ThemeManager.shared.colorTextSecondary)
         }
-        .padding(10)
-        .background(ThemeManager.shared.colorSurface)
-        .cornerRadius(10)
     }
 
     private var masterArchiveToolbar: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: theme.spacing.sm) {
             Text("Archivio completo")
-                .font(.subheadline.bold())
-                .foregroundStyle(ThemeManager.shared.colorTextPrimary)
+                .font(theme.typography.subheadline.bold())
+                .foregroundStyle(theme.colorTextPrimary)
+            Button {
+                guard !isPurgingArchive, let restaurant = activeRestaurant, let currentUser else { return }
+                isPurgingArchive = true
+                Task { @MainActor in
+                    await DocumentArchivePurgeService.purgeAndRegenerateArchive(
+                        restaurant: restaurant,
+                        user: currentUser,
+                        modelContext: modelContext
+                    )
+                    isPurgingArchive = false
+                }
+            } label: {
+                Label(
+                    isPurgingArchive ? "Ripulitura in corso..." : "Ripulisci e rigenera archivio PDF",
+                    systemImage: "trash.circle"
+                )
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .buttonStyle(.bordered)
+            .tint(theme.colorWarning)
+            .disabled(isPurgingArchive)
             Button {
                 guard !isPreparingCloudBackup else { return }
                 showMasterAuthArchive = true
@@ -343,71 +393,44 @@ struct DocumentsView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             .buttonStyle(.bordered)
-            .tint(ThemeManager.shared.colorPrimary)
+            .tint(theme.colorPrimary)
             .disabled(isPreparingCloudBackup)
-            Text("Solo il MASTER può eliminare, rigenerare ed esportare l'archivio completo. Le copie temporanee in Esporta vengono rimosse dopo 10 giorni.")
-                .font(.caption2)
-                .foregroundStyle(ThemeManager.shared.colorTextSecondary)
+            Text("Solo il MASTER può eliminare, rigenerare ed esportare l'archivio completo.")
+                .font(theme.typography.caption)
+                .foregroundStyle(theme.colorTextSecondary)
         }
-        .padding(.top, 4)
     }
 
-    private func exportSyncSummary(for doc: DocumentItem) -> String {
-        let size = ByteCountFormatter.string(fromByteCount: doc.sizeInBytes, countStyle: .file)
-        let exported = doc.isExported ? "Esportato: sì" : "Esportato: no"
-        let sync: String = {
-            if doc.isSyncedToICloud { return "Backup cloud: confermato" }
-            return "Backup cloud: locale (da esportare)"
-        }()
-        let checksum = doc.checksumSHA256.isEmpty ? "Checksum: —" : "Checksum: \(doc.checksumSHA256.prefix(12))…"
-        let fileState = doc.localFilePresent ? "File locale: presente" : "File locale: assente (rigenerabile)"
-        let gen = doc.generatedAt.formatted(date: .abbreviated, time: .shortened)
-        return "\(gen) · \(size) · \(exported) · \(sync) · \(checksum) · \(fileState)"
-    }
-
-    /// Sincronizzazione leggera all'apertura: cartelle + statistiche, senza rigenerare tutti i PDF.
+    /// Sincronizzazione leggera all'apertura: solo cartelle e statistiche (niente generazione PDF).
     private func refreshArchiveLight() {
         guard let restaurant = activeRestaurant, let currentUser else { return }
         if isRefreshingArchive { return }
-        let runFullArchive = shouldRunBackgroundFullArchive(for: restaurant.id)
         isRefreshingArchive = true
         Task { @MainActor in
             await Task.yield()
             vm.service.ensureDefaultFolders(
                 restaurantId: restaurant.id,
+                restaurantDisplayName: restaurant.name,
                 user: currentUser,
                 existingFolders: scopedFolders,
                 existingItems: scopedItems,
                 modelContext: modelContext
             )
             HACCPReportEngine.shared.refreshStats(restaurantId: restaurant.id, in: modelContext)
+            rebuildFolderMetrics()
             if let selected = vm.selectedFolderId, !scopedFolders.contains(where: { $0.id == selected }) {
                 vm.selectedFolderId = nil
             }
             isRefreshingArchive = false
 
-            if runFullArchive {
-                refreshArchiveFull(restaurant: restaurant, user: currentUser)
+            Task(priority: .utility) { @MainActor in
+                await DocumentArchivePurgeService.regenerateArchiveIfNeeded(
+                    modelContext: modelContext,
+                    restaurant: restaurant,
+                    user: currentUser
+                )
+                rebuildFolderMetrics()
             }
-        }
-    }
-
-    private func shouldRunBackgroundFullArchive(for restaurantId: UUID) -> Bool {
-        guard lastFullArchiveRestaurantId == restaurantId,
-              let last = lastFullArchiveRefreshAt else { return true }
-        return Date().timeIntervalSince(last) >= PerformanceConfig.documentsAutoArchiveInterval
-    }
-
-    private func refreshArchiveFull(restaurant: Restaurant, user: LocalUser) {
-        lastFullArchiveRestaurantId = restaurant.id
-        Task { @MainActor in
-            await HACCPReportEngine.shared.runFullArchive(
-                restaurant: restaurant,
-                user: user,
-                in: modelContext
-            )
-            HACCPReportEngine.shared.refreshStats(restaurantId: restaurant.id, in: modelContext)
-            lastFullArchiveRefreshAt = Date()
         }
     }
 
@@ -428,44 +451,15 @@ struct DocumentsView: View {
     private func folderGrid(folders: [DocumentFolder]) -> some View {
         LazyVGrid(columns: [GridItem(.adaptive(minimum: 210), spacing: 12)], spacing: 12) {
             ForEach(folders) { folder in
-                let count = countItems(includingChildrenOf: folder)
-                let latest = latestUpdate(includingChildrenOf: folder)
-                let hasNew = hasNewReports(includingChildrenOf: folder)
-                Button {
+                let metrics = folderMetricsById[folder.id] ?? .empty
+                DocumentFolderCard(
+                    folder: folder,
+                    documentCount: metrics.count,
+                    latestUpdate: metrics.latest,
+                    hasNew: metrics.hasNew
+                ) {
                     vm.selectedFolderId = folder.id
-                } label: {
-                    VStack(alignment: .leading, spacing: 10) {
-                        HStack {
-                            Image(systemName: "folder.fill")
-                                .font(.title2)
-                                .foregroundColor(.red)
-                            Spacer()
-                            if hasNew {
-                                Text("NUOVO")
-                                    .font(.caption2.bold())
-                                    .foregroundStyle(ThemeManager.shared.colorTextOnPrimary)
-                                    .padding(.horizontal, 8)
-                                    .padding(.vertical, 4).background(Color.red)
-                                    .cornerRadius(8)
-                            }
-                        }
-                        Text(folder.name)
-                            .font(.headline)
-                            .foregroundStyle(ThemeManager.shared.colorTextPrimary)
-                            .multilineTextAlignment(.leading)
-                        Text(count == 0 ? "Nessun documento" : "\(count) documenti")
-                            .font(.caption)
-                            .foregroundStyle(ThemeManager.shared.colorTextSecondary)
-                        Text("Aggiornata: \(latest?.formatted(date: .abbreviated, time: .shortened) ?? "—")")
-                            .font(.caption2)
-                            .foregroundStyle(ThemeManager.shared.colorTextSecondary)
-                    }
-                    .padding(12)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(ThemeManager.shared.colorSurface)
-                    .cornerRadius(12)
                 }
-                .buttonStyle(.plain)
             }
         }
     }
@@ -477,76 +471,29 @@ struct DocumentsView: View {
             && FileManager.default.fileExists(atPath: doc.filePath)
             && doc.fileName.lowercased().hasSuffix(".pdf")
 
-        HStack(alignment: .top, spacing: 10) {
-            Image(systemName: "doc.fill")
-                .foregroundStyle(ThemeManager.shared.colorTextSecondary)
-            VStack(alignment: .leading, spacing: 4) {
-                Text(doc.title.isEmpty ? doc.fileName : doc.title)
-                    .foregroundStyle(ThemeManager.shared.colorTextPrimary)
-                Text(doc.fileName)
-                    .font(.caption2)
-                    .foregroundStyle(ThemeManager.shared.colorTextSecondary)
-                Text("\(doc.module.label) · \(doc.type.label) · \(doc.format.label)")
-                    .font(.caption2)
-                    .foregroundStyle(ThemeManager.shared.colorTextSecondary)
-                Text(exportSyncSummary(for: doc))
-                    .font(.caption2)
-                    .foregroundStyle(ThemeManager.shared.colorTextSecondary)
-                if doc.status == .fallito {
-                    Text("Generazione fallita — il MASTER può rigenerare.")
-                        .font(.caption2)
-                        .foregroundStyle(ThemeManager.shared.colorWarning)
-                }
+        DocumentItemCard(
+            document: doc,
+            pdfExists: pdfExists,
+            canManageDocuments: canManageDocuments,
+            onOpen: {
+                guard pdfExists else { return }
+                documentPreviewItem = DocumentPreviewSheetItem(url: fileURL)
+            },
+            onShare: {
+                shareURLs = [fileURL]
+                showShareSheet = true
+            },
+            onExportCSV: { exportCSV(doc) },
+            onExportCopy: { exportTemporaryCopy(doc) },
+            onRegenerate: {
+                pendingRegenerate = doc
+                showMasterAuthRegenerate = true
+            },
+            onDelete: {
+                pendingDelete = doc
+                showMasterAuthDelete = true
             }
-            Spacer()
-            VStack(alignment: .trailing, spacing: 6) {
-                Button("Apri") {
-                    guard pdfExists else { return }
-                    documentPreviewItem = DocumentPreviewSheetItem(url: fileURL)
-                }
-                .buttonStyle(.bordered)
-                .tint(ThemeManager.shared.colorPrimary)
-                .disabled(!pdfExists)
-
-                if pdfExists {
-                    ShareLink(item: fileURL) {
-                        Text("Condividi PDF")
-                    }
-                    .buttonStyle(.bordered)
-                    .tint(ThemeManager.shared.colorPrimary)
-                }
-
-                Button("CSV") {
-                    exportCSV(doc)
-                }
-                .buttonStyle(.bordered)
-                .tint(ThemeManager.shared.colorPrimary)
-
-                Button("Esporta copia") {
-                    exportTemporaryCopy(doc)
-                }
-                .buttonStyle(.bordered)
-                .tint(ThemeManager.shared.colorPrimary)
-
-                if isMaster {
-                    Button("Rigenera") {
-                        pendingRegenerate = doc
-                        showMasterAuthRegenerate = true
-                    }
-                    .buttonStyle(.bordered)
-                    .tint(.yellow)
-
-                    Button("Elimina", role: .destructive) {
-                        pendingDelete = doc
-                        showMasterAuthDelete = true
-                    }
-                    .buttonStyle(.bordered)
-                }
-            }
-        }
-        .padding(10)
-        .background(ThemeManager.shared.colorSurface)
-        .cornerRadius(10)
+        )
     }
 
     private func exportCSV(_ doc: DocumentItem) {
@@ -678,24 +625,33 @@ struct DocumentsView: View {
     }
 
     private func periodFolderLabel(for item: DocumentItem) -> String {
-        switch item.type {
-        case .giornaliero: return "Giornalieri"
-        case .settimanale: return "Settimanali"
-        case .mensile: return "Mensili"
-        case .annuale: return "Annuali"
-        case .nonConformita: return "Non conformità"
-        default: return "Altri"
-        }
+        "Mensili"
     }
 
     private func moduleFolderLabel(for item: DocumentItem) -> String {
-        switch item.module {
-        case .ricezioneMerci: return "Ricezione merci"
-        case .tracciabilita: return "Tracciabilità"
-        case .haccpCombinato: return "HACCP combinato"
-        case .nonConformita: return "Registro non conformità"
-        default: return item.module.label
+        let group = DocumentArchiveLayout.groupFolderName(for: item.module)
+        let module = DocumentArchiveLayout.moduleFolderTitle(item.module)
+        return "\(group)/\(module)"
+    }
+
+    private func rebuildFolderMetrics() {
+        guard !scopedFolders.isEmpty else {
+            folderMetricsById = [:]
+            return
         }
+        let threshold = Calendar.current.date(byAdding: .day, value: -1, to: Date()) ?? .distantPast
+        let itemsByFolder = Dictionary(grouping: scopedItems, by: \.folderId)
+        var metrics: [UUID: FolderListMetrics] = [:]
+        for folder in scopedFolders {
+            let ids = descendantFolderIds(for: folder.id)
+            let items = ids.flatMap { itemsByFolder[$0] ?? [] }
+            metrics[folder.id] = FolderListMetrics(
+                count: items.count,
+                latest: items.map(\.generatedAt).max(),
+                hasNew: items.contains { $0.generatedAt >= threshold }
+            )
+        }
+        folderMetricsById = metrics
     }
 
     private func descendantFolderIds(for rootId: UUID) -> Set<UUID> {
@@ -711,25 +667,14 @@ struct DocumentsView: View {
         }
         return visited
     }
+}
 
-    private func countItems(includingChildrenOf folder: DocumentFolder) -> Int {
-        let ids = descendantFolderIds(for: folder.id)
-        return scopedItems.filter { ids.contains($0.folderId) }.count
-    }
+private struct FolderListMetrics {
+    let count: Int
+    let latest: Date?
+    let hasNew: Bool
 
-    private func latestUpdate(includingChildrenOf folder: DocumentFolder) -> Date? {
-        let ids = descendantFolderIds(for: folder.id)
-        return scopedItems
-            .filter { ids.contains($0.folderId) }
-            .map(\.generatedAt)
-            .max()
-    }
-
-    private func hasNewReports(includingChildrenOf folder: DocumentFolder) -> Bool {
-        let ids = descendantFolderIds(for: folder.id)
-        let threshold = Calendar.current.date(byAdding: .day, value: -1, to: Date()) ?? .distantPast
-        return scopedItems.contains { ids.contains($0.folderId) && $0.generatedAt >= threshold }
-    }
+    static let empty = FolderListMetrics(count: 0, latest: nil, hasNew: false)
 }
 
 private struct DocumentPreviewSheetItem: Identifiable {

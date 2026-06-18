@@ -17,14 +17,9 @@ struct ProductionLabelsView: View {
     @StateObject private var vm = ProductionLabelsViewModel()
     @StateObject private var dataStore = ProductionLabelsDataStore()
 
-    @State private var showCreateManual = false
-    @State private var showSourcePicker = false
-    @State private var sourceDraft: ProductionLabelDraft?
     @State private var selectedLabelId: UUID?
     @ObservedObject private var printQueue = ProductionLabelPrintQueue.shared
     @ObservedObject private var printerManager = ClabelPrinterManager.shared
-    @State private var shareURL: URL?
-    @State private var showShare = false
     @State private var showScanner = false
     @State private var scannedLabelData: ProductionLabelScanData?
     @State private var errorMessage: String?
@@ -104,54 +99,6 @@ struct ProductionLabelsView: View {
                 )
             }
         }
-        .sheet(isPresented: $showCreateManual) {
-            if let rid = appState.activeRestaurantId, let user = currentUser {
-                ProductionLabelEditorSheet(
-                    mode: .create(ProductionLabelDraft()),
-                    restaurantId: rid,
-                    user: user,
-                    onSaved: {
-                        showCreateManual = false
-                        reloadData()
-                    },
-                    onCancel: { showCreateManual = false }
-                )
-            }
-        }
-        .sheet(isPresented: Binding(
-            get: { sourceDraft != nil },
-            set: { if !$0 { sourceDraft = nil } }
-        )) {
-            if let draft = sourceDraft,
-               let rid = appState.activeRestaurantId,
-               let user = currentUser {
-                ProductionLabelEditorSheet(
-                    mode: .create(draft),
-                    restaurantId: rid,
-                    user: user,
-                    onSaved: {
-                        sourceDraft = nil
-                        reloadData()
-                    },
-                    onCancel: { sourceDraft = nil }
-                )
-            }
-        }
-        .sheet(isPresented: $showSourcePicker) {
-            ProductionLabelSourcePickerSheet(
-                dataStore: dataStore,
-                onSelect: { draft in
-                    showSourcePicker = false
-                    sourceDraft = draft
-                },
-                onCancel: { showSourcePicker = false }
-            )
-        }
-        .sheet(isPresented: $showShare, onDismiss: { shareURL = nil }) {
-            if let shareURL {
-                ProductionLabelShareSheet(url: shareURL)
-            }
-        }
         .alert("Etichette", isPresented: Binding(
             get: { errorMessage != nil },
             set: { if !$0 { errorMessage = nil } }
@@ -165,25 +112,19 @@ struct ProductionLabelsView: View {
     private var mainContent: some View {
         ScrollView {
             LazyVStack(spacing: theme.spacing.sectionSpacing) {
+                ModuleScreenHeader(
+                    title: "Etichette di produzione",
+                    subtitle: "Consulta, stampa e archivia etichette create da Tracciabilità",
+                    systemImage: "tag.fill",
+                    help: ModuleHelpLibrary.sidebar(.productionLabels)
+                )
+
                 statsRow
 
-                DashboardCardView(title: "Azioni rapide", subtitle: "Crea etichette HACCP collegate ai moduli") {
-                    VStack(spacing: 12) {
-                        PrimaryButton(title: "Nuova etichetta manuale", icon: "plus.circle.fill") {
-                            showCreateManual = true
-                        }
-                        SecondaryButton(title: "Da tracciabilità / ricezione / abbattimento", icon: "link") {
-                            showSourcePicker = true
-                        }
-                        if ProductionLabelScannerSupport.isAvailable {
-                            SecondaryButton(title: "Scansiona QR etichetta", icon: "qrcode.viewfinder") {
-                                showScanner = true
-                            }
-                        }
-                        if !filteredLabels.isEmpty {
-                            SecondaryButton(title: "Esporta PDF archivio filtrato", icon: "doc.richtext") {
-                                exportFilteredPDF()
-                            }
+                if ProductionLabelScannerSupport.isAvailable {
+                    DashboardCardView(title: "Scansione", subtitle: "Leggi un QR etichetta già stampata") {
+                        SecondaryButton(title: "Scansiona QR etichetta", icon: "qrcode.viewfinder") {
+                            showScanner = true
                         }
                     }
                 }
@@ -221,10 +162,10 @@ struct ProductionLabelsView: View {
                     if filteredLabels.isEmpty {
                         DashboardEmptyStateView(state: .init(
                             title: "Nessuna etichetta",
-                            message: "Crea la prima etichetta HACCP per identificare prodotti, lotti e scadenze in cucina.",
-                            actionTitle: "Nuova etichetta"
+                            message: "Le etichette si creano da Tracciabilità aprendo una scheda prodotto e scegliendo Crea etichetta.",
+                            actionTitle: "Vai a Tracciabilità"
                         )) {
-                            showCreateManual = true
+                            appState.pendingSidebarNavigation = .traceability
                         }
                     } else {
                         LazyVStack(spacing: 10) {
@@ -299,16 +240,6 @@ struct ProductionLabelsView: View {
         )
     }
 
-    private func exportFilteredPDF() {
-        guard let name = activeRestaurant?.name else { return }
-        do {
-            shareURL = try ProductionLabelPDFExporter.export(labels: filteredLabels, restaurantName: name)
-            showShare = true
-        } catch {
-            errorMessage = error.localizedDescription
-        }
-    }
-
     private func handleScannedPayload(_ payload: String) {
         guard let scanned = ProductionLabelQRService.parseScanned(payload) else {
             errorMessage = "QR non riconosciuto. Usa un’etichetta HACCP Manager."
@@ -339,14 +270,4 @@ struct ProductionLabelsView: View {
 
         errorMessage = "QR senza dati completi. Ristampa l’etichetta per generare un codice aggiornato."
     }
-}
-
-private struct ProductionLabelShareSheet: UIViewControllerRepresentable {
-    let url: URL
-
-    func makeUIViewController(context: Context) -> UIActivityViewController {
-        UIActivityViewController(activityItems: [url], applicationActivities: nil)
-    }
-
-    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
 }

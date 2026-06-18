@@ -43,6 +43,7 @@ struct ActiveKitchenTimersOverlay: View {
             showCancelConfirm: $showDefrostCancelConfirm
         )
         .blastTimerSheets(
+            appState: appState,
             modelContext: modelContext,
             cancelTargetId: $blastCancelTargetId,
             showCancelConfirm: $showBlastCancelConfirm
@@ -63,71 +64,32 @@ struct ActiveKitchenTimersOverlay: View {
     }
 
     private var defrostBubble: some View {
-        KitchenTimerBubbleButton(
-            icon: "drop.fill",
-            iconColor: Color(red: 0.4, green: 0.75, blue: 1.0),
-            title: defrostManager.collapsedTitle,
-            subtitle: defrostManager.collapsedSubtitle,
-            gradientColors: [
-                Color(red: 0.12, green: 0.45, blue: 0.72),
-                Color(red: 0.08, green: 0.28, blue: 0.55)
-            ],
-            strokeColor: Color(red: 0.5, green: 0.85, blue: 1.0).opacity(0.5),
-            showsWarning: false
-        ) {
+        Button {
             defrostManager.showActiveListSheet = true
-        }
-    }
-
-    private var blastBubble: some View {
-        KitchenTimerBubbleButton(
-            icon: "snowflake",
-            iconColor: Color.cyan.opacity(0.95),
-            title: blastManager.collapsedTitle,
-            subtitle: blastManager.collapsedSubtitle,
-            gradientColors: [
-                theme.colorPrimary.opacity(0.95),
-                Color(red: 0.15, green: 0.35, blue: 0.75)
-            ],
-            strokeColor: Color.cyan.opacity(0.45),
-            showsWarning: blastManager.showsOverRecommendedWarning
-        ) {
-            blastManager.showActiveListSheet = true
-        }
-    }
-}
-
-// MARK: - Bubble componente
-
-private struct KitchenTimerBubbleButton: View {
-    @Environment(\.theme) private var theme
-
-    let icon: String
-    let iconColor: Color
-    let title: String
-    let subtitle: String
-    let gradientColors: [Color]
-    let strokeColor: Color
-    let showsWarning: Bool
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
+        } label: {
             HStack(spacing: 10) {
-                Image(systemName: icon)
+                Image(systemName: "drop.fill")
                     .font(.title3.weight(.semibold))
-                    .foregroundStyle(iconColor)
+                    .foregroundStyle(Color(red: 0.4, green: 0.75, blue: 1.0))
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(title)
-                        .font(theme.typography.headline)
-                        .foregroundStyle(theme.colorTextOnPrimary)
-                    Text(subtitle)
-                        .font(theme.typography.caption)
-                        .foregroundStyle(theme.colorTextOnPrimary.opacity(0.85))
-                }
-                if showsWarning {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .foregroundStyle(theme.colorWarning)
+                    if defrostManager.activeSnapshots.count == 1,
+                       let primary = defrostManager.primarySnapshot {
+                        Text("Decongelamento")
+                            .font(theme.typography.headline)
+                            .foregroundStyle(theme.colorTextOnPrimary)
+                        LiveProcessDurationText(
+                            since: primary.startAt,
+                            font: theme.typography.caption.monospacedDigit(),
+                            color: theme.colorTextOnPrimary.opacity(0.85)
+                        )
+                    } else {
+                        Text(defrostManager.collapsedTitle)
+                            .font(theme.typography.headline)
+                            .foregroundStyle(theme.colorTextOnPrimary)
+                        Text(defrostManager.collapsedSubtitle)
+                            .font(theme.typography.caption)
+                            .foregroundStyle(theme.colorTextOnPrimary.opacity(0.85))
+                    }
                 }
             }
             .padding(.horizontal, 16)
@@ -136,7 +98,10 @@ private struct KitchenTimerBubbleButton: View {
                 Capsule(style: .continuous)
                     .fill(
                         LinearGradient(
-                            colors: gradientColors,
+                            colors: [
+                                Color(red: 0.12, green: 0.45, blue: 0.72),
+                                Color(red: 0.08, green: 0.28, blue: 0.55)
+                            ],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
                         )
@@ -144,9 +109,68 @@ private struct KitchenTimerBubbleButton: View {
             )
             .overlay(
                 Capsule(style: .continuous)
-                    .stroke(strokeColor, lineWidth: 1)
+                    .stroke(Color(red: 0.5, green: 0.85, blue: 1.0).opacity(0.5), lineWidth: 1)
             )
             .shadow(color: Color.black.opacity(0.35), radius: 12, y: 6)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var blastBubble: some View {
+        Button {
+            blastManager.showActiveListSheet = true
+        } label: {
+            TimelineView(.periodic(from: .now, by: 1.0)) { timeline in
+                HStack(spacing: 10) {
+                    Image(systemName: "snowflake")
+                        .font(.title3.weight(.semibold))
+                        .foregroundStyle(Color.cyan.opacity(0.95))
+                    VStack(alignment: .leading, spacing: 2) {
+                        if blastManager.activeSnapshots.count == 1,
+                           let primary = blastManager.primarySnapshot {
+                            Text("Abbattimento")
+                                .font(theme.typography.headline)
+                                .foregroundStyle(theme.colorTextOnPrimary)
+                            LiveProcessDurationText(
+                                since: primary.startedAt,
+                                font: theme.typography.caption.monospacedDigit(),
+                                color: theme.colorTextOnPrimary.opacity(0.85)
+                            )
+                        } else {
+                            Text(blastManager.collapsedTitle)
+                                .font(theme.typography.headline)
+                                .foregroundStyle(theme.colorTextOnPrimary)
+                            Text(blastManager.collapsedSubtitle)
+                                .font(theme.typography.caption)
+                                .foregroundStyle(theme.colorTextOnPrimary.opacity(0.85))
+                        }
+                    }
+                    if blastManager.activeSnapshots.contains(where: { $0.isOverRecommended(at: timeline.date) }) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundStyle(theme.colorWarning)
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+                .background(
+                    Capsule(style: .continuous)
+                        .fill(
+                            LinearGradient(
+                                colors: [
+                                    theme.colorPrimary.opacity(0.95),
+                                    Color(red: 0.15, green: 0.35, blue: 0.75)
+                                ],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                )
+                .overlay(
+                    Capsule(style: .continuous)
+                        .stroke(Color.cyan.opacity(0.45), lineWidth: 1)
+                )
+                .shadow(color: Color.black.opacity(0.35), radius: 12, y: 6)
+            }
         }
         .buttonStyle(.plain)
     }
@@ -172,11 +196,13 @@ private extension View {
     }
 
     func blastTimerSheets(
+        appState: AppState,
         modelContext: ModelContext,
         cancelTargetId: Binding<UUID?>,
         showCancelConfirm: Binding<Bool>
     ) -> some View {
         modifier(BlastTimerSheetsModifier(
+            appState: appState,
             modelContext: modelContext,
             cancelTargetId: cancelTargetId,
             showCancelConfirm: showCancelConfirm
@@ -215,7 +241,8 @@ private struct DefrostTimerSheetsModifier: ViewModifier {
             ) {
                 Button("Annulla decongelamento", role: .destructive) {
                     guard let id = cancelTargetId,
-                          let record = defrostManager.fetchRecord(id: id, context: modelContext) else { return }
+                          let rid = appState.activeRestaurantId,
+                          let record = defrostManager.fetchRecord(id: id, restaurantId: rid, context: modelContext) else { return }
                     defrostManager.cancel(record: record, context: modelContext)
                     defrostManager.showActiveListSheet = false
                     cancelTargetId = nil
@@ -238,10 +265,10 @@ private struct DefrostTimerSheetsModifier: ViewModifier {
                 record: record,
                 user: user,
                 criticalities: defrostManager.fetchCriticalities(
+                    recordId: record.id,
                     restaurantId: record.restaurantId,
                     context: modelContext
                 ),
-                elapsedNow: defrostManager.now,
                 onCompleted: {
                     defrostManager.recordIdPendingComplete = nil
                     defrostManager.refresh(
@@ -268,8 +295,9 @@ private struct DefrostTimerSheetsModifier: ViewModifier {
     }
 
     private var defrostCompleteRecord: DefrostRecord? {
-        guard let id = defrostManager.recordIdPendingComplete else { return nil }
-        return defrostManager.fetchRecord(id: id, context: modelContext)
+        guard let id = defrostManager.recordIdPendingComplete,
+              let rid = appState.activeRestaurantId else { return nil }
+        return defrostManager.fetchRecord(id: id, restaurantId: rid, context: modelContext)
     }
 
     private var defrostErrorPresented: Binding<Bool> {
@@ -283,6 +311,7 @@ private struct DefrostTimerSheetsModifier: ViewModifier {
 private struct BlastTimerSheetsModifier: ViewModifier {
     @EnvironmentObject var blastManager: ActiveBlastChillingManager
 
+    let appState: AppState
     let modelContext: ModelContext
     @Binding var cancelTargetId: UUID?
     @Binding var showCancelConfirm: Bool
@@ -309,7 +338,8 @@ private struct BlastTimerSheetsModifier: ViewModifier {
             ) {
                 Button("Annulla abbattimento", role: .destructive) {
                     guard let id = cancelTargetId,
-                          let record = blastManager.fetchRecord(id: id, context: modelContext) else { return }
+                          let rid = appState.activeRestaurantId,
+                          let record = blastManager.fetchRecord(id: id, restaurantId: rid, context: modelContext) else { return }
                     blastManager.cancel(record: record, context: modelContext)
                     blastManager.showActiveListSheet = false
                     cancelTargetId = nil
@@ -363,8 +393,9 @@ private struct BlastTimerSheetsModifier: ViewModifier {
     }
 
     private var blastCompleteRecord: BlastChillingRecord? {
-        guard let id = blastManager.recordIdPendingComplete else { return nil }
-        return blastManager.fetchRecord(id: id, context: modelContext)
+        guard let id = blastManager.recordIdPendingComplete,
+              let rid = appState.activeRestaurantId else { return nil }
+        return blastManager.fetchRecord(id: id, restaurantId: rid, context: modelContext)
     }
 
     private var blastErrorPresented: Binding<Bool> {

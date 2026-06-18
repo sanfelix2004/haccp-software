@@ -47,4 +47,11 @@ enum PerformanceConfig {
 
     /// Durata consigliata abbattimento (minuti) prima del warning overlay.
     static let blastChillingRecommendedMinutes: Int = 90
+
+    /// Fine prevista decongelamento per metodo (ore) — base HACCP cucina professionale.
+    static let defrostFridgeRecommendedHours: Int = 24
+    static let defrostControlledTempRecommendedHours: Int = 12
+    static let defrostColdWaterRecommendedHours: Int = 4
+    static let defrostMicrowaveRecommendedHours: Int = 2
+    static let defrostOtherRecommendedHours: Int = 24
 }

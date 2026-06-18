@@ -17,7 +17,7 @@ struct BlastChillingRecordSheet: View {
         if let existingRecord {
             return validationService.validateCompletion(
                 startedAt: existingRecord.startedAt,
-                endedAt: vm.endedAt,
+                endedAt: Date(),
                 finalTemperature: vm.finalTemperature,
                 targetTemperature: existingRecord.targetTemperature,
                 notes: vm.notes,
@@ -25,7 +25,7 @@ struct BlastChillingRecordSheet: View {
             )
         }
         return validationService.validateStart(
-            startedAt: vm.startedAt,
+            startedAt: Date(),
             initialTemperature: vm.initialTemperature
         )
     }
@@ -50,11 +50,33 @@ struct BlastChillingRecordSheet: View {
                                 Text(existingRecord.startedAt.formatted(date: .abbreviated, time: .shortened))
                                     .foregroundStyle(ThemeManager.shared.colorTextPrimary)
                             }
-                            DatePicker("Fine", selection: $vm.endedAt)
-                                .foregroundStyle(ThemeManager.shared.colorTextPrimary)
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Durata")
+                                    .font(.caption)
+                                    .foregroundStyle(ThemeManager.shared.colorTextSecondary)
+                                LiveProcessDurationText(
+                                    since: existingRecord.startedAt,
+                                    font: .subheadline.weight(.semibold).monospacedDigit(),
+                                    color: ThemeManager.shared.colorTextPrimary
+                                )
+                            }
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Fine")
+                                    .font(.caption)
+                                    .foregroundStyle(ThemeManager.shared.colorTextSecondary)
+                                Text("Alla conferma")
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundStyle(ThemeManager.shared.colorTextPrimary)
+                            }
                         } else {
-                            DatePicker("Inizio", selection: $vm.startedAt)
-                                .foregroundStyle(ThemeManager.shared.colorTextPrimary)
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Inizio")
+                                    .font(.caption)
+                                    .foregroundStyle(ThemeManager.shared.colorTextSecondary)
+                                Text("Il timer parte alla conferma")
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundStyle(ThemeManager.shared.colorTextPrimary)
+                            }
                         }
                     }
 
@@ -128,10 +150,10 @@ struct BlastChillingRecordSheet: View {
                     Button(isCompletion ? "Termina" : "Inizia") {
                         if let existingRecord {
                             guard let final = vm.finalTemperature else { return }
-                            onComplete(existingRecord, vm.endedAt, final, vm.notes, vm.correctiveAction)
+                            onComplete(existingRecord, Date(), final, vm.notes, vm.correctiveAction)
                         } else {
                             guard let initial = vm.initialTemperature else { return }
-                            onStart(vm.startedAt, initial, vm.targetTemperature)
+                            onStart(Date(), initial, vm.targetTemperature)
                         }
                     }
                     .disabled(!validation.canSubmit)

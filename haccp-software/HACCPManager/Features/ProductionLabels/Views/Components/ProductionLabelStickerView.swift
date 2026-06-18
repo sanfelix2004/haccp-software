@@ -12,6 +12,7 @@ struct ProductionLabelStickerView: View {
     @Environment(\.theme) private var theme
     @Bindable private var settingsStorage = SettingsStorageService.shared
     @State private var qrImage: UIImage?
+    @State private var qrLoadFailed = false
 
     private var printerSettings: LabelPrinterSettings {
         settingsStorage.printer
@@ -85,6 +86,10 @@ struct ProductionLabelStickerView: View {
                                 .interpolation(.none)
                                 .resizable()
                                 .scaledToFit()
+                        } else if qrLoadFailed {
+                            Image(systemName: "qrcode")
+                                .font(.title2)
+                                .foregroundStyle(theme.colorTextSecondary)
                         } else {
                             ProgressView()
                         }
@@ -155,10 +160,11 @@ struct ProductionLabelStickerView: View {
     private func loadQR() async {
         guard printerSettings.showQRCode else {
             qrImage = nil
+            qrLoadFailed = false
             return
         }
 
-        let payload = LabelQRCodeLayout.payload(for: label)
+        let payload = resolvedPayload
         let cell = LabelQRCodeLayout.clampedCellSize(
             printerSettings.qrCellSize,
             payload: payload,
@@ -173,5 +179,11 @@ struct ProductionLabelStickerView: View {
         }.value
 
         qrImage = image
+        qrLoadFailed = image == nil
+    }
+
+    private var resolvedPayload: String {
+        if !label.qrPayload.isEmpty { return label.qrPayload }
+        return LabelQRCodeLayout.payload(for: label)
     }
 }

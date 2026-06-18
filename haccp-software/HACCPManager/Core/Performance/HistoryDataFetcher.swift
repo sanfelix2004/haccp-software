@@ -19,7 +19,6 @@ struct HistoryFetchedData {
     var goodsRecords: [GoodsReceipt] = []
     var traceabilityRecords: [TraceabilityRecord] = []
     var traceabilityLogs: [TraceabilityLog] = []
-    var scheduledTasks: [ScheduledTask] = []
     var oilRecords: [OilControlRecord] = []
 }
 
@@ -47,7 +46,6 @@ enum HistoryDataFetcher {
             recordIds: Set(data.traceabilityRecords.map(\.id)),
             limit: limit
         )
-        data.scheduledTasks = fetchLimited(context, restaurantId: rid, limit: limit, sort: SortDescriptor(\ScheduledTask.createdAt, order: .reverse))
         data.oilRecords = fetchLimited(context, restaurantId: rid, limit: limit, sort: SortDescriptor(\OilControlRecord.checkedAt, order: .reverse))
         return data
     }

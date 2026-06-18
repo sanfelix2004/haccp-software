@@ -116,6 +116,11 @@ final class TraceabilityRecord {
         get { ProductStatus(rawValue: productStatusRaw) ?? .available }
         set { productStatusRaw = newValue.rawValue }
     }
+
+    /// Lotto scaduto ancora da chiudere con ritiro/scarto operatore.
+    var canBeWithdrawn: Bool {
+        ProductExpiryEvaluator.canWithdraw(self)
+    }
 }
 
 @Model

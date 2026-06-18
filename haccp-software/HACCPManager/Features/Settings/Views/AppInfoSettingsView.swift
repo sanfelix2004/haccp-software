@@ -25,7 +25,11 @@ struct AppInfoSettingsView: View {
 
             VStack(alignment: .leading, spacing: 20) {
                 ForEach(SettingsLegalDocument.allCases) { document in
-                    InfoLinkRow(title: document.title, icon: document.icon) {
+                    InfoLinkRow(
+                        title: document.title,
+                        subtitle: document.subtitle,
+                        icon: document.icon
+                    ) {
                         presentedDocument = document
                     }
                     if document != SettingsLegalDocument.allCases.last {
@@ -38,15 +42,15 @@ struct AppInfoSettingsView: View {
             .cornerRadius(16)
 
             VStack(alignment: .leading, spacing: 12) {
-                Text("FILOSOFIA")
+                Text("DOCUMENTAZIONE")
                     .font(.caption2)
                     .fontWeight(.black)
                     .foregroundColor(.red)
 
-                Text("Dati Locali & Privacy")
+                Text("Conformità e privacy")
                     .font(.headline)
 
-                Text("HACCP Manager salva tutti i dati critici esclusivamente nella memoria sicura del tuo iPad. Non inviamo log o temperature a server esterni per garantire la massima riservatezza del tuo locale.")
+                Text("Documenti aggiornati al \(LegalConstants.lastUpdated). L'App tratta i dati HACCP principalmente sul dispositivo. Consulta Informativa Privacy, Cookie e Tecnologie e Note Legali per gli obblighi GDPR e HACCP applicabili al tuo locale.")
                     .font(.caption)
                     .foregroundStyle(ThemeManager.shared.colorTextSecondary)
                     .lineSpacing(4)
@@ -63,6 +67,7 @@ struct AppInfoSettingsView: View {
 
 struct InfoLinkRow: View {
     let title: String
+    var subtitle: String? = nil
     let icon: String
     var action: () -> Void
 
@@ -72,8 +77,15 @@ struct InfoLinkRow: View {
                 Image(systemName: icon)
                     .foregroundStyle(ThemeManager.shared.colorTextSecondary)
                     .frame(width: 24)
-                Text(title)
-                    .foregroundStyle(ThemeManager.shared.colorTextPrimary)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .foregroundStyle(ThemeManager.shared.colorTextPrimary)
+                    if let subtitle {
+                        Text(subtitle)
+                            .font(.caption)
+                            .foregroundStyle(ThemeManager.shared.colorTextSecondary)
+                    }
+                }
                 Spacer()
                 Image(systemName: "chevron.right")
                     .font(.caption.weight(.semibold))
@@ -91,11 +103,18 @@ private struct SettingsLegalDocumentSheet: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                Text(document.body)
-                    .font(.body)
-                    .foregroundStyle(ThemeManager.shared.colorTextPrimary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding()
+                VStack(alignment: .leading, spacing: 16) {
+                    Text(document.subtitle)
+                        .font(.subheadline)
+                        .foregroundStyle(ThemeManager.shared.colorTextSecondary)
+
+                    Text(.init(document.body))
+                        .font(.body)
+                        .foregroundStyle(ThemeManager.shared.colorTextPrimary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .textSelection(.enabled)
+                }
+                .padding()
             }
             .background(ThemeManager.shared.colorBackground)
             .navigationTitle(document.title)

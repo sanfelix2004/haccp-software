@@ -46,13 +46,18 @@ enum DocumentModule: String, Codable, CaseIterable {
     case decongelamento = "DECONGELAMENTO"
     case controlloOlio = "CONTROLLO_OLIO"
     case etichetteProduzione = "ETICHETTE_PRODUZIONE"
+    case checklist = "CHECKLIST"
+    case combinatoIngressoTracciabilita = "COMBINATO_INGRESSO_TRACCIABILITA"
+    case combinatoCatenaFreddo = "COMBINATO_CATENA_FREDDO"
+    case combinatoIgieneControlli = "COMBINATO_IGIENE_CONTROLLI"
+    case combinatoProduzione = "COMBINATO_PRODUZIONE"
 
     var label: String {
         switch self {
         case .ricezioneMerci: return "Ricezione merci"
         case .tracciabilita: return "Tracciabilità"
         case .haccpCombinato: return "HACCP combinato"
-        case .nonConformita: return "Non conformità"
+        case .nonConformita: return "Registro non conformità"
         case .frigoriferi: return "Frigoriferi"
         case .controlloPulizia: return "Controllo pulizia"
         case .abbattimento: return "Abbattimento"
@@ -61,6 +66,24 @@ enum DocumentModule: String, Codable, CaseIterable {
         case .decongelamento: return "Decongelamento"
         case .controlloOlio: return "Controllo olio"
         case .etichetteProduzione: return "Etichette di produzione"
+        case .checklist: return "Checklist"
+        case .combinatoIngressoTracciabilita: return "Ingresso e tracciabilità"
+        case .combinatoCatenaFreddo: return "Catena del freddo"
+        case .combinatoIgieneControlli: return "Igiene e controlli"
+        case .combinatoProduzione: return "Produzione ed etichettatura"
+        }
+    }
+
+    var isCombinedArchive: Bool {
+        switch self {
+        case .haccpCombinato,
+             .combinatoIngressoTracciabilita,
+             .combinatoCatenaFreddo,
+             .combinatoIgieneControlli,
+             .combinatoProduzione:
+            return true
+        default:
+            return false
         }
     }
 }

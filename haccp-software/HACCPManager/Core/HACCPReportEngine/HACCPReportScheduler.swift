@@ -6,8 +6,7 @@
 //
 //  Su iOS l'app non può girare in background a orari arbitrari (no NSCron, no daemon).
 //  Lo scheduler usa quindi una strategia *catch-up*: ogni volta che l'app diventa attiva,
-//  verifica quali "frontiere temporali" sono state attraversate (fine giornata 23:59,
-//  domenica 23:59, fine mese, 31 dicembre) e lancia l'engine per generare i report mancanti.
+//  verifica se è stato attraversato un cambio mese (pacchetto report mensili).
 //
 //  La generazione vera resta idempotente perché `DocumentGenerationService` riusa
 //  `GenerationKey` (type+module+periodStart): nessuna duplicazione.
@@ -84,54 +83,24 @@ final class HACCPReportScheduler: ObservableObject {
     // MARK: - Boundaries
 
     enum PeriodBoundary: String, Codable {
-        case daily, weekly, monthly, yearly
+        case monthly
 
-        var label: String {
-            switch self {
-            case .daily: return "Giornaliero"
-            case .weekly: return "Settimanale"
-            case .monthly: return "Mensile"
-            case .yearly: return "Annuale"
-            }
-        }
+        var label: String { "Mensile" }
     }
 
-    /// Calcola quali frontiere temporali sono state attraversate fra `from` e `to`.
-    /// Esempio: se `from` = 2026-05-02 18:00 e `to` = 2026-05-03 08:00, ritorna `[.daily]`.
-    /// Se la finestra include un cambio mese o anno, restituisce anche `.monthly` / `.yearly`.
+    /// Calcola se fra `from` e `to` è stato attraversato un cambio mese.
     func boundariesCrossed(from: Date, to: Date) -> [PeriodBoundary] {
         guard from < to else { return [] }
         var calendar = Calendar(identifier: .gregorian)
         calendar.locale = Locale(identifier: "it_IT")
         calendar.timeZone = .current
 
-        var crossings: [PeriodBoundary] = []
-
-        // Daily: cambia il `startOfDay`.
-        if calendar.startOfDay(for: from) < calendar.startOfDay(for: to) {
-            crossings.append(.daily)
-        }
-
-        // Weekly: cambia il week-of-year (assumendo settimana standard ISO).
-        if let wFrom = calendar.dateInterval(of: .weekOfYear, for: from)?.start,
-           let wTo = calendar.dateInterval(of: .weekOfYear, for: to)?.start,
-           wFrom < wTo {
-            crossings.append(.weekly)
-        }
-
-        // Monthly: cambia anno o mese.
         let mFrom = calendar.dateComponents([.year, .month], from: from)
         let mTo = calendar.dateComponents([.year, .month], from: to)
         if (mFrom.year, mFrom.month) != (mTo.year, mTo.month) {
-            crossings.append(.monthly)
+            return [.monthly]
         }
-
-        // Yearly: cambia anno.
-        if calendar.component(.year, from: from) != calendar.component(.year, from: to) {
-            crossings.append(.yearly)
-        }
-
-        return crossings
+        return []
     }
 
     // MARK: - Diagnostics

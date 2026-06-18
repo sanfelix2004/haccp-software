@@ -15,7 +15,6 @@ struct HistoryService {
         goodsRecords: [GoodsReceipt],
         traceabilityRecords: [TraceabilityRecord],
         traceabilityLogs: [TraceabilityLog],
-        scheduledTasks: [ScheduledTask],
         oilRecords: [OilControlRecord]
     ) -> [HistoryEntry] {
         let temperature = TemperatureHistoryProvider().entries(records: temperatureRecords, legacyRecords: fridgeRecords, restaurantId: restaurantId)
@@ -138,32 +137,9 @@ struct HistoryService {
         let traceability = TraceabilityHistoryProvider().entries(records: traceabilityRecords, logs: traceabilityLogs, restaurantId: restaurantId)
         let expiry = ExpiryHistoryProvider().entries(traceabilityRecords: traceabilityRecords, restaurantId: restaurantId)
 
-        let scheduling = scheduledTasks
-            .filter { $0.restaurantId == restaurantId }
-            .map {
-                HistoryEntry(
-                    id: "schedule-\($0.id)",
-                    module: .scheduling,
-                    title: $0.title,
-                    category: $0.isCompleted ? "Completata" : "Da svolgere",
-                    status: $0.isCompleted ? "Completata" : "Da svolgere",
-                    operatorName: $0.createdByNameSnapshot,
-                    date: $0.dueAt ?? $0.createdAt,
-                    details: [
-                        .init(label: "Attività", value: $0.title),
-                        .init(label: "Descrizione", value: $0.taskDescription),
-                        .init(label: "Frequenza", value: $0.frequency.rawValue),
-                        .init(label: "Scadenza", value: $0.dueAt?.formatted(date: .abbreviated, time: .shortened) ?? "—"),
-                        .init(label: "Stato", value: $0.isCompleted ? "Completata" : "Da svolgere"),
-                        .init(label: "Note", value: $0.notes ?? "—")
-                    ],
-                    hasCriticality: !$0.isCompleted && (($0.dueAt ?? .distantFuture) < Date())
-                )
-            }
-
         let oil = OilControlHistoryProvider().entries(from: oilRecords, restaurantId: restaurantId)
 
-        return (temperature + checklist + checklistItems + checklistAudit + cleaning + defrost + blast + labels + goods + traceability + expiry + scheduling + oil)
+        return (temperature + checklist + checklistItems + checklistAudit + cleaning + defrost + blast + labels + goods + traceability + expiry + oil)
             .sorted(by: { $0.date > $1.date })
     }
 }

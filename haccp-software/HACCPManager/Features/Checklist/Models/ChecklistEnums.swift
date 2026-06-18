@@ -14,6 +14,7 @@ enum ChecklistCategory: String, Codable, CaseIterable {
     case waste = "WASTE"
     case equipment = "EQUIPMENT"
     case custom = "CUSTOM"
+    case quickTask = "QUICK_TASK"
 
     var label: String {
         switch self {
@@ -29,6 +30,7 @@ enum ChecklistCategory: String, Codable, CaseIterable {
         case .waste: return "Rifiuti"
         case .equipment: return "Attrezzature"
         case .custom: return "Personalizzata"
+        case .quickTask: return "Attività rapida"
         }
     }
 }

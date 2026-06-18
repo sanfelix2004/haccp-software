@@ -18,6 +18,7 @@ struct GoodsReceivingView: View {
     @StateObject private var vm = GoodsReceivingViewModel()
     @StateObject private var controlVM = GoodsReceiptControlViewModel()
     @State private var showAddSupplier = false
+    @State private var masterAuth = MasterAuthCoordinator()
     @State private var showEditSupplier = false
     @State private var newSupplierName = ""
     @State private var editRecord: GoodsReceipt?
@@ -39,9 +40,6 @@ struct GoodsReceivingView: View {
     @State private var pendingSaveRequirement: GoodsReceiptRequirement?
     @State private var showMasterAuthDeleteReceipt = false
     @State private var receiptPendingDeletion: GoodsReceipt?
-    @State private var labelDraft: ProductionLabelDraft?
-
-    private let labelService = ProductionLabelsService()
 
     private var scopedRecords: [GoodsReceipt] {
         guard let rid = appState.activeRestaurantId else { return [] }
@@ -67,7 +65,10 @@ struct GoodsReceivingView: View {
     private var currentUser: LocalUser? {
         users.first(where: { $0.id == appState.currentUserId })
     }
-    private var isMaster: Bool { currentUser?.role == .master }
+    private var permissions: UserPermissions { currentUser.permissions }
+    private var canManageSuppliers: Bool { permissions.can(.manageSuppliers) }
+    private var canDeleteRecords: Bool { permissions.can(.deleteTraceabilityRecords) }
+    private var canExecute: Bool { permissions.can(.executeRecords) }
     private var selectedRequirement: GoodsReceiptRequirement? {
         guard let product = vm.selectedProduct else { return nil }
         return vm.service.requirementService.makeRequirement(for: product)
@@ -86,17 +87,32 @@ struct GoodsReceivingView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 14) {
-                DashboardCardView(title: "Ricezione merci") {
+                ModuleScreenHeader(
+                    title: "Ricezione merci",
+                    subtitle: "Registra ingresso prodotti, temperature e lotti per la tracciabilità",
+                    systemImage: "shippingbox.fill",
+                    help: ModuleHelpLibrary.sidebar(.goodsReceiving)
+                )
+
+                SecondaryButton(title: "Gestisci alimenti in ingresso", icon: "tray.full.fill") {
+                    appState.pendingSidebarNavigation = .incomingFoodCatalog
+                }
+
+                DashboardCardView(title: "Nuova ricezione", subtitle: "Fornitore, prodotto e controlli", help: ModuleHelpLibrary.sidebar(.goodsReceiving)) {
                     VStack(spacing: 14) {
                         SupplierSelectionView(
                             suppliers: scopedSuppliers,
                             selectedSupplierId: vm.selectedSupplier?.id,
                             canAddSupplier: appState.activeRestaurantId != nil,
-                            canEditSupplier: isMaster,
+                            canEditSupplier: canManageSuppliers,
                             onSelect: { vm.selectedSupplier = $0 },
-                            onAdd: { showAddSupplier = true },
+                            onAdd: {
+                                masterAuth.request(permission: .manageSuppliers, permissions: permissions) {
+                                    showAddSupplier = true
+                                }
+                            },
                             onEdit: {
-                                guard isMaster else { return }
+                                guard canManageSuppliers else { return }
                                 guard let selected = vm.selectedSupplier else { return }
                                 newSupplierName = selected.name
                                 showEditSupplier = true
@@ -119,7 +135,9 @@ struct GoodsReceivingView: View {
                         }
                         HStack(spacing: 10) {
                             Button {
-                                showAddSupplier = true
+                                masterAuth.request(permission: .manageSuppliers, permissions: permissions) {
+                                    showAddSupplier = true
+                                }
                             } label: {
                                 Label("Aggiungi fornitore", systemImage: "plus")
                             }
@@ -246,9 +264,6 @@ struct GoodsReceivingView: View {
                                     }
 
                                     HStack {
-                                        CreateProductionLabelLink {
-                                            labelDraft = labelService.draft(from: record)
-                                        }
                                         Spacer()
                                         Button("Modifica") {
                                             editRecord = record
@@ -265,7 +280,7 @@ struct GoodsReceivingView: View {
                                         }
                                         .buttonStyle(.bordered)
                                         .tint(ThemeManager.shared.colorPrimary)
-                                        if isMaster {
+                                        if canManageSuppliers {
                                             Button("Elimina", role: .destructive) {
                                                 receiptPendingDeletion = record
                                                 showMasterAuthDeleteReceipt = true
@@ -497,22 +512,7 @@ struct GoodsReceivingView: View {
                 }
             }
         }
-        .sheet(isPresented: Binding(
-            get: { labelDraft != nil },
-            set: { if !$0 { labelDraft = nil } }
-        )) {
-            if let draft = labelDraft,
-               let rid = appState.activeRestaurantId,
-               let user = currentUser {
-                ProductionLabelEditorSheet(
-                    mode: .create(draft),
-                    restaurantId: rid,
-                    user: user,
-                    onSaved: { labelDraft = nil },
-                    onCancel: { labelDraft = nil }
-                )
-            }
-        }
+        .masterAuthCover(coordinator: masterAuth, master: users.first(where: { $0.role == .master }))
         .fullScreenCover(isPresented: $showMasterAuthDeleteReceipt) {
             if let master = users.first(where: { $0.role == .master }) {
                 MasterAuthOverlay(
@@ -554,7 +554,7 @@ struct GoodsReceivingView: View {
     }
 
     private func editSupplier() {
-        guard isMaster else { return }
+        guard canManageSuppliers else { return }
         guard let selected = vm.selectedSupplier else { return }
         let name = newSupplierName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty else { return }

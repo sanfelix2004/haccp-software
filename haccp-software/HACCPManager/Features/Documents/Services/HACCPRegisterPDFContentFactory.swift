@@ -30,40 +30,85 @@ enum HACCPRegisterPDFContentFactory {
         .image(HACCPPDFImageCompression.compressedJPEGData(from: data) ?? data)
     }
 
-    // MARK: - Intestazione
+    // MARK: - Apertura e chiusura documento
 
-    static func sectionIntestazioneUfficiale(
+    private static func documentKindLabel(type: DocumentType, module: DocumentModule) -> String {
+        let moduleLabel = DocumentArchiveLayout.moduleFolderTitle(module)
+        switch type {
+        case .giornaliero: return "Registro giornaliero — \(moduleLabel)"
+        case .settimanale: return "Registro settimanale — \(moduleLabel)"
+        case .mensile: return "Registro mensile — \(moduleLabel)"
+        case .annuale: return "Registro annuale — \(moduleLabel)"
+        case .nonConformita: return "Registro non conformità"
+        default: return "Documento HACCP — \(moduleLabel)"
+        }
+    }
+
+    private static func openingSections(
         restaurant: Restaurant,
         reportTitle: String,
         reportDateLine: String,
         periodLine: String,
         officialDocumentId: String,
-        generatedAt: Date
-    ) -> (title: String, headers: [String], rows: [[PDFTableCell]]) {
-        let df = df()
-        let addr = [restaurant.address, restaurant.city].filter { !$0.isEmpty }.joined(separator: ", ")
-        let rows: [[PDFTableCell]] = [
-            [.text("Ristorante"), .text(restaurant.name)],
-            [.text("Indirizzo"), .text(addr.isEmpty ? "—" : addr)],
-            [.text("Responsabile HACCP"), .text(restaurant.haccpManager.isEmpty ? "—" : restaurant.haccpManager)],
-            [.text("Titolo report"), .text(reportTitle)],
-            [.text("Data report"), .text(reportDateLine)],
-            [.text("Periodo coperto"), .text(periodLine)],
-            [.text("Data/ora generazione"), .text(df.string(from: generatedAt))],
-            [.text("Versione app"), .text(HACCPAppBuildVersion.marketingAndBuild)],
-            [.text("ID documento"), .text(officialDocumentId)]
+        generatedAt: Date,
+        documentKind: String
+    ) -> [HACCPPDFSection] {
+        var sections: [HACCPPDFSection] = [
+            .prose(title: "Premessa", paragraphs: HACCPPDFLegalBlocks.preambleParagraphs()),
+            sectionIdentificativoDocumento(
+                reportTitle: reportTitle,
+                reportDateLine: reportDateLine,
+                periodLine: periodLine,
+                officialDocumentId: officialDocumentId,
+                generatedAt: generatedAt,
+                documentKind: documentKind
+            )
         ]
-        return ("Intestazione documento ufficiale", ["Campo", "Valore"], rows)
+        if let logo = sectionLogoIfPresent(logoData: restaurant.logoData) {
+            sections.append(logo)
+        }
+        return sections
     }
 
-    static func sectionLogoIfPresent(logoData: Data?) -> (title: String, headers: [String], rows: [[PDFTableCell]])? {
+    private static func finalizeDocument(_ sections: inout [HACCPPDFSection], restaurant: Restaurant) {
+        HACCPPDFLegalBlocks.appendClosingSections(to: &sections, restaurant: restaurant)
+    }
+
+    static func sectionIdentificativoDocumento(
+        reportTitle: String,
+        reportDateLine: String,
+        periodLine: String,
+        officialDocumentId: String,
+        generatedAt: Date,
+        documentKind: String
+    ) -> HACCPPDFSection {
+        let formatter = df()
+        let rows: [[PDFTableCell]] = [
+            [.text("Tipologia documento"), .text(documentKind)],
+            [.text("Titolo registro"), .text(reportTitle)],
+            [.text("Data di redazione"), .text(reportDateLine)],
+            [.text("Ambito temporale"), .text(periodLine)],
+            [.text("Data e ora generazione"), .text(formatter.string(from: generatedAt))],
+            [.text("Versione software"), .text(HACCPAppBuildVersion.marketingAndBuild)],
+            [.text("Identificativo univoco"), .text(officialDocumentId)],
+            [.text("Fonte dati"), .text(HACCPRegisterCopy.dataSourceNote)],
+            [.text("Riferimento normativo"), .text(HACCPPDFLegalBlocks.normativeReference)]
+        ]
+        return .keyValueTable(
+            title: "Scheda identificativa",
+            subtitle: "Elementi obbligatori per l'archiviazione del registro",
+            rows: rows
+        )
+    }
+
+    static func sectionLogoIfPresent(logoData: Data?) -> HACCPPDFSection? {
         guard let logoData, !logoData.isEmpty else { return nil }
-        return ("Logo ristorante", ["Anteprima"], [[img(logoData)]])
+        return .dataTable(title: "Logo esercizio", headers: ["Marchio / logo"], rows: [[img(logoData)]])
     }
 
     // MARK: - Ricezione / Tracciabilità / NC
 
-    static func sectionsRicezione(interval: DateInterval, receipts: [GoodsReceipt]) -> [(title: String, headers: [String], rows: [[PDFTableCell]])] {
+    static func sectionsRicezione(interval: DateInterval, receipts: [GoodsReceipt]) -> [HACCPPDFSection] {
         let formatter = df()
         let rows = GoodsReceiptRegister.rows(in: interval, receipts: receipts, df: formatter)
         let table: [[PDFTableCell]] = rows.map { r in
@@ -85,10 +130,18 @@ enum HACCPRegisterPDFContentFactory {
             ]
         }
         let headers = [
-            "Prodotto", "Categoria", "Fornitore", "Lotto", "Scadenza", "Data/ora ricezione",
-            "Temp. rilevata", "Range temp.", "Esito temp.", "Checklist", "Conformità", "Note", "Operatore", "Foto"
+            "Denominazione prodotto", "Categoria", "Fornitore", "N. lotto", "Data scadenza", "Data e ora ricezione",
+            "Temperatura rilevata", "Range ammesso", "Esito temperatura", "Esito checklist", "Esito complessivo",
+            "Annotazioni", "Operatore addetto", "Documentazione fotografica"
         ]
-        return [("A. Ricezione merci", headers, table)]
+        return [
+            .dataTable(
+                title: "Registro ricezione merci e materie prime",
+                subtitle: "Controllo in ingresso — temperatura, checklist e conformità",
+                headers: headers,
+                rows: table
+            )
+        ]
     }
 
     static func sectionsTracciabilita(
@@ -98,7 +151,7 @@ enum HACCPRegisterPDFContentFactory {
         links: [TraceabilityLink],
         logs: [TraceabilityLog],
         images: [ProductImage]
-    ) -> [(title: String, headers: [String], rows: [[PDFTableCell]])] {
+    ) -> [HACCPPDFSection] {
         let formatter = df()
         let rows = TraceabilityRegister.rows(
             in: interval,
@@ -118,19 +171,22 @@ enum HACCPRegisterPDFContentFactory {
                 .text(r.status),
                 .text(r.productions),
                 .text(r.nonCompliance),
-                .text(r.events),
-                .text(r.eventTimestamps),
-                img(r.eventImageData),
                 .text(r.operatorName),
-                img(r.productImageData)
+                img(r.imageData)
             ]
         }
         let headers = [
-            "Prodotto", "Lotto", "Fornitore", "Data ricezione", "Stato prodotto",
-            "Produzioni associate", "Non conformità", "Eventi", "Timestamp eventi",
-            "Foto evento", "Operatore", "Foto prodotto"
+            "Denominazione prodotto", "N. lotto / codice", "Fornitore", "Data ricezione", "Stato prodotto",
+            "Produzioni collegate", "Annotazioni NC", "Operatore addetto", "Documentazione fotografica"
         ]
-        return [("B. Tracciabilità", headers, table)]
+        return [
+            .dataTable(
+                title: "Registro tracciabilità",
+                subtitle: "Identificazione e stato dei prodotti alimentari",
+                headers: headers,
+                rows: table
+            )
+        ]
     }
 
     static func sectionsNonConformita(
@@ -138,7 +194,7 @@ enum HACCPRegisterPDFContentFactory {
         receipts: [GoodsReceipt],
         traceability: [TraceabilityRecord],
         images: [ProductImage]
-    ) -> [(title: String, headers: [String], rows: [[PDFTableCell]])] {
+    ) -> [HACCPPDFSection] {
         let formatter = df()
         let rows = NonConformityRegister.rows(
             in: interval,
@@ -163,36 +219,78 @@ enum HACCPRegisterPDFContentFactory {
             ]
         }
         let headers = [
-            "Prodotto", "Lotto", "Motivo", "Azione correttiva", "Foto",
-            "Stato", "Risolta da", "Risolta il", "Data rilevazione", "Operatore", "Origine"
+            "Prodotto", "Lotto", "Descrizione NC", "Azione correttiva", "Documentazione",
+            "Stato pratica", "Chiusa da", "Data chiusura", "Data rilevazione", "Operatore", "Modulo origine"
         ]
-        return [("C. Non conformità", headers, table)]
+        return [
+            .dataTable(
+                title: "Registro non conformità e azioni correttive",
+                subtitle: "Anomalie rilevate, trattamento e stato di risoluzione",
+                headers: headers,
+                rows: table
+            )
+        ]
     }
 
-    // MARK: - Audit
+    // MARK: - Criticità
 
-    static func sectionAudit(
+    static func sectionEventiImportanti(
         restaurantId: UUID,
         interval: DateInterval,
+        receipts: [GoodsReceipt],
+        traceability: [TraceabilityRecord],
         checklistLogs: [ChecklistAuditLog],
         temperatureLogs: [TemperatureAuditLog],
         traceabilityLogs: [TraceabilityLog],
         traceabilityRecordIds: Set<UUID>
-    ) -> (title: String, headers: [String], rows: [[PDFTableCell]]) {
+    ) -> HACCPPDFSection {
         let formatter = df()
-        let audit = HACCPDocumentAuditLogBuilder.rows(
+        let events = HACCPDocumentAuditLogBuilder.importantRows(
             restaurantId: restaurantId,
             interval: interval,
+            receipts: receipts,
+            traceabilityRecords: traceability,
             checklistLogs: checklistLogs,
             temperatureLogs: temperatureLogs,
             traceabilityLogs: traceabilityLogs,
             traceabilityRecordIds: traceabilityRecordIds,
             df: formatter
         )
-        let rows: [[PDFTableCell]] = audit.map { r in
-            [.text(r.userName), .text(r.module), .text(r.timestamp), .text(r.action), .text(r.entityRef)]
+        let rows: [[PDFTableCell]] = events.map { r in
+            [.text(r.timestamp), .text(r.module), .text(r.action), .text(r.detail), .text(r.operatorName)]
         }
-        return ("D. Audit log (azioni registrate)", ["Utente", "Modulo", "Data/ora", "Azione", "Entità collegata"], rows)
+        let table = rows.isEmpty
+            ? [[.text(HACCPRegisterCopy.noCriticalEvents), .text(HACCPRegisterCopy.notAvailable), .text(HACCPRegisterCopy.notAvailable), .text(HACCPRegisterCopy.notAvailable), .text(HACCPRegisterCopy.notAvailable)]]
+            : rows
+        return .dataTable(
+            title: "Sintesi criticità e eventi rilevanti",
+            subtitle: "Solo anomalie, NC e controlli non conformi (max. 60 eventi)",
+            headers: ["Data e ora", "Modulo", "Tipo evento", "Descrizione sintetica", "Operatore"],
+            rows: table
+        )
+    }
+
+    /// Compatibilità interna con chiamate esistenti.
+    static func sectionAudit(
+        restaurantId: UUID,
+        interval: DateInterval,
+        checklistLogs: [ChecklistAuditLog],
+        temperatureLogs: [TemperatureAuditLog],
+        traceabilityLogs: [TraceabilityLog],
+        traceabilityRecordIds: Set<UUID>,
+        receipts: [GoodsReceipt] = [],
+        traceability: [TraceabilityRecord] = []
+    ) -> HACCPPDFSection {
+        sectionEventiImportanti(
+            restaurantId: restaurantId,
+            interval: interval,
+            receipts: receipts,
+            traceability: traceability,
+            checklistLogs: checklistLogs,
+            temperatureLogs: temperatureLogs,
+            traceabilityLogs: traceabilityLogs,
+            traceabilityRecordIds: traceabilityRecordIds
+        )
     }
 
     // MARK: - Riepilogo
@@ -201,8 +299,9 @@ enum HACCPRegisterPDFContentFactory {
         interval: DateInterval,
         receipts: [GoodsReceipt],
         traceability: [TraceabilityRecord],
-        links: [TraceabilityLink]
-    ) -> (title: String, headers: [String], rows: [[PDFTableCell]]) {
+        links: [TraceabilityLink],
+        operational: HACCPOperationalSourceData = HACCPOperationalSourceData()
+    ) -> HACCPPDFSection {
         let rec = receipts.filter { interval.contains($0.receivedAt) }
         let tr = traceability.filter { interval.contains($0.receivedAt) }
         let ncCount = NonConformityRegister.rows(
@@ -213,18 +312,45 @@ enum HACCPRegisterPDFContentFactory {
             df: df()
         ).count
         let expired = tr.filter { $0.productStatus == .expired }.count
+        let rejected = tr.filter { $0.productStatus == .rejected }.count
         let linkedIds = Set(links.map(\.receivedItemId))
         let withProd = tr.filter { linkedIds.contains($0.id) }.count
+        let recIssues = rec.filter { $0.status != .conforme || $0.temperatureStatus == .nonConforme }.count
+        let checklistFails = rec.filter { $0.checklistResults.contains(where: { $0.value == .notOk }) }.count
+        let tempReadings = operational.temperatureRecords.filter { interval.contains($0.measuredAt) }.count
+        let tempIssues = operational.temperatureRecords.filter { interval.contains($0.measuredAt) && $0.status != .ok }.count
+        let cleaningDone = operational.cleaningRecords.filter { interval.contains($0.updatedAt) }.count
+        let defrostCount = operational.defrostRecords.filter { interval.contains($0.startAt) }.count
+        let blastCount = operational.blastChillingRecords.filter { interval.contains($0.startedAt) }.count
+        let oilChecks = operational.oilControlRecords.filter { interval.contains($0.checkedAt) }.count
+        let checklistRuns = operational.checklistRuns.filter { interval.contains($0.startedAt) }.count
+        let labelsCount = operational.productionLabels.filter { interval.contains($0.createdAt) }.count
 
         let rows: [[PDFTableCell]] = [
-            [.text("Numero ricezioni nel periodo"), .text("\(rec.count)")],
-            [.text("Numero prodotti tracciati (record)"), .text("\(tr.count)")],
-            [.text("Numero non conformità"), .text("\(ncCount)")],
-            [.text("Numero prodotti in stato scaduto"), .text("\(expired)")],
-            [.text("Numero prodotti associati a produzioni"), .text("\(withProd)")],
-            [.text("Note finali"), .text("Dati calcolati su registrazioni effettive in app. Archivio ufficiale HACCP Manager.")]
+            [.text("Ricezioni registrate"), .text("\(rec.count)")],
+            [.text("Prodotti tracciati"), .text("\(tr.count)")],
+            [.text("Non conformità totali"), .text("\(ncCount)")],
+            [.text("Ricezioni con anomalie"), .text("\(recIssues)")],
+            [.text("Temperature fuori range (ricezione)"), .text("\(rec.filter { $0.temperatureStatus == .nonConforme }.count)")],
+            [.text("Checklist con voci NON OK (ricezione)"), .text("\(checklistFails)")],
+            [.text("Rilevazioni temperatura frigoriferi"), .text("\(tempReadings)")],
+            [.text("Rilevazioni temperatura non conformi"), .text("\(tempIssues)")],
+            [.text("Controlli pulizia registrati"), .text("\(cleaningDone)")],
+            [.text("Processi decongelamento"), .text("\(defrostCount)")],
+            [.text("Processi abbattimento"), .text("\(blastCount)")],
+            [.text("Controlli olio"), .text("\(oilChecks)")],
+            [.text("Checklist completate"), .text("\(checklistRuns)")],
+            [.text("Etichette di produzione emesse"), .text("\(labelsCount)")],
+            [.text("Prodotti scaduti"), .text("\(expired)")],
+            [.text("Prodotti respinti"), .text("\(rejected)")],
+            [.text("Collegamenti a produzioni"), .text("\(withProd)")],
+            [.text("Nota"), .text("Sintesi automatica calcolata sui dati registrati in applicazione nel periodo indicato.")]
         ]
-        return ("E. Riepilogo finale", ["Indicatore", "Valore"], rows)
+        return .keyValueTable(
+            title: "Quadro riepilogativo del periodo",
+            subtitle: "Indicatori quantitativi per verifica rapida dello stato HACCP",
+            rows: rows
+        )
     }
 
     // MARK: - Giornaliero combinato ufficiale
@@ -244,40 +370,83 @@ enum HACCPRegisterPDFContentFactory {
         logs: [TraceabilityLog],
         images: [ProductImage],
         checklistLogs: [ChecklistAuditLog],
-        temperatureLogs: [TemperatureAuditLog]
-    ) -> (sections: [(title: String, headers: [String], rows: [[PDFTableCell]])], flags: OfficialReportSectionFlags) {
+        temperatureLogs: [TemperatureAuditLog],
+        existingDocuments: [DocumentItem],
+        operational: HACCPOperationalSourceData
+    ) -> HACCPPDFSectionBundle {
         var flags: OfficialReportSectionFlags = []
-        var sections: [(title: String, headers: [String], rows: [[PDFTableCell]])] = []
-
-        let head = sectionIntestazioneUfficiale(
+        var sections = openingSections(
             restaurant: restaurant,
             reportTitle: reportTitle,
             reportDateLine: reportDateLine,
             periodLine: periodLine,
             officialDocumentId: officialDocumentId,
-            generatedAt: generatedAt
+            generatedAt: generatedAt,
+            documentKind: "Report HACCP combinato giornaliero"
         )
-        sections.append(head)
         flags.insert(.intestazione)
 
-        if let logo = sectionLogoIfPresent(logoData: restaurant.logoData) {
-            sections.append(logo)
-        }
-
-        sections.append(contentsOf: sectionsRicezione(interval: interval, receipts: receipts))
-        flags.insert(.ricezioneMerci)
-
-        sections.append(contentsOf: sectionsTracciabilita(
+        let body = combinatoStandardBody(
+            restaurant: restaurant,
             interval: interval,
-            records: traceability,
-            productions: productions,
+            receipts: receipts,
+            traceability: traceability,
             links: links,
             logs: logs,
-            images: images
-        ))
-        flags.insert(.tracciabilita)
+            images: images,
+            checklistLogs: checklistLogs,
+            temperatureLogs: temperatureLogs,
+            existingDocuments: existingDocuments,
+            operational: operational,
+            documentType: .giornaliero
+        )
+        sections.append(contentsOf: body.sections)
+        flags.formUnion(body.flags)
 
-        sections.append(contentsOf: sectionsNonConformita(
+        finalizeDocument(&sections, restaurant: restaurant)
+        return (sections, flags)
+    }
+
+    private static func combinatoStandardBody(
+        restaurant: Restaurant,
+        interval: DateInterval,
+        receipts: [GoodsReceipt],
+        traceability: [TraceabilityRecord],
+        links: [TraceabilityLink],
+        logs: [TraceabilityLog],
+        images: [ProductImage],
+        checklistLogs: [ChecklistAuditLog],
+        temperatureLogs: [TemperatureAuditLog],
+        existingDocuments: [DocumentItem],
+        operational: HACCPOperationalSourceData,
+        documentType: DocumentType
+    ) -> (sections: [HACCPPDFSection], flags: OfficialReportSectionFlags) {
+        var flags: OfficialReportSectionFlags = []
+        var sections: [HACCPPDFSection] = []
+
+        sections.append(sectionRiepilogo(
+            interval: interval,
+            receipts: receipts,
+            traceability: traceability,
+            links: links,
+            operational: operational
+        ))
+        flags.insert(.riepilogo)
+
+        sections.append(.dataTable(
+            title: "Indice report mensili per modulo",
+            subtitle: "Collegamenti ai singoli registri del mese",
+            headers: ["Modulo", "Identificativo documento", "Nome file archiviato"],
+            rows: singoliDocumentIndex(
+                existingDocuments: existingDocuments,
+                restaurantId: restaurant.id,
+                interval: interval,
+                documentType: documentType
+            )
+        ))
+        flags.insert(.allegatoPeriodo)
+
+        sections.append(sectionSintesiNonConformita(
             interval: interval,
             receipts: receipts,
             traceability: traceability,
@@ -286,18 +455,17 @@ enum HACCPRegisterPDFContentFactory {
         flags.insert(.nonConformita)
 
         let traceIds = Set(traceability.map(\.id))
-        sections.append(sectionAudit(
+        sections.append(sectionEventiImportanti(
             restaurantId: restaurant.id,
             interval: interval,
+            receipts: receipts,
+            traceability: traceability,
             checklistLogs: checklistLogs,
             temperatureLogs: temperatureLogs,
             traceabilityLogs: logs,
             traceabilityRecordIds: traceIds
         ))
         flags.insert(.auditLog)
-
-        sections.append(sectionRiepilogo(interval: interval, receipts: receipts, traceability: traceability, links: links))
-        flags.insert(.riepilogo)
 
         return (sections, flags)
     }
@@ -321,41 +489,48 @@ enum HACCPRegisterPDFContentFactory {
         images: [ProductImage],
         checklistLogs: [ChecklistAuditLog],
         temperatureLogs: [TemperatureAuditLog],
-        existingDocuments: [DocumentItem]
-    ) -> (sections: [(title: String, headers: [String], rows: [[PDFTableCell]])], flags: OfficialReportSectionFlags) {
-        var base = buildGiornalieroCombinatoUfficiale(
+        existingDocuments: [DocumentItem],
+        operational: HACCPOperationalSourceData
+    ) -> HACCPPDFSectionBundle {
+        var flags: OfficialReportSectionFlags = []
+        var sections = openingSections(
             restaurant: restaurant,
             reportTitle: reportTitle,
             reportDateLine: reportDateLine,
             periodLine: periodLine,
             officialDocumentId: officialDocumentId,
             generatedAt: generatedAt,
+            documentKind: "Report HACCP combinato mensile"
+        )
+        flags.insert(.intestazione)
+
+        let body = combinatoStandardBody(
+            restaurant: restaurant,
             interval: interval,
             receipts: receipts,
             traceability: traceability,
-            productions: productions,
             links: links,
             logs: logs,
             images: images,
             checklistLogs: checklistLogs,
-            temperatureLogs: temperatureLogs
+            temperatureLogs: temperatureLogs,
+            existingDocuments: existingDocuments,
+            operational: operational,
+            documentType: .mensile
         )
-        var flags = base.flags
-        var sections = base.sections
-
-        let dailyBreakdown = dailyBreakdownRows(interval: interval, calendar: calendar, receipts: receipts, traceability: traceability)
-        sections.append(("F. Allegato — riepilogo giornaliero", ["Giorno", "Ricezioni", "Tracciati", "Non conformità", "Scaduti"], dailyBreakdown))
-        flags.insert(.allegatoPeriodo)
-
-        let dailyRefs = dailyReportReferences(existingDocuments: existingDocuments, restaurantId: restaurant.id, interval: interval)
-        sections.append(("G. Riferimenti report giornalieri HACCP combinato", ["Data", "ID documento", "Nome file"], dailyRefs))
-        flags.insert(.allegatoPeriodo)
+        sections.append(contentsOf: body.sections)
+        flags.formUnion(body.flags)
 
         let suppliers = uniqueSuppliers(receipts: receipts, traceability: traceability, interval: interval)
-        sections.append(("H. Fornitori utilizzati nel mese", ["Fornitore"], suppliers.map { [.text($0)] }))
-        let importantEvents = importantTraceabilityEvents(logs: logs, traceabilityIds: Set(traceability.map(\.id)), interval: interval, df: df())
-        sections.append(("I. Eventi tracciabilità principali", ["Data/ora", "Operatore", "Azione", "Voce"], importantEvents))
+        sections.append(.dataTable(
+            title: "Elenco fornitori del mese",
+            subtitle: "Fornitori presenti in ricezione e tracciabilità",
+            headers: ["Ragione sociale / fornitore"],
+            rows: suppliers.map { [.text($0)] }
+        ))
+        flags.insert(.allegatoPeriodo)
 
+        finalizeDocument(&sections, restaurant: restaurant)
         return (sections, flags)
     }
 
@@ -377,36 +552,49 @@ enum HACCPRegisterPDFContentFactory {
         checklistLogs: [ChecklistAuditLog],
         temperatureLogs: [TemperatureAuditLog],
         existingDocuments: [DocumentItem]
-    ) -> (sections: [(title: String, headers: [String], rows: [[PDFTableCell]])], flags: OfficialReportSectionFlags) {
+    ) -> HACCPPDFSectionBundle {
         var flags: OfficialReportSectionFlags = [.intestazione]
-        var sections: [(title: String, headers: [String], rows: [[PDFTableCell]])] = []
-
-        sections.append(sectionIntestazioneUfficiale(
+        var sections = openingSections(
             restaurant: restaurant,
             reportTitle: reportTitle,
             reportDateLine: reportDateLine,
             periodLine: periodLine,
             officialDocumentId: officialDocumentId,
-            generatedAt: generatedAt
-        ))
-        if let logo = sectionLogoIfPresent(logoData: restaurant.logoData) { sections.append(logo) }
+            generatedAt: generatedAt,
+            documentKind: "Report HACCP combinato annuale"
+        )
 
         let monthlyAgg = monthlyAggregatesForYear(interval: interval, calendar: calendar, receipts: receipts, traceability: traceability)
-        sections.append(("A. Riepilogo per mese", ["Mese", "Ricezioni", "Tracciati", "Non conformità", "Scaduti"], monthlyAgg))
+        sections.append(.dataTable(
+            title: "Riepilogo mensile dell'anno",
+            headers: ["Mese", "Ricezioni", "Tracciati", "Non conformità", "Prodotti scaduti"],
+            rows: monthlyAgg
+        ))
         flags.insert(.allegatoPeriodo)
 
-        let totals = sectionRiepilogo(interval: interval, receipts: receipts, traceability: traceability, links: links)
-        sections.append(totals)
+        sections.append(sectionRiepilogo(interval: interval, receipts: receipts, traceability: traceability, links: links))
         flags.insert(.riepilogo)
 
         let topSup = topSuppliersAnnual(receipts: receipts, traceability: traceability, interval: interval, limit: 15)
-        sections.append(("B. Fornitori principali", ["Fornitore", "Occorrenze"], topSup))
+        sections.append(.dataTable(
+            title: "Fornitori principali dell'anno",
+            headers: ["Fornitore", "N. occorrenze"],
+            rows: topSup
+        ))
 
         let catUse = categoryUsageAnnual(receipts: receipts, interval: interval, limit: 12)
-        sections.append(("C. Categorie più utilizzate (ricezione)", ["Categoria", "Conteggio"], catUse))
+        sections.append(.dataTable(
+            title: "Categorie merceologiche più utilizzate",
+            headers: ["Categoria", "Conteggio ricezioni"],
+            rows: catUse
+        ))
 
         let ncRows = NonConformityRegister.rows(in: interval, receipts: receipts, traceability: traceability, images: images, df: df())
-        sections.append(("D. Non conformità (sintesi annuale)", ["Prodotto", "Stato", "Data", "Origine"], ncRows.map { [.text($0.product), .text($0.stato), .text($0.date), .text($0.source)] }))
+        sections.append(.dataTable(
+            title: "Sintesi annuale non conformità",
+            headers: ["Prodotto", "Stato pratica", "Data", "Modulo origine"],
+            rows: ncRows.map { [.text($0.product), .text($0.stato), .text($0.date), .text($0.source)] }
+        ))
         flags.insert(.nonConformita)
 
         let traceIds = Set(traceability.map(\.id))
@@ -416,22 +604,310 @@ enum HACCPRegisterPDFContentFactory {
             checklistLogs: checklistLogs,
             temperatureLogs: temperatureLogs,
             traceabilityLogs: logs,
-            traceabilityRecordIds: traceIds
+            traceabilityRecordIds: traceIds,
+            receipts: receipts,
+            traceability: traceability
         ))
         flags.insert(.auditLog)
 
         let monthlyIndex = monthlyDocumentIndex(existingDocuments: existingDocuments, restaurantId: restaurant.id, interval: interval)
-        sections.append(("E. Indice report mensili HACCP combinato", ["Mese", "ID documento", "Nome file"], monthlyIndex))
+        sections.append(.dataTable(
+            title: "Indice report mensili HACCP combinato",
+            headers: ["Mese", "Identificativo documento", "Nome file"],
+            rows: monthlyIndex
+        ))
         flags.insert(.indiceMensile)
 
-        sections.append(("F. Storico sintetico tracciabilità", ["Indicatore", "Valore"], [
-            [.text("Record tracciabilità totali"), .text("\(traceability.filter { interval.contains($0.receivedAt) }.count)")],
-            [.text("Ricezioni totali"), .text("\(receipts.filter { interval.contains($0.receivedAt) }.count)")],
-            [.text("Collegamenti a produzioni"), .text("\(links.count)")]
-        ]))
+        sections.append(.keyValueTable(
+            title: "Storico sintetico tracciabilità",
+            rows: [
+                [.text("Record tracciabilità totali"), .text("\(traceability.filter { interval.contains($0.receivedAt) }.count)")],
+                [.text("Ricezioni totali"), .text("\(receipts.filter { interval.contains($0.receivedAt) }.count)")],
+                [.text("Collegamenti a produzioni"), .text("\(links.count)")]
+            ]
+        ))
         flags.insert(.tracciabilita)
 
+        finalizeDocument(&sections, restaurant: restaurant)
         return (sections, flags)
+    }
+
+    static func buildMensileAffinityCombined(
+        combinedModule: DocumentModule,
+        restaurant: Restaurant,
+        reportTitle: String,
+        reportDateLine: String,
+        periodLine: String,
+        officialDocumentId: String,
+        generatedAt: Date,
+        interval: DateInterval,
+        receipts: [GoodsReceipt],
+        traceability: [TraceabilityRecord],
+        productions: [Production],
+        links: [TraceabilityLink],
+        logs: [TraceabilityLog],
+        images: [ProductImage],
+        checklistLogs: [ChecklistAuditLog],
+        temperatureLogs: [TemperatureAuditLog],
+        operational: HACCPOperationalSourceData
+    ) -> HACCPPDFSectionBundle {
+        let title = DocumentArchiveLayout.moduleFolderTitle(combinedModule)
+        var flags: OfficialReportSectionFlags = [.intestazione]
+        var sections = openingSections(
+            restaurant: restaurant,
+            reportTitle: reportTitle,
+            reportDateLine: reportDateLine,
+            periodLine: periodLine,
+            officialDocumentId: officialDocumentId,
+            generatedAt: generatedAt,
+            documentKind: "Report combinato mensile — \(title)"
+        )
+
+        for source in DocumentArchiveLayout.sourceModules(for: combinedModule) {
+            let partial = buildSingoloModulo(
+                documentType: .mensile,
+                module: source,
+                restaurant: restaurant,
+                reportTitle: reportTitle,
+                reportDateLine: reportDateLine,
+                periodLine: periodLine,
+                officialDocumentId: officialDocumentId,
+                generatedAt: generatedAt,
+                interval: interval,
+                receipts: receipts,
+                traceability: traceability,
+                productions: productions,
+                links: links,
+                logs: logs,
+                images: images,
+                checklistLogs: checklistLogs,
+                temperatureLogs: temperatureLogs,
+                operational: operational,
+                contentOnly: true
+            )
+            sections.append(contentsOf: partial.sections)
+            flags.formUnion(partial.flags)
+        }
+
+        sections.append(sectionRiepilogo(
+            interval: interval,
+            receipts: receipts,
+            traceability: traceability,
+            links: links,
+            operational: operational
+        ))
+        flags.insert(.riepilogo)
+
+        finalizeDocument(&sections, restaurant: restaurant)
+        return (sections, flags)
+    }
+
+    // MARK: - Documenti singoli per modulo
+
+    static func buildSingoloModulo(
+        documentType: DocumentType,
+        module: DocumentModule,
+        restaurant: Restaurant,
+        reportTitle: String,
+        reportDateLine: String,
+        periodLine: String,
+        officialDocumentId: String,
+        generatedAt: Date,
+        interval: DateInterval,
+        receipts: [GoodsReceipt],
+        traceability: [TraceabilityRecord],
+        productions: [Production],
+        links: [TraceabilityLink],
+        logs: [TraceabilityLog],
+        images: [ProductImage],
+        checklistLogs: [ChecklistAuditLog],
+        temperatureLogs: [TemperatureAuditLog],
+        operational: HACCPOperationalSourceData,
+        contentOnly: Bool = false
+    ) -> HACCPPDFSectionBundle {
+        var flags: OfficialReportSectionFlags = contentOnly ? [] : [.intestazione]
+        var sections: [HACCPPDFSection] = []
+        if !contentOnly {
+            sections = openingSections(
+                restaurant: restaurant,
+                reportTitle: reportTitle,
+                reportDateLine: reportDateLine,
+                periodLine: periodLine,
+                officialDocumentId: officialDocumentId,
+                generatedAt: generatedAt,
+                documentKind: documentKindLabel(type: documentType, module: module)
+            )
+        }
+        let formatter = df()
+
+        appendModuleRegisterContent(
+            to: &sections,
+            flags: &flags,
+            module: module,
+            interval: interval,
+            receipts: receipts,
+            traceability: traceability,
+            productions: productions,
+            links: links,
+            logs: logs,
+            images: images,
+            operational: operational,
+            formatter: formatter
+        )
+
+        if contentOnly {
+            return (sections, flags)
+        }
+
+        sections.append(sectionRiepilogo(
+            interval: interval,
+            receipts: receipts,
+            traceability: traceability,
+            links: links,
+            operational: operational
+        ))
+        flags.insert(.riepilogo)
+
+        let traceIds = Set(traceability.map(\.id))
+        sections.append(sectionEventiImportanti(
+            restaurantId: restaurant.id,
+            interval: interval,
+            receipts: receipts,
+            traceability: traceability,
+            checklistLogs: checklistLogs,
+            temperatureLogs: temperatureLogs,
+            traceabilityLogs: logs,
+            traceabilityRecordIds: traceIds
+        ))
+        flags.insert(.auditLog)
+
+        finalizeDocument(&sections, restaurant: restaurant)
+        return (sections, flags)
+    }
+
+    private static func appendModuleRegisterContent(
+        to sections: inout [HACCPPDFSection],
+        flags: inout OfficialReportSectionFlags,
+        module: DocumentModule,
+        interval: DateInterval,
+        receipts: [GoodsReceipt],
+        traceability: [TraceabilityRecord],
+        productions: [Production],
+        links: [TraceabilityLink],
+        logs: [TraceabilityLog],
+        images: [ProductImage],
+        operational: HACCPOperationalSourceData,
+        formatter: DateFormatter
+    ) {
+        switch module {
+        case .ricezioneMerci:
+            sections.append(contentsOf: sectionsRicezione(interval: interval, receipts: receipts))
+            flags.insert(.ricezioneMerci)
+        case .tracciabilita:
+            sections.append(contentsOf: sectionsTracciabilita(
+                interval: interval,
+                records: traceability,
+                productions: productions,
+                links: links,
+                logs: logs,
+                images: images
+            ))
+            flags.insert(.tracciabilita)
+        case .frigoriferi:
+            let rows = TemperatureRegister.rows(in: interval, records: operational.temperatureRecords, df: formatter)
+            let table: [[PDFTableCell]] = rows.map {
+                [.text($0.device), .text($0.measuredAt), .text($0.value), .text($0.range), .text($0.status), .text($0.operatorName), .text($0.notes)]
+            }
+            let body = table.isEmpty ? [emptyOperationalRow(columns: 7)] : table
+            sections.append(.dataTable(
+                title: "Registro temperature apparecchi frigoriferi",
+                subtitle: "Monitoraggio temperature di conservazione",
+                headers: ["Apparecchio / cella", "Data e ora rilevazione", "Temperatura", "Range ammesso", "Esito controllo", "Operatore addetto", "Annotazioni"],
+                rows: body
+            ))
+        case .controlloPulizia:
+            let rows = CleaningRegister.rows(in: interval, records: operational.cleaningRecords, df: formatter)
+            let table: [[PDFTableCell]] = rows.map {
+                [.text($0.area), .text($0.task), .text($0.frequency), .text($0.period), .text($0.outcome), .text($0.operatorName), .text($0.notes)]
+            }
+            let body = table.isEmpty ? [emptyOperationalRow(columns: 7)] : table
+            sections.append(.dataTable(
+                title: "Registro sanificazione e pulizia",
+                subtitle: "Attività di igiene ambientale e attrezzature",
+                headers: ["Area / zona", "Attività", "Frequenza prevista", "Periodo di riferimento", "Esito", "Operatore addetto", "Annotazioni"],
+                rows: body
+            ))
+        case .abbattimento:
+            let rows = BlastChillingRegister.rows(in: interval, records: operational.blastChillingRecords, df: formatter)
+            let table: [[PDFTableCell]] = rows.map {
+                [.text($0.production), .text($0.startedAt), .text($0.endedAt), .text($0.duration), .text($0.initialTemp), .text($0.finalTemp), .text($0.status), .text($0.operatorName), .text($0.notes)]
+            }
+            let body = table.isEmpty ? [emptyOperationalRow(columns: 9)] : table
+            sections.append(.dataTable(
+                title: "Registro abbattimento rapido",
+                subtitle: "Processi di abbattimento termico",
+                headers: ["Produzione", "Inizio processo", "Fine processo", "Durata", "T° iniziale", "T° finale", "Esito", "Operatore", "Note / azioni"],
+                rows: body
+            ))
+        case .decongelamento:
+            let rows = DefrostRegister.rows(in: interval, records: operational.defrostRecords, df: formatter)
+            let table: [[PDFTableCell]] = rows.map {
+                [.text($0.product), .text($0.method), .text($0.lot), .text($0.startedAt), .text($0.endedAt), .text($0.duration), .text($0.finalTemp), .text($0.status), .text($0.operatorName), .text($0.notes)]
+            }
+            let body = table.isEmpty ? [emptyOperationalRow(columns: 10)] : table
+            sections.append(.dataTable(
+                title: "Registro decongelamento",
+                subtitle: "Gestione sicura del decongelamento prodotti",
+                headers: ["Prodotto", "Metodo", "Lotto", "Inizio", "Fine", "Durata", "T° finale", "Stato processo", "Operatore", "Note / azioni correttive"],
+                rows: body
+            ))
+        case .controlloOlio:
+            let rows = OilControlRegister.rows(in: interval, records: operational.oilControlRecords, df: formatter)
+            let table: [[PDFTableCell]] = rows.map {
+                [.text($0.point), .text($0.checkedAt), .text($0.status), .text($0.polarCompounds), .text($0.temperature), .text($0.action), .text($0.operatorName), .text($0.notes)]
+            }
+            let body = table.isEmpty ? [emptyOperationalRow(columns: 8)] : table
+            sections.append(.dataTable(
+                title: "Registro controllo olio da frittura",
+                subtitle: "Composti polari, temperatura e sostituzione olio",
+                headers: ["Punto di frittura", "Data e ora controllo", "Stato olio", "Composti polari (%)", "Temperatura", "Azione intrapresa", "Operatore", "Annotazioni"],
+                rows: body
+            ))
+        case .checklist:
+            let rows = ChecklistRegister.rows(
+                in: interval,
+                runs: operational.checklistRuns,
+                itemResults: operational.checklistItemResults,
+                df: formatter
+            )
+            let table: [[PDFTableCell]] = rows.map {
+                [.text($0.checklist), .text($0.status), .text($0.startedAt), .text($0.completedAt), .text($0.progress), .text($0.failedItems), .text($0.operatorName), .text($0.notes)]
+            }
+            let body = table.isEmpty ? [emptyOperationalRow(columns: 8)] : table
+            sections.append(.dataTable(
+                title: "Registro checklist operative",
+                subtitle: "Verifiche periodiche e controlli strutturati",
+                headers: ["Checklist", "Stato esecuzione", "Inizio", "Fine", "Completamento", "Voci non conformi", "Operatore", "Annotazioni"],
+                rows: body
+            ))
+        case .etichetteProduzione:
+            let rows = ProductionLabelsRegister.rows(in: interval, labels: operational.productionLabels, df: formatter)
+            let table: [[PDFTableCell]] = rows.map {
+                [.text($0.product), .text($0.lot), .text($0.category), .text($0.supplier),
+                 .text($0.producedAt), .text($0.expiresAt), .text($0.status), .text($0.source),
+                 .text($0.reprints), .text($0.operatorName), .text($0.notes)]
+            }
+            let body = table.isEmpty ? [emptyOperationalRow(columns: 11)] : table
+            sections.append(.dataTable(
+                title: "Registro etichette di produzione",
+                subtitle: "Etichette HACCP emesse nel periodo (tracciabilità interna)",
+                headers: ["Prodotto", "Lotto", "Categoria", "Fornitore", "Data produzione", "Scadenza",
+                          "Stato prodotto", "Modulo origine", "Ristampe", "Operatore", "Annotazioni"],
+                rows: body
+            ))
+        default:
+            break
+        }
     }
 
     // MARK: - Moduli singoli (giornaliero)
@@ -453,19 +929,21 @@ enum HACCPRegisterPDFContentFactory {
         images: [ProductImage],
         checklistLogs: [ChecklistAuditLog],
         temperatureLogs: [TemperatureAuditLog]
-    ) -> (sections: [(title: String, headers: [String], rows: [[PDFTableCell]])], flags: OfficialReportSectionFlags) {
-        var sections: [(title: String, headers: [String], rows: [[PDFTableCell]])] = []
+    ) -> HACCPPDFSectionBundle {
         var flags: OfficialReportSectionFlags = []
-        sections.append(sectionIntestazioneUfficiale(
+        var sections = openingSections(
             restaurant: restaurant,
             reportTitle: reportTitle,
             reportDateLine: reportDateLine,
             periodLine: periodLine,
             officialDocumentId: officialDocumentId,
-            generatedAt: generatedAt
-        ))
+            generatedAt: generatedAt,
+            documentKind: "Registro giornaliero modulo singolo"
+        )
         flags.insert(.intestazione)
-        if let logo = sectionLogoIfPresent(logoData: restaurant.logoData) { sections.append(logo) }
+
+        sections.append(sectionRiepilogo(interval: interval, receipts: receipts, traceability: traceability, links: links))
+        flags.insert(.riepilogo)
 
         switch flavor {
         case .giornalieroRicezione:
@@ -492,11 +970,13 @@ enum HACCPRegisterPDFContentFactory {
             checklistLogs: checklistLogs,
             temperatureLogs: temperatureLogs,
             traceabilityLogs: logs,
-            traceabilityRecordIds: traceIds
+            traceabilityRecordIds: traceIds,
+            receipts: receipts,
+            traceability: traceability
         ))
         flags.insert(.auditLog)
-        sections.append(sectionRiepilogo(interval: interval, receipts: receipts, traceability: traceability, links: links))
-        flags.insert(.riepilogo)
+
+        finalizeDocument(&sections, restaurant: restaurant)
         return (sections, flags)
     }
 
@@ -514,17 +994,31 @@ enum HACCPRegisterPDFContentFactory {
         checklistLogs: [ChecklistAuditLog],
         temperatureLogs: [TemperatureAuditLog],
         logs: [TraceabilityLog]
-    ) -> (sections: [(title: String, headers: [String], rows: [[PDFTableCell]])], flags: OfficialReportSectionFlags) {
+    ) -> HACCPPDFSectionBundle {
         var flags: OfficialReportSectionFlags = [.intestazione, .nonConformita]
-        var sections: [(title: String, headers: [String], rows: [[PDFTableCell]])] = []
-        sections.append(sectionIntestazioneUfficiale(
+        var sections = openingSections(
             restaurant: restaurant,
             reportTitle: reportTitle,
             reportDateLine: reportDateLine,
             periodLine: periodLine,
             officialDocumentId: officialDocumentId,
-            generatedAt: generatedAt
+            generatedAt: generatedAt,
+            documentKind: "Registro non conformità mensile"
+        )
+
+        let rec = receipts.filter { interval.contains($0.receivedAt) }
+        let tr = traceability.filter { interval.contains($0.receivedAt) }
+        let nc = NonConformityRegister.rows(in: interval, receipts: receipts, traceability: traceability, images: images, df: df()).count
+        sections.append(.keyValueTable(
+            title: "Sintesi del periodo",
+            rows: [
+                [.text("Non conformità nel periodo"), .text("\(nc)")],
+                [.text("Ricezioni registrate"), .text("\(rec.count)")],
+                [.text("Prodotti tracciati"), .text("\(tr.count)")]
+            ]
         ))
+        flags.insert(.riepilogo)
+
         sections.append(contentsOf: sectionsNonConformita(interval: interval, receipts: receipts, traceability: traceability, images: images))
         let traceIds = Set(traceability.map(\.id))
         sections.append(sectionAudit(
@@ -533,22 +1027,84 @@ enum HACCPRegisterPDFContentFactory {
             checklistLogs: checklistLogs,
             temperatureLogs: temperatureLogs,
             traceabilityLogs: logs,
-            traceabilityRecordIds: traceIds
+            traceabilityRecordIds: traceIds,
+            receipts: receipts,
+            traceability: traceability
         ))
         flags.insert(.auditLog)
-        let rec = receipts.filter { interval.contains($0.receivedAt) }
-        let tr = traceability.filter { interval.contains($0.receivedAt) }
-        let nc = NonConformityRegister.rows(in: interval, receipts: receipts, traceability: traceability, images: images, df: df()).count
-        sections.append(("Riepilogo", ["Indicatore", "Valore"], [
-            [.text("Non conformità nel periodo"), .text("\(nc)")],
-            [.text("Ricezioni (contesto mese)"), .text("\(rec.count)")],
-            [.text("Record tracciabilità (contesto mese)"), .text("\(tr.count)")]
-        ]))
-        flags.insert(.riepilogo)
+
+        finalizeDocument(&sections, restaurant: restaurant)
         return (sections, flags)
     }
 
     // MARK: - Helpers
+
+    private static func emptyOperationalRow(columns: Int) -> [PDFTableCell] {
+        var cells: [PDFTableCell] = [.text(HACCPRegisterCopy.noActivityInPeriod)]
+        if columns > 1 {
+            for _ in 1..<columns {
+                cells.append(.text(HACCPRegisterCopy.notAvailable))
+            }
+        }
+        return cells
+    }
+
+    private static func sectionSintesiNonConformita(
+        interval: DateInterval,
+        receipts: [GoodsReceipt],
+        traceability: [TraceabilityRecord],
+        images: [ProductImage]
+    ) -> HACCPPDFSection {
+        let formatter = df()
+        let all = NonConformityRegister.rows(
+            in: interval,
+            receipts: receipts,
+            traceability: traceability,
+            images: images,
+            df: formatter
+        )
+        let rows: [[PDFTableCell]] = all.prefix(25).map { r in
+            [.text(r.product), .text(r.lot), .text(r.reason), .text(r.stato), .text(r.date), .text(r.source)]
+        }
+        let table = rows.isEmpty
+            ? [[.text(HACCPRegisterCopy.noNonConformities), .text(HACCPRegisterCopy.notAvailable), .text(HACCPRegisterCopy.notAvailable), .text(HACCPRegisterCopy.notAvailable), .text(HACCPRegisterCopy.notAvailable), .text(HACCPRegisterCopy.notAvailable)]]
+            : rows
+        return .dataTable(
+            title: "Sintesi non conformità del periodo",
+            subtitle: "Elenco delle principali anomalie (max. 25 voci)",
+            headers: ["Prodotto", "Lotto", "Descrizione", "Stato", "Data", "Origine"],
+            rows: table
+        )
+    }
+
+    private static func singoliDocumentIndex(
+        existingDocuments: [DocumentItem],
+        restaurantId: UUID,
+        interval: DateInterval,
+        documentType: DocumentType
+    ) -> [[PDFTableCell]] {
+        let singles = existingDocuments.filter {
+            $0.restaurantId == restaurantId
+                && $0.type == documentType
+                && DocumentArchiveLayout.isSingleModule($0.module)
+                && ($0.periodStart.map { interval.contains($0) } ?? false)
+        }
+        .sorted {
+            let l = DocumentArchiveLayout.moduleFolderTitle($0.module)
+            let r = DocumentArchiveLayout.moduleFolderTitle($1.module)
+            if l == r { return ($0.periodStart ?? .distantPast) < ($1.periodStart ?? .distantPast) }
+            return l < r
+        }
+
+        let rows: [[PDFTableCell]] = singles.map { doc in
+            [
+                .text(DocumentArchiveLayout.moduleFolderTitle(doc.module)),
+                .text(doc.officialDocumentId.isEmpty ? doc.id.uuidString : doc.officialDocumentId),
+                .text(doc.fileName)
+            ]
+        }
+        return rows.isEmpty ? [[.text(HACCPRegisterCopy.noActivityInPeriod), .text("—"), .text("—")]] : rows
+    }
 
     private static func dailyBreakdownRows(
         interval: DateInterval,
@@ -703,18 +1259,22 @@ enum HACCPRegisterPDFContentFactory {
         interval: DateInterval,
         df: DateFormatter
     ) -> [[PDFTableCell]] {
-        let filtered = logs.filter { traceabilityIds.contains($0.receivedItemId) && interval.contains($0.timestamp) }
+        let filtered = logs.filter {
+            traceabilityIds.contains($0.receivedItemId)
+                && interval.contains($0.timestamp)
+                && ($0.actionType == .expired || $0.actionType == .rejected || $0.actionType == .nonCompliance || $0.actionType == .withdrawn)
+        }
             .sorted { $0.timestamp > $1.timestamp }
-            .prefix(200)
+            .prefix(40)
         let rows: [[PDFTableCell]] = filtered.map { log in
             let action: String = switch log.actionType {
-            case .created: "Creazione"
-            case .linkedToProduction: "Collegamento produzione"
             case .expired: "Scadenza"
             case .rejected: "Respinto"
             case .nonCompliance: "Non conformità"
+            case .withdrawn: "Ritiro / scarto"
+            default: "Evento"
             }
-            return [.text(df.string(from: log.timestamp)), .text(log.operatorName), .text(action), .text(String(log.receivedItemId.uuidString.prefix(8)).uppercased())]
+            return [.text(df.string(from: log.timestamp)), .text(log.operatorName), .text(action), .text(log.detail ?? String(log.receivedItemId.uuidString.prefix(8)).uppercased())]
         }
         return rows.isEmpty ? [[.text(HACCPRegisterCopy.noActivityInPeriod), .text("—"), .text("—"), .text("—")]] : rows
     }

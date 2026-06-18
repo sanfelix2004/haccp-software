@@ -28,4 +28,19 @@ enum ProcessElapsedFormatter {
     static func format(since start: Date, now: Date = Date()) -> String {
         format(elapsed: elapsed(since: start, now: now))
     }
+
+    /// Durata conclusa in formato leggibile (es. "45 sec", "12 min", "1h 05m").
+    static func formatReadable(elapsed: TimeInterval) -> String {
+        let total = max(0, Int(elapsed))
+        let hours = total / 3600
+        let minutes = (total % 3600) / 60
+        let seconds = total % 60
+        if hours > 0 { return "\(hours)h \(minutes)m" }
+        if minutes > 0 { return "\(minutes) min" }
+        return "\(seconds) sec"
+    }
+
+    static func formatReadable(since start: Date, until end: Date) -> String {
+        formatReadable(elapsed: elapsed(since: start, now: end))
+    }
 }

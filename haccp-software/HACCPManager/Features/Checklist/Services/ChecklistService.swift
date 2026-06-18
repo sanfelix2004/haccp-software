@@ -58,6 +58,40 @@ final class ChecklistService {
         return template
     }
 
+    func createQuickTaskTemplate(
+        restaurantId: UUID,
+        title: String,
+        description: String,
+        frequency: ChecklistFrequency,
+        scheduledHour: Int?,
+        scheduledMinute: Int?,
+        createdBy: LocalUser,
+        modelContext: ModelContext
+    ) throws -> ChecklistTemplate {
+        let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedDescription = description.trimmingCharacters(in: .whitespacesAndNewlines)
+        return try createTemplate(
+            restaurantId: restaurantId,
+            title: trimmedTitle,
+            description: trimmedDescription.isEmpty ? "Attività rapida ricorrente" : trimmedDescription,
+            category: .quickTask,
+            frequency: frequency,
+            scheduledHour: scheduledHour,
+            scheduledMinute: scheduledMinute,
+            createdBy: createdBy,
+            items: [
+                ChecklistItemTemplateDraft(
+                    title: trimmedTitle,
+                    description: trimmedDescription,
+                    type: .doneNotDone,
+                    isRequired: true,
+                    requiresNoteIfFailed: false
+                )
+            ],
+            modelContext: modelContext
+        )
+    }
+
     func activateSuggestedTemplate(
         suggestedTemplate: SuggestedChecklistTemplate,
         restaurantId: UUID,
@@ -194,6 +228,9 @@ final class ChecklistService {
             run.completedAt = Date()
             run.completedByUserId = user.id
             run.completedByNameSnapshot = user.name
+            if run.status == .completed || run.status == .failed {
+                deactivateOverdueAlerts(for: run, modelContext: modelContext)
+            }
         }
 
         if result == .fail {
@@ -261,6 +298,7 @@ final class ChecklistService {
             )
             modelContext.insert(alert)
         }
+        deactivateOverdueAlerts(for: run, modelContext: modelContext)
 
         log(
             restaurantId: restaurantId,
@@ -306,6 +344,7 @@ final class ChecklistService {
     func archiveRun(_ run: ChecklistRun, user: LocalUser, restaurantId: UUID, modelContext: ModelContext) throws {
         run.status = .archived
         run.isArchived = true
+        deactivateOverdueAlerts(for: run, modelContext: modelContext)
         log(
             restaurantId: restaurantId,
             user: user,
@@ -435,6 +474,18 @@ final class ChecklistService {
                 message: "Checklist in ritardo: \(run.templateTitleSnapshot)"
             )
         )
+    }
+
+    /// Chiude automaticamente gli avvisi «in ritardo» quando la checklist non è più aperta.
+    private func deactivateOverdueAlerts(for run: ChecklistRun, modelContext: ModelContext) {
+        let alerts = (try? modelContext.fetch(FetchDescriptor<ChecklistAlert>())) ?? []
+        let now = Date()
+        for alert in alerts where alert.checklistRunId == run.id && alert.isActive && alert.message.contains("in ritardo") {
+            alert.isActive = false
+            alert.status = .resolved
+            alert.resolvedAt = now
+            alert.correctiveAction = "Checklist chiusa"
+        }
     }
 
     private func syncChecklistNotifications(restaurantId: UUID, modelContext: ModelContext, now: Date = Date()) {

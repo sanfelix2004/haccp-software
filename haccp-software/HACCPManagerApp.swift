@@ -84,6 +84,7 @@ struct HACCPManagerApp: App {
             guard newPhase == .active || newPhase == .background else { return }
             let context = container.mainContext
             Task { @MainActor in
+                DocumentArchivePurgeService.consumeMarkerAndPurgeIfNeeded(modelContext: context)
                 var descriptor = FetchDescriptor<TraceabilityRecord>(
                     predicate: #Predicate { !$0.isArchived },
                     sortBy: [SortDescriptor(\TraceabilityRecord.expiryDate)]
@@ -93,6 +94,7 @@ struct HACCPManagerApp: App {
                     _ = expiryService.refreshStatuses(records: activeRecords, modelContext: context)
                 }
                 if newPhase == .active {
+                    SchedulingToChecklistMigrationService.migrateIfNeeded(modelContext: context)
                     if let restaurantId = appState.activeRestaurantId {
                         await DataArchiveService.runIfNeeded(context: context, restaurantId: restaurantId)
                     }
@@ -104,7 +106,7 @@ struct HACCPManagerApp: App {
     }
 
     /// "Catch-up" del motore report: appena l'app torna in foreground, verifica se
-    /// sono state attraversate frontiere giornaliere/settimanali/mensili/annuali e,
+    /// sono state attraversate frontiere mensili e, in caso, esegue la pipeline completa.
     /// in caso, esegue la pipeline completa senza richiedere azioni manuali.
     @MainActor
     private func tickReportEngine(modelContext: ModelContext) async {
@@ -115,6 +117,11 @@ struct HACCPManagerApp: App {
         guard let restaurant = restaurants.first(where: { $0.id == restaurantId }),
               let user = users.first(where: { $0.id == userId }) else { return }
 
+        await DocumentArchivePurgeService.regenerateArchiveIfNeeded(
+            modelContext: modelContext,
+            restaurant: restaurant,
+            user: user
+        )
         await HACCPReportScheduler.shared.tickIfNeeded(
             restaurant: restaurant,
             user: user,

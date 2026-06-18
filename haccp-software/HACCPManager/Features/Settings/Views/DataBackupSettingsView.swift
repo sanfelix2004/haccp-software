@@ -28,8 +28,8 @@ struct DataBackupSettingsView: View {
         users.first { $0.id == appState.currentUserId }
     }
 
-    private var isMaster: Bool {
-        currentUser?.role == .master
+    private var canManageData: Bool {
+        currentUser.permissions.can(.manageDataAndBackup)
     }
 
     private var pdfSyncedCount: Int {
@@ -54,7 +54,7 @@ struct DataBackupSettingsView: View {
         VStack(spacing: theme.spacing.sectionSpacing) {
             storageUsageCard
             archiveCard
-            if isMaster {
+            if canManageData {
                 advancedCard
             }
         }

@@ -62,9 +62,11 @@ struct ActiveDefrostListSheet: View {
                     }
                 }
                 Spacer()
-                Text(snapshot.formattedElapsed(at: defrostManager.now))
-                    .font(.system(.title2, design: .monospaced).weight(.bold))
-                    .foregroundStyle(Color(red: 0.35, green: 0.7, blue: 1.0))
+                LiveProcessDurationText(
+                    since: snapshot.startAt,
+                    font: .system(.title2, design: .monospaced).weight(.bold),
+                    color: Color(red: 0.35, green: 0.7, blue: 1.0)
+                )
             }
 
             Label("Inizio \(snapshot.startAt.formatted(date: .omitted, time: .shortened))", systemImage: "clock")

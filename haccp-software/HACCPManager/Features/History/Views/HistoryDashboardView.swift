@@ -54,18 +54,22 @@ struct HistoryDashboardView: View {
     }
 
     private var heroHeader: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 10) {
-                Image(systemName: "clock.arrow.circlepath")
-                    .font(.title2.weight(.semibold))
-                    .foregroundStyle(theme.colorPrimary)
-                Text("Archivio HACCP")
-                    .font(theme.typography.title2.weight(.bold))
-                    .foregroundStyle(theme.colorTextPrimary)
+        HStack(alignment: .top, spacing: 8) {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 10) {
+                    Image(systemName: "clock.arrow.circlepath")
+                        .font(.title2.weight(.semibold))
+                        .foregroundStyle(theme.colorPrimary)
+                    Text("Archivio HACCP")
+                        .font(theme.typography.title2.weight(.bold))
+                        .foregroundStyle(theme.colorTextPrimary)
+                }
+                Text("Tutte le registrazioni del ristorante, organizzate per modulo e data.")
+                    .font(theme.typography.subheadline)
+                    .foregroundStyle(theme.colorTextSecondary)
             }
-            Text("Tutte le registrazioni del ristorante, organizzate per modulo e data.")
-                .font(theme.typography.subheadline)
-                .foregroundStyle(theme.colorTextSecondary)
+            Spacer(minLength: 0)
+            ModuleHelpButton(help: ModuleHelpLibrary.sidebar(.history), size: 40)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }

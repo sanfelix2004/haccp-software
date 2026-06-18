@@ -8,6 +8,7 @@ import SwiftUI
 struct DashboardCardView<Content: View>: View {
     let title: String
     var subtitle: String? = nil
+    var help: ModuleHelp? = nil
     @ViewBuilder let content: Content
 
     @Environment(\.theme) private var theme
@@ -15,14 +16,20 @@ struct DashboardCardView<Content: View>: View {
     var body: some View {
         GlassCard {
             VStack(alignment: .leading, spacing: theme.spacing.lg) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(title)
-                        .font(theme.typography.title3)
-                        .foregroundStyle(theme.colorTextPrimary)
-                    if let subtitle {
-                        Text(subtitle)
-                            .font(theme.typography.caption)
-                            .foregroundStyle(theme.colorTextSecondary)
+                HStack(alignment: .top, spacing: 8) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(title)
+                            .font(theme.typography.title3)
+                            .foregroundStyle(theme.colorTextPrimary)
+                        if let subtitle {
+                            Text(subtitle)
+                                .font(theme.typography.caption)
+                                .foregroundStyle(theme.colorTextSecondary)
+                        }
+                    }
+                    Spacer(minLength: 0)
+                    if let help {
+                        ModuleHelpButton(help: help, size: 32)
                     }
                 }
                 content

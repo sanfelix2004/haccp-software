@@ -9,15 +9,25 @@ struct DefrostNewSheet: View {
     let restaurantId: UUID
     let user: LocalUser
     let traceabilityRecords: [TraceabilityRecord]
+    let incomingFoodTemplates: [ProductTemplate]
     let onSaved: () -> Void
     let onCancel: () -> Void
 
     @Environment(\.modelContext) private var modelContext
     @Environment(\.theme) private var theme
+    @Bindable private var settingsStorage = SettingsStorageService.shared
 
-    @State private var draft = DefrostNewDraft()
-    @State private var useTraceability = false
-    @State private var selectedTraceId: UUID?
+    @State private var subject = KitchenProcessSubject(
+        source: .traceability,
+        traceabilityItemId: nil,
+        productTemplateId: nil,
+        productionId: nil,
+        productName: "",
+        lotNumber: nil,
+        categoryName: nil
+    )
+    @State private var method: DefrostMethod = .frigorifero
+    @State private var notes = ""
     @State private var errorMessage: String?
 
     private let service = DefrostService()
@@ -26,48 +36,38 @@ struct DefrostNewSheet: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: theme.spacing.sectionSpacing) {
-                    DashboardCardView(title: "Prodotto", subtitle: "Da tracciabilità o manuale") {
-                        VStack(alignment: .leading, spacing: 12) {
-                            Toggle("Collega a tracciabilità", isOn: $useTraceability)
-                                .font(theme.typography.subheadline)
-
-                            if useTraceability {
-                                Picker("Prodotto tracciato", selection: $selectedTraceId) {
-                                    Text("Seleziona…").tag(UUID?.none)
-                                    ForEach(traceabilityRecords) { item in
-                                        Text("\(item.productName) · \(item.lotCode)")
-                                            .tag(Optional(item.id))
-                                    }
-                                }
-                                .pickerStyle(.menu)
-                                .onChange(of: selectedTraceId) { _, newId in
-                                    applyTraceability(newId)
-                                }
-                            } else {
-                                TextField("Nome prodotto *", text: $draft.productName)
-                                    .textFieldStyle(.roundedBorder)
-                                TextField("Lotto", text: $draft.lotNumber)
-                                    .textFieldStyle(.roundedBorder)
-                            }
-                        }
+                    DashboardCardView(
+                        title: "Cosa decongeli?",
+                        subtitle: "Lotto tracciato, alimento in ingresso o inserimento rapido"
+                    ) {
+                        KitchenProcessSubjectPicker(
+                            subject: $subject,
+                            allowedSources: [.traceability, .incomingFood, .manual],
+                            traceabilityRecords: traceabilityRecords,
+                            incomingFoodTemplates: incomingFoodTemplates,
+                            productions: [],
+                            productionCategories: []
+                        )
                     }
 
                     DashboardCardView(title: "Decongelamento") {
                         VStack(spacing: 14) {
-                            Picker("Metodo", selection: $draft.method) {
+                            Picker("Metodo", selection: $method) {
                                 ForEach(DefrostMethod.allCases) { m in
                                     Text(m.label).tag(m)
                                 }
                             }
                             .pickerStyle(.menu)
 
-                            DatePicker("Ora inizio", selection: $draft.startAt)
-
-                            Text("Terminerai il decongelamento manualmente quando il prodotto è pronto.")
+                            Text("Il timer parte quando premi Avvia, non prima.")
                                 .font(theme.typography.caption)
                                 .foregroundStyle(theme.colorTextSecondary)
 
-                            TextField("Note (opzionale)", text: $draft.notes, axis: .vertical)
+                            Text("Fine prevista: \(method.expectedEndAt(from: Date(), settings: settingsStorage.haccp).formatted(date: .abbreviated, time: .shortened)) · max \(method.recommendedDurationHours(settings: settingsStorage.haccp)) h")
+                                .font(theme.typography.caption)
+                                .foregroundStyle(theme.colorTextSecondary)
+
+                            TextField("Note (opzionale)", text: $notes, axis: .vertical)
                                 .lineLimit(2...4)
                                 .textFieldStyle(.roundedBorder)
                         }
@@ -84,7 +84,7 @@ struct DefrostNewSheet: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Avvia") { save() }
-                        .disabled(!draft.isValid)
+                        .disabled(!subject.isValid)
                 }
             }
             .alert("Decongelamento", isPresented: Binding(
@@ -98,21 +98,16 @@ struct DefrostNewSheet: View {
         }
     }
 
-    private func applyTraceability(_ id: UUID?) {
-        guard let id, let trace = traceabilityRecords.first(where: { $0.id == id }) else { return }
-        draft = service.draft(from: trace)
-        draft.method = .frigorifero
-    }
-
     private func save() {
-        if draft.startAt > Date() {
-            draft.startAt = Date()
-        }
+        var draft = DefrostNewDraft.from(subject: subject)
+        draft.method = method
+        draft.notes = notes
         do {
             _ = try service.startDefrost(
                 draft: draft,
                 restaurantId: restaurantId,
                 user: user,
+                settings: settingsStorage.haccp,
                 modelContext: modelContext
             )
             onSaved()

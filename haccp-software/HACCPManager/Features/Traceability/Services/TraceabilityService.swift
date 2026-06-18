@@ -94,11 +94,39 @@ struct TraceabilityService {
         try modelContext.save()
     }
 
-    func markUsed(
+    func markWithdrawn(
         record: TraceabilityRecord,
+        kind: TraceabilityWithdrawalKind,
+        note: String,
+        user: LocalUser,
         modelContext: ModelContext
     ) throws {
+        guard record.canBeWithdrawn else {
+            throw traceabilityError(
+                4010,
+                "Solo i lotti scaduti possono essere segnati come ritirati o scartati."
+            )
+        }
+
+        let trimmedNote = note.trimmingCharacters(in: .whitespacesAndNewlines)
+        let stamp = Date().formatted(date: .abbreviated, time: .shortened)
+        let closureLine = "[\(kind.label) \(stamp)]\(trimmedNote.isEmpty ? "" : " \(trimmedNote)")"
+        if let existing = record.notes?.trimmingCharacters(in: .whitespacesAndNewlines), !existing.isEmpty {
+            record.notes = "\(existing)\n\(closureLine)"
+        } else {
+            record.notes = closureLine
+        }
+
+        let auditDetail = trimmedNote.isEmpty ? kind.label : "\(kind.label) — \(trimmedNote)"
         record.productStatus = .used
+        modelContext.insert(
+            TraceabilityLog(
+                receivedItemId: record.id,
+                actionType: .withdrawn,
+                operatorName: user.name,
+                detail: auditDetail
+            )
+        )
         try modelContext.save()
     }
 
@@ -183,5 +211,9 @@ struct TraceabilityService {
 
     private func csvCell(_ value: String) -> String {
         "\"\(value.replacingOccurrences(of: "\"", with: "\"\""))\""
+    }
+
+    private func traceabilityError(_ code: Int, _ message: String) -> NSError {
+        NSError(domain: "TraceabilityService", code: code, userInfo: [NSLocalizedDescriptionKey: message])
     }
 }

@@ -59,7 +59,11 @@ enum ExpiryStatus: Int, CaseIterable, Identifiable {
         }
     }
 
-    static func compute(record: TraceabilityRecord, now: Date = Date()) -> ExpiryStatus {
+    static func compute(
+        record: TraceabilityRecord,
+        now: Date = Date(),
+        soonThresholdDays: Int = HACCPSettings().productExpiryThreshold
+    ) -> ExpiryStatus {
         if record.productStatus == .rejected { return .rejected }
         if record.productStatus == .used     { return .used }
         if record.productStatus == .expired  { return .expired }
@@ -73,24 +77,18 @@ enum ExpiryStatus: Int, CaseIterable, Identifiable {
 
         guard let exp = record.expiryDate else { return .healthy }
 
-        let calendar = Calendar.current
-        let startOfToday = calendar.startOfDay(for: now)
-        let startOfExpiry = calendar.startOfDay(for: exp)
-        let days = calendar.dateComponents([.day], from: startOfToday, to: startOfExpiry).day ?? 0
+        let days = ProductExpiryEvaluator.daysUntilExpiry(exp, now: now)
 
         if days < 0  { return .expired }
         if days == 0 { return .dueToday }
-        if days <= 7 { return .soonExpiring }
+        if days <= soonThresholdDays { return .soonExpiring }
         return .healthy
     }
 
     /// Giorni rimanenti formattati ("Oggi", "+3g", "-2g") rispetto a `now`.
     static func daysLabel(record: TraceabilityRecord, now: Date = Date()) -> String {
         guard let exp = record.expiryDate else { return "—" }
-        let calendar = Calendar.current
-        let days = calendar.dateComponents([.day],
-                                           from: calendar.startOfDay(for: now),
-                                           to: calendar.startOfDay(for: exp)).day ?? 0
+        let days = ProductExpiryEvaluator.daysUntilExpiry(exp, now: now)
         if days == 0 { return "Oggi" }
         return days > 0 ? "+\(days)g" : "\(days)g"
     }
@@ -153,10 +151,17 @@ struct ExpiryControlView: View {
     @Environment(\.theme) private var theme
     @EnvironmentObject var appState: AppState
     @Query private var allRecords: [TraceabilityRecord]
+    @Query private var users: [LocalUser]
 
     @State private var searchText: String = ""
     @State private var category: GoodsCategory = .all
     @State private var filter: ExpiryFilter = .all
+    @State private var withdrawRecord: TraceabilityRecord?
+    @State private var showLoginRequiredAlert = false
+
+    private var soonThresholdDays: Int {
+        SettingsStorageService.shared.haccp.productExpiryThreshold
+    }
 
     // MARK: Derived data
 
@@ -176,7 +181,7 @@ struct ExpiryControlView: View {
         var s = ExpiryStats()
         s.total = activeRecords.count
         for r in activeRecords {
-            switch ExpiryStatus.compute(record: r) {
+            switch ExpiryStatus.compute(record: r, soonThresholdDays: soonThresholdDays) {
             case .expired:                       s.expired += 1
             case .dueToday:                      s.dueToday += 1; s.dueOrSoon += 1
             case .soonExpiring:                  s.dueOrSoon += 1
@@ -189,11 +194,15 @@ struct ExpiryControlView: View {
 
     private var alertRecords: [TraceabilityRecord] {
         scoped
-            .filter {
-                let st = ExpiryStatus.compute(record: $0)
+            .filter { record in
+                let st = ExpiryStatus.compute(record: record, soonThresholdDays: soonThresholdDays)
                 return st == .expired || st == .dueToday
             }
             .sorted { ($0.expiryDate ?? .distantFuture) < ($1.expiryDate ?? .distantFuture) }
+    }
+
+    private var withdrawableAlertRecords: [TraceabilityRecord] {
+        alertRecords.filter(\.canBeWithdrawn)
     }
 
     private var filteredRecords: [TraceabilityRecord] {
@@ -207,7 +216,7 @@ struct ExpiryControlView: View {
                 }
 
                 // Stato
-                let st = ExpiryStatus.compute(record: record)
+                let st = ExpiryStatus.compute(record: record, soonThresholdDays: soonThresholdDays)
                 switch filter {
                 case .all:     break
                 case .alerts:  if st != .expired && st != .dueToday && st != .soonExpiring { return false }
@@ -228,14 +237,27 @@ struct ExpiryControlView: View {
                 return true
             }
             .sorted { a, b in
-                let sa = ExpiryStatus.compute(record: a).rawValue
-                let sb = ExpiryStatus.compute(record: b).rawValue
+                let sa = ExpiryStatus.compute(record: a, soonThresholdDays: soonThresholdDays).rawValue
+                let sb = ExpiryStatus.compute(record: b, soonThresholdDays: soonThresholdDays).rawValue
                 if sa != sb { return sa < sb }
                 return (a.expiryDate ?? .distantFuture) < (b.expiryDate ?? .distantFuture)
             }
     }
 
     // MARK: Body
+
+    private var currentUser: LocalUser? {
+        users.first(where: { $0.id == appState.currentUserId })
+    }
+
+    private func presentWithdraw(for record: TraceabilityRecord) {
+        guard record.canBeWithdrawn else { return }
+        guard currentUser != nil else {
+            showLoginRequiredAlert = true
+            return
+        }
+        withdrawRecord = record
+    }
 
     var body: some View {
         ScrollView {
@@ -262,6 +284,27 @@ struct ExpiryControlView: View {
         .animation(theme.motion.standard, value: category)
         .animation(theme.motion.standard, value: filter)
         .animation(theme.motion.standard, value: scoped.count)
+        .sheet(item: $withdrawRecord) { record in
+            if let user = currentUser {
+                TraceabilityWithdrawSheet(
+                    record: record,
+                    user: user,
+                    onSaved: { withdrawRecord = nil },
+                    onCancel: { withdrawRecord = nil }
+                )
+            } else {
+                ContentUnavailableView(
+                    "Accesso richiesto",
+                    systemImage: "person.crop.circle.badge.exclamationmark",
+                    description: Text("Effettua l'accesso per registrare ritiro o scarto.")
+                )
+            }
+        }
+        .alert("Accesso richiesto", isPresented: $showLoginRequiredAlert) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("Effettua l'accesso per registrare ritiro o scarto.")
+        }
     }
 
     // MARK: Header
@@ -277,6 +320,7 @@ struct ExpiryControlView: View {
                     .foregroundStyle(theme.colorTextSecondary)
             }
             Spacer()
+            ModuleHelpButton(help: ModuleHelpLibrary.sidebar(.expiryControl), size: 40)
             conformityBadge
         }
     }
@@ -326,14 +370,16 @@ struct ExpiryControlView: View {
                 title: "In scadenza",
                 value: "\(stats.dueOrSoon)",
                 tint: theme.colorWarning,
-                hint: stats.dueOrSoon > 0 ? "Entro 7 giorni" : "Tutto a norma"
+                hint: stats.dueOrSoon > 0 ? "Entro \(soonThresholdDays) giorni" : "Tutto a norma"
             )
             ExpirySummaryCard(
                 icon: "xmark.octagon.fill",
                 title: "Scaduti",
                 value: "\(stats.expired)",
                 tint: theme.colorError,
-                hint: stats.expired > 0 ? "Da rimuovere" : "Nessuno"
+                hint: withdrawableAlertRecords.count > 0
+                    ? "\(withdrawableAlertRecords.count) da chiudere"
+                    : (stats.expired > 0 ? "Nessuno da chiudere" : "Nessuno")
             )
             ExpirySummaryCard(
                 icon: "checkmark.seal.fill",
@@ -366,8 +412,22 @@ struct ExpiryControlView: View {
 
             VStack(spacing: theme.spacing.sm) {
                 ForEach(alertRecords.prefix(5)) { record in
-                    ExpiryAlertRow(record: record)
+                    Button {
+                        presentWithdraw(for: record)
+                    } label: {
+                        ExpiryAlertRow(
+                            record: record,
+                            showsWithdrawHint: record.canBeWithdrawn
+                        )
+                    }
+                    .buttonStyle(.plain)
                 }
+            }
+
+            if withdrawableAlertRecords.count > 0 {
+                Text("Tocca un lotto scaduto per registrare ritiro o scarto.")
+                    .font(theme.typography.caption)
+                    .foregroundStyle(theme.colorTextSecondary)
             }
 
             if alertRecords.count > 5 {
@@ -484,7 +544,16 @@ struct ExpiryControlView: View {
             } else {
                 LazyVStack(spacing: theme.spacing.sm) {
                     ForEach(filteredRecords) { record in
-                        ExpiryProductRow(record: record)
+                        Button {
+                            presentWithdraw(for: record)
+                        } label: {
+                            ExpiryProductRow(
+                                record: record,
+                                soonThresholdDays: soonThresholdDays,
+                                showsWithdrawHint: record.canBeWithdrawn
+                            )
+                        }
+                        .buttonStyle(.plain)
                     }
                 }
             }
@@ -552,6 +621,7 @@ private struct ExpirySummaryCard: View {
 private struct ExpiryAlertRow: View {
     @Environment(\.theme) private var theme
     let record: TraceabilityRecord
+    var showsWithdrawHint: Bool = false
 
     private var status: ExpiryStatus { ExpiryStatus.compute(record: record) }
     private var color: Color { status.color(theme) }
@@ -592,6 +662,11 @@ private struct ExpiryAlertRow: View {
                         .font(theme.typography.caption2)
                         .foregroundStyle(theme.colorTextSecondary)
                 }
+                if showsWithdrawHint {
+                    Text("Ritiro/scarto")
+                        .font(theme.typography.caption2.weight(.semibold))
+                        .foregroundStyle(theme.colorPrimary)
+                }
             }
         }
         .padding(theme.spacing.md)
@@ -609,8 +684,12 @@ private struct ExpiryAlertRow: View {
 private struct ExpiryProductRow: View {
     @Environment(\.theme) private var theme
     let record: TraceabilityRecord
+    var soonThresholdDays: Int = HACCPSettings().productExpiryThreshold
+    var showsWithdrawHint: Bool = false
 
-    private var status: ExpiryStatus { ExpiryStatus.compute(record: record) }
+    private var status: ExpiryStatus {
+        ExpiryStatus.compute(record: record, soonThresholdDays: soonThresholdDays)
+    }
     private var color: Color { status.color(theme) }
     private var categoryLabel: String {
         GoodsCategory(rawValue: record.categoryRaw ?? "")?.rawValue ?? "Senza categoria"
@@ -656,6 +735,11 @@ private struct ExpiryProductRow: View {
                     Text(exp, format: .dateTime.day().month(.abbreviated).year())
                         .font(theme.typography.caption2)
                         .foregroundStyle(theme.colorTextSecondary)
+                }
+                if showsWithdrawHint {
+                    Text("Tocca per ritiro/scarto")
+                        .font(theme.typography.caption2.weight(.semibold))
+                        .foregroundStyle(theme.colorPrimary)
                 }
             }
         }

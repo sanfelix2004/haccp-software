@@ -2,6 +2,7 @@ import SwiftUI
 
 struct SettingsCardView: View {
     let section: SettingsSection
+    let locked: Bool
     let action: () -> Void
     
     var body: some View {
@@ -20,7 +21,7 @@ struct SettingsCardView: View {
                     
                     Spacer()
                     
-                    if section.requiresMaster {
+                    if locked {
                         Image(systemName: "lock.shield.fill")
                             .font(.caption)
                             .foregroundColor(ThemeManager.shared.colorWarning)

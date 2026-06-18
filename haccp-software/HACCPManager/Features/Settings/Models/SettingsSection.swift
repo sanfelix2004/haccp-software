@@ -10,9 +10,9 @@ enum SettingsSection: String, CaseIterable, Identifiable {
     case data = "Dati e Backup"
     case printer = "Stampanti"
     case info = "Info App"
-    
+
     var id: String { self.rawValue }
-    
+
     var icon: String {
         switch self {
         case .profile: return "person.crop.circle.fill"
@@ -26,7 +26,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .info: return "info.circle.fill"
         }
     }
-    
+
     var description: String {
         switch self {
         case .profile: return "Gestisci i tuoi dati e il tuo PIN."
@@ -40,11 +40,14 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .info: return "Versioni e note legali."
         }
     }
-    
-    var requiresMaster: Bool {
+
+    /// Sezioni accessibili all'operatore HACCP senza PIN MASTER.
+    var isOperatorAccessible: Bool {
         switch self {
-        case .security, .restaurant, .haccp, .data, .printer: return true
-        default: return false
+        case .profile, .appearance, .notifications, .info:
+            return true
+        default:
+            return false
         }
     }
 }

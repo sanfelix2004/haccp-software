@@ -13,6 +13,7 @@ struct DefrostView: View {
     @EnvironmentObject private var defrostManager: ActiveDefrostManager
 
     @Query private var users: [LocalUser]
+    @Query private var productTemplates: [ProductTemplate]
 
     @StateObject private var vm = DefrostViewModel()
     @StateObject private var dataStore = DefrostDataStore()
@@ -21,14 +22,20 @@ struct DefrostView: View {
     @State private var recordIdToComplete: UUID?
     @State private var recordPendingDelete: DefrostRecord?
     @State private var showMasterAuthDelete = false
-    @State private var labelDraftAfterComplete: ProductionLabelDraft?
     @State private var errorMessage: String?
 
     private var currentUser: LocalUser? {
         users.first { $0.id == appState.currentUserId }
     }
 
-    private var isMaster: Bool { currentUser?.role == .master }
+    private var permissions: UserPermissions { currentUser.permissions }
+    private var canDeleteRecords: Bool { permissions.can(.deleteOperationalRecords) }
+    private var canExecute: Bool { permissions.can(.executeRecords) }
+
+    private var scopedTemplates: [ProductTemplate] {
+        guard let rid = appState.activeRestaurantId else { return [] }
+        return productTemplates.filter { $0.restaurantId == rid }
+    }
 
     private var stats: (inProgress: Int, completedToday: Int) {
         vm.stats(from: dataStore.records)
@@ -57,6 +64,11 @@ struct DefrostView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .kitchenProcessRecordsDidChange)) { _ in
             reload()
+            defrostManager.refresh(context: modelContext, restaurantId: appState.activeRestaurantId)
+        }
+        .onAppear {
+            ensureTemplates()
+            defrostManager.refresh(context: modelContext, restaurantId: appState.activeRestaurantId)
         }
         .sheet(isPresented: $showNewSheet) {
             if let rid = appState.activeRestaurantId, let user = currentUser {
@@ -64,6 +76,7 @@ struct DefrostView: View {
                     restaurantId: rid,
                     user: user,
                     traceabilityRecords: dataStore.traceabilityRecords,
+                    incomingFoodTemplates: scopedTemplates,
                     onSaved: {
                         showNewSheet = false
                         reload()
@@ -83,29 +96,12 @@ struct DefrostView: View {
                     record: record,
                     user: user,
                     criticalities: dataStore.criticalities,
-                    elapsedNow: defrostManager.now,
                     onCompleted: {
                         recordIdToComplete = nil
                         bumpHistoryRangeToIncludeToday()
                         reload()
                     },
                     onCancel: { recordIdToComplete = nil }
-                )
-            }
-        }
-        .sheet(isPresented: Binding(
-            get: { labelDraftAfterComplete != nil },
-            set: { if !$0 { labelDraftAfterComplete = nil } }
-        )) {
-            if let draft = labelDraftAfterComplete,
-               let rid = appState.activeRestaurantId,
-               let user = currentUser {
-                ProductionLabelEditorSheet(
-                    mode: .create(draft),
-                    restaurantId: rid,
-                    user: user,
-                    onSaved: { labelDraftAfterComplete = nil },
-                    onCancel: { labelDraftAfterComplete = nil }
                 )
             }
         }
@@ -141,10 +137,21 @@ struct DefrostView: View {
     private var mainScroll: some View {
         ScrollView {
             LazyVStack(spacing: theme.spacing.sectionSpacing) {
+                ModuleScreenHeader(
+                    title: "Decongelamento",
+                    subtitle: "Traccia prodotti, metodi e tempi in cucina",
+                    systemImage: "snowflake",
+                    help: ModuleHelpLibrary.sidebar(.defrost)
+                )
+
                 statsRow
 
                 PrimaryButton(title: "Nuovo decongelamento", icon: "plus.circle.fill") {
                     showNewSheet = true
+                }
+
+                SecondaryButton(title: "Gestisci alimenti in ingresso", icon: "tray.full.fill") {
+                    appState.pendingSidebarNavigation = .incomingFoodCatalog
                 }
 
                 let active = vm.activeRecords(from: dataStore.records)
@@ -170,10 +177,9 @@ struct DefrostView: View {
                                     DefrostRecordCardView(
                                         record: record,
                                         showCompleteAction: true,
-                                        elapsedNow: defrostManager.now,
                                         onComplete: { recordIdToComplete = record.id }
                                     )
-                                    if isMaster {
+                                    if canDeleteRecords {
                                         Button("Annulla processo", role: .destructive) {
                                             cancelRecord(record)
                                         }
@@ -242,12 +248,7 @@ struct DefrostView: View {
                 .font(theme.typography.caption)
                 .foregroundStyle(theme.colorTextSecondary)
             HStack(spacing: 12) {
-                if record.endAt != nil {
-                    CreateProductionLabelLink {
-                        labelDraftAfterComplete = ProductionLabelsService().draft(from: record)
-                    }
-                }
-                if isMaster {
+                if canDeleteRecords {
                     Button("Elimina", role: .destructive) {
                         recordPendingDelete = record
                         showMasterAuthDelete = true
@@ -270,9 +271,10 @@ struct DefrostView: View {
     }
 
     private func historySubtitle(_ record: DefrostRecord) -> String {
+        let category = record.categoryNameSnapshot.map { "\($0) · " } ?? ""
         let lot = record.lotNumber.map { "Lotto \($0) · " } ?? ""
         let fine = record.endAt?.formatted(date: .abbreviated, time: .shortened) ?? "—"
-        return "\(lot)\(record.method) · Durata \(record.durationText) · Fine \(fine) · \(record.createdByNameSnapshot)"
+        return "\(category)\(lot)\(record.method) · Durata \(record.durationText) · Fine \(fine) · \(record.createdByNameSnapshot)"
     }
 
     private func badgeStyle(for record: DefrostRecord) -> HACCPBadgeStyle {
@@ -330,5 +332,10 @@ struct DefrostView: View {
         } catch {
             errorMessage = error.localizedDescription
         }
+    }
+
+    private func ensureTemplates() {
+        guard let rid = appState.activeRestaurantId else { return }
+        ProductTemplateSeeder.ensureTemplates(restaurantId: rid, modelContext: modelContext)
     }
 }

@@ -30,7 +30,8 @@ final class DocumentGenerationService {
         checklistAuditLogs: [ChecklistAuditLog],
         temperatureAuditLogs: [TemperatureAuditLog],
         modelContext: ModelContext
-    ) {
+    ) async {
+        await Task.yield()
         let rid = restaurant.id
         var calendar = Calendar(identifier: .gregorian)
         calendar.locale = Locale(identifier: "it_IT")
@@ -40,8 +41,8 @@ final class DocumentGenerationService {
         let scopedFolders = allFolders.filter { $0.restaurantId == rid }
         let allItems = (try? modelContext.fetch(FetchDescriptor<DocumentItem>())) ?? []
         var scopedItems = allItems.filter { $0.restaurantId == rid }
-        for it in scopedItems where it.type == .mensile && it.module == .nonConformita {
-            it.type = .nonConformita
+        for it in scopedItems where it.type == .nonConformita {
+            it.type = .mensile
         }
         for it in scopedItems where it.officialDocumentId.isEmpty {
             it.officialDocumentId = "HACCP-DOC-\(it.id.uuidString.uppercased())"
@@ -80,175 +81,35 @@ final class DocumentGenerationService {
 
         let todayStart = calendar.startOfDay(for: Date())
         let creationStart = calendar.startOfDay(for: restaurant.creationDate)
+
+        let batchContext = ArchiveBatchContext(
+            restaurant: restaurant,
+            user: user,
+            folders: scopedFolders,
+            receipts: scopedReceipts,
+            traceability: scopedTrace,
+            images: traceabilityImages,
+            productions: scopedProductions,
+            links: traceabilityLinks,
+            logs: traceabilityLogs,
+            checklistLogs: scopedChecklistLogs,
+            temperatureLogs: scopedTempLogs,
+            allDocuments: allItems,
+            calendar: calendar,
+            modelContext: modelContext
+        )
+
+        // Nessuna generazione durante il mese corrente: i report vengono creati solo a mese chiuso.
+
+        // Fine mese: report mensile per ogni modulo + report combinato + registro NC.
         let backfillLimit = calendar.date(byAdding: .day, value: -maxBackfillDays, to: todayStart) ?? creationStart
-        let dailyLower = max(creationStart, backfillLimit)
-
-        // Giornalieri (chiusi)
-        var dayCursor = dailyLower
-        while dayCursor < todayStart {
-            let interval = dayInterval(containing: dayCursor, calendar: calendar)
-            for module in DocumentArchiveLayout.dailyModules {
-                generateIfNeeded(
-                    restaurant: restaurant,
-                    user: user,
-                    folders: scopedFolders,
-                    type: .giornaliero,
-                    module: module,
-                    interval: interval,
-                    isOpenPeriod: false,
-                    keyIndex: &keyIndex,
-                    scopedItems: &scopedItems,
-                    receipts: scopedReceipts,
-                    traceability: scopedTrace,
-                    images: traceabilityImages,
-                    productions: scopedProductions,
-                    links: traceabilityLinks,
-                    logs: traceabilityLogs,
-                    checklistLogs: scopedChecklistLogs,
-                    temperatureLogs: scopedTempLogs,
-                    allDocuments: allItems,
-                    calendar: calendar,
-                    modelContext: modelContext
-                )
-            }
-            guard let next = calendar.date(byAdding: .day, value: 1, to: dayCursor) else { break }
-            dayCursor = next
-        }
-
-        // Giornalieri (oggi, sempre aggiornati)
-        let todayInterval = dayInterval(containing: todayStart, calendar: calendar)
-        for module in DocumentArchiveLayout.dailyModules {
-            generateIfNeeded(
-                restaurant: restaurant,
-                user: user,
-                folders: scopedFolders,
-                type: .giornaliero,
-                module: module,
-                interval: todayInterval,
-                isOpenPeriod: true,
+        let monthLower = max(creationStart, backfillLimit)
+        await forEachClosedMonth(from: monthLower, through: Date(), calendar: calendar) { interval in
+            await self.generateFullMonthArchive(
+                context: batchContext,
+                monthInterval: interval,
                 keyIndex: &keyIndex,
-                scopedItems: &scopedItems,
-                receipts: scopedReceipts,
-                traceability: scopedTrace,
-                images: traceabilityImages,
-                productions: scopedProductions,
-                links: traceabilityLinks,
-                logs: traceabilityLogs,
-                checklistLogs: scopedChecklistLogs,
-                temperatureLogs: scopedTempLogs,
-                allDocuments: allItems,
-                calendar: calendar,
-                modelContext: modelContext
-            )
-        }
-
-        // Settimanali (solo settimane chiuse)
-        enumerateWeeks(from: creationStart, through: Date(), calendar: calendar) { weekStart, isCurrentWeek in
-            guard !isCurrentWeek,
-                  let interval = calendar.dateInterval(of: .weekOfYear, for: weekStart) else { return }
-            for module in DocumentArchiveLayout.weeklyModules {
-                generateIfNeeded(
-                    restaurant: restaurant,
-                    user: user,
-                    folders: scopedFolders,
-                    type: .settimanale,
-                    module: module,
-                    interval: interval,
-                    isOpenPeriod: false,
-                    keyIndex: &keyIndex,
-                    scopedItems: &scopedItems,
-                    receipts: scopedReceipts,
-                    traceability: scopedTrace,
-                    images: traceabilityImages,
-                    productions: scopedProductions,
-                    links: traceabilityLinks,
-                    logs: traceabilityLogs,
-                    checklistLogs: scopedChecklistLogs,
-                    temperatureLogs: scopedTempLogs,
-                    allDocuments: allItems,
-                    calendar: calendar,
-                    modelContext: modelContext
-                )
-            }
-        }
-
-        // Mensili ricezione/tracciabilità/combinato + non conformità (solo mesi chiusi)
-        enumerateMonths(from: creationStart, through: Date(), calendar: calendar) { monthStart, isCurrentMonth in
-            guard !isCurrentMonth else { return }
-            guard let interval = calendar.dateInterval(of: .month, for: monthStart) else { return }
-            for module in DocumentArchiveLayout.monthlyModules {
-                generateIfNeeded(
-                    restaurant: restaurant,
-                    user: user,
-                    folders: scopedFolders,
-                    type: .mensile,
-                    module: module,
-                    interval: interval,
-                    isOpenPeriod: false,
-                    keyIndex: &keyIndex,
-                    scopedItems: &scopedItems,
-                    receipts: scopedReceipts,
-                    traceability: scopedTrace,
-                    images: traceabilityImages,
-                    productions: scopedProductions,
-                    links: traceabilityLinks,
-                    logs: traceabilityLogs,
-                    checklistLogs: scopedChecklistLogs,
-                    temperatureLogs: scopedTempLogs,
-                    allDocuments: allItems,
-                    calendar: calendar,
-                    modelContext: modelContext
-                )
-            }
-            generateIfNeeded(
-                restaurant: restaurant,
-                user: user,
-                folders: scopedFolders,
-                type: .nonConformita,
-                module: .nonConformita,
-                interval: interval,
-                isOpenPeriod: false,
-                keyIndex: &keyIndex,
-                scopedItems: &scopedItems,
-                receipts: scopedReceipts,
-                traceability: scopedTrace,
-                images: traceabilityImages,
-                productions: scopedProductions,
-                links: traceabilityLinks,
-                logs: traceabilityLogs,
-                checklistLogs: scopedChecklistLogs,
-                temperatureLogs: scopedTempLogs,
-                allDocuments: allItems,
-                calendar: calendar,
-                modelContext: modelContext
-            )
-        }
-
-        // Annuali — solo combinato (solo anni chiusi)
-        enumerateYears(from: creationStart, through: Date(), calendar: calendar) { yearStart, isCurrentYear in
-            guard !isCurrentYear else { return }
-            guard let interval = calendar.dateInterval(of: .year, for: yearStart) else { return }
-            generateIfNeeded(
-                restaurant: restaurant,
-                user: user,
-                folders: scopedFolders,
-                type: .annuale,
-                module: .haccpCombinato,
-                interval: interval,
-                isOpenPeriod: false,
-                keyIndex: &keyIndex,
-                scopedItems: &scopedItems,
-                receipts: scopedReceipts,
-                traceability: scopedTrace,
-                images: traceabilityImages,
-                productions: scopedProductions,
-                links: traceabilityLinks,
-                logs: traceabilityLogs,
-                checklistLogs: scopedChecklistLogs,
-                temperatureLogs: scopedTempLogs,
-                allDocuments: allItems,
-                calendar: calendar,
-                modelContext: modelContext
+                scopedItems: &scopedItems
             )
         }
 
@@ -389,6 +250,114 @@ final class DocumentGenerationService {
     }
 
     private func generateIfNeeded(
+        context: ArchiveBatchContext,
+        type: DocumentType,
+        module: DocumentModule,
+        interval: DateInterval,
+        isOpenPeriod: Bool,
+        keyIndex: inout [GenerationKey: DocumentItem],
+        scopedItems: inout [DocumentItem]
+    ) {
+        generateIfNeeded(
+            restaurant: context.restaurant,
+            user: context.user,
+            folders: context.folders,
+            type: type,
+            module: module,
+            interval: interval,
+            isOpenPeriod: isOpenPeriod,
+            keyIndex: &keyIndex,
+            scopedItems: &scopedItems,
+            receipts: context.receipts,
+            traceability: context.traceability,
+            images: context.images,
+            productions: context.productions,
+            links: context.links,
+            logs: context.logs,
+            checklistLogs: context.checklistLogs,
+            temperatureLogs: context.temperatureLogs,
+            allDocuments: context.allDocuments,
+            calendar: context.calendar,
+            modelContext: context.modelContext
+        )
+    }
+
+    /// A chiusura mese: un report mensile per modulo + report combinato + registro NC.
+    private func generateFullMonthArchive(
+        context: ArchiveBatchContext,
+        monthInterval: DateInterval,
+        keyIndex: inout [GenerationKey: DocumentItem],
+        scopedItems: inout [DocumentItem]
+    ) async {
+        var batchStep = 0
+        func step() async {
+            batchStep += 1
+            if batchStep.isMultiple(of: 3) { await Task.yield() }
+        }
+
+        for module in DocumentArchiveLayout.monthEndSingleModules {
+            generateIfNeeded(
+                context: context,
+                type: .mensile,
+                module: module,
+                interval: monthInterval,
+                isOpenPeriod: false,
+                keyIndex: &keyIndex,
+                scopedItems: &scopedItems
+            )
+            await step()
+        }
+
+        for module in DocumentArchiveLayout.monthEndCombinedModules {
+            generateIfNeeded(
+                context: context,
+                type: .mensile,
+                module: module,
+                interval: monthInterval,
+                isOpenPeriod: false,
+                keyIndex: &keyIndex,
+                scopedItems: &scopedItems
+            )
+            await step()
+        }
+    }
+
+    private func forEachClosedMonth(
+        from start: Date,
+        through end: Date,
+        calendar: Calendar,
+        body: (DateInterval) async -> Void
+    ) async {
+        if start > end { return }
+        var c = calendar.dateComponents([.year, .month], from: start)
+        guard var y = c.year, var m = c.month else { return }
+        let endComps = calendar.dateComponents([.year, .month], from: end)
+        guard let endY = endComps.year, let endM = endComps.month else { return }
+
+        while y < endY || (y == endY && m <= endM) {
+            guard let monthStart = calendar.date(from: DateComponents(year: y, month: m, day: 1)) else { break }
+            let isCurrent = calendar.isDate(monthStart, equalTo: Date(), toGranularity: .month)
+            if !isCurrent, let interval = calendar.dateInterval(of: .month, for: monthStart) {
+                await body(interval)
+            }
+            m += 1
+            if m > 12 { m = 1; y += 1 }
+        }
+    }
+
+    private func enumerateWeeks(in monthInterval: DateInterval, calendar: Calendar, body: (DateInterval) -> Void) {
+        guard var weekStart = calendar.dateInterval(of: .weekOfYear, for: monthInterval.start)?.start else { return }
+        while weekStart < monthInterval.end {
+            guard let weekInterval = calendar.dateInterval(of: .weekOfYear, for: weekStart) else { break }
+            if weekInterval.end > monthInterval.start && weekInterval.start < monthInterval.end {
+                body(weekInterval)
+            }
+            guard let next = calendar.date(byAdding: .weekOfYear, value: 1, to: weekStart) else { break }
+            weekStart = next
+        }
+    }
+
+    private func generateIfNeeded(
         restaurant: Restaurant,
         user: LocalUser,
         folders: [DocumentFolder],
@@ -443,7 +412,7 @@ final class DocumentGenerationService {
         }
 
         guard let folderId = resolveFolderId(
-            restaurantId: restaurant.id,
+            restaurant: restaurant,
             type: type,
             module: module,
             folders: folders
@@ -554,11 +523,13 @@ final class DocumentGenerationService {
         let reportDateLine = reportDateLine(type: type, interval: interval, calendar: calendar)
         let officialId = existing.officialDocumentId
         let docsForRestaurant = allDocuments.filter { $0.restaurantId == restaurant.id }
+        let operational = fetchOperationalSource(in: modelContext, restaurantId: restaurant.id)
 
-        var builtPayload: (sections: [(title: String, headers: [String], rows: [[PDFTableCell]])], flags: OfficialReportSectionFlags)?
-        switch (type, module) {
-        case (.giornaliero, .haccpCombinato):
-            builtPayload = HACCPRegisterPDFContentFactory.buildGiornalieroCombinatoUfficiale(
+        var builtPayload: HACCPPDFSectionBundle?
+        if type == .mensile, DocumentArchiveLayout.isSingleModule(module) {
+            builtPayload = HACCPRegisterPDFContentFactory.buildSingoloModulo(
+                documentType: type,
+                module: module,
                 restaurant: restaurant,
                 reportTitle: heading,
                 reportDateLine: reportDateLine,
@@ -566,63 +537,6 @@ final class DocumentGenerationService {
                 officialDocumentId: officialId,
                 generatedAt: generatedAt,
                 interval: interval,
-                receipts: receipts,
-                traceability: traceability,
-                productions: productions,
-                links: links,
-                logs: logs,
-                images: images,
-                checklistLogs: checklistLogs,
-                temperatureLogs: temperatureLogs
-            )
-        case (.giornaliero, .ricezioneMerci):
-            builtPayload = HACCPRegisterPDFContentFactory.buildGiornalieroModulo(
-                flavor: .giornalieroRicezione,
-                restaurant: restaurant,
-                reportTitle: heading,
-                reportDateLine: reportDateLine,
-                periodLine: periodLine,
-                officialDocumentId: officialId,
-                generatedAt: generatedAt,
-                interval: interval,
-                receipts: receipts,
-                traceability: traceability,
-                productions: productions,
-                links: links,
-                logs: logs,
-                images: images,
-                checklistLogs: checklistLogs,
-                temperatureLogs: temperatureLogs
-            )
-        case (.giornaliero, .tracciabilita):
-            builtPayload = HACCPRegisterPDFContentFactory.buildGiornalieroModulo(
-                flavor: .giornalieroTracciabilita,
-                restaurant: restaurant,
-                reportTitle: heading,
-                reportDateLine: reportDateLine,
-                periodLine: periodLine,
-                officialDocumentId: officialId,
-                generatedAt: generatedAt,
-                interval: interval,
-                receipts: receipts,
-                traceability: traceability,
-                productions: productions,
-                links: links,
-                logs: logs,
-                images: images,
-                checklistLogs: checklistLogs,
-                temperatureLogs: temperatureLogs
-            )
-        case (.mensile, .haccpCombinato):
-            builtPayload = HACCPRegisterPDFContentFactory.buildMensileCombinatoUfficiale(
-                restaurant: restaurant,
-                reportTitle: heading,
-                reportDateLine: reportDateLine,
-                periodLine: periodLine,
-                officialDocumentId: officialId,
-                generatedAt: generatedAt,
-                interval: interval,
-                calendar: calendar,
                 receipts: receipts,
                 traceability: traceability,
                 productions: productions,
@@ -631,142 +545,70 @@ final class DocumentGenerationService {
                 images: images,
                 checklistLogs: checklistLogs,
                 temperatureLogs: temperatureLogs,
-                existingDocuments: docsForRestaurant
+                operational: operational
             )
-        case (.mensile, .ricezioneMerci):
-            builtPayload = HACCPRegisterPDFContentFactory.buildGiornalieroModulo(
-                flavor: .giornalieroRicezione,
-                restaurant: restaurant,
-                reportTitle: heading,
-                reportDateLine: reportDateLine,
-                periodLine: periodLine,
-                officialDocumentId: officialId,
-                generatedAt: generatedAt,
-                interval: interval,
-                receipts: receipts,
-                traceability: traceability,
-                productions: productions,
-                links: links,
-                logs: logs,
-                images: images,
-                checklistLogs: checklistLogs,
-                temperatureLogs: temperatureLogs
-            )
-        case (.mensile, .tracciabilita):
-            builtPayload = HACCPRegisterPDFContentFactory.buildGiornalieroModulo(
-                flavor: .giornalieroTracciabilita,
-                restaurant: restaurant,
-                reportTitle: heading,
-                reportDateLine: reportDateLine,
-                periodLine: periodLine,
-                officialDocumentId: officialId,
-                generatedAt: generatedAt,
-                interval: interval,
-                receipts: receipts,
-                traceability: traceability,
-                productions: productions,
-                links: links,
-                logs: logs,
-                images: images,
-                checklistLogs: checklistLogs,
-                temperatureLogs: temperatureLogs
-            )
-        case (.settimanale, .haccpCombinato):
-            builtPayload = HACCPRegisterPDFContentFactory.buildMensileCombinatoUfficiale(
-                restaurant: restaurant,
-                reportTitle: heading,
-                reportDateLine: reportDateLine,
-                periodLine: periodLine,
-                officialDocumentId: officialId,
-                generatedAt: generatedAt,
-                interval: interval,
-                calendar: calendar,
-                receipts: receipts,
-                traceability: traceability,
-                productions: productions,
-                links: links,
-                logs: logs,
-                images: images,
-                checklistLogs: checklistLogs,
-                temperatureLogs: temperatureLogs,
-                existingDocuments: docsForRestaurant
-            )
-        case (.settimanale, .ricezioneMerci):
-            builtPayload = HACCPRegisterPDFContentFactory.buildGiornalieroModulo(
-                flavor: .giornalieroRicezione,
-                restaurant: restaurant,
-                reportTitle: heading,
-                reportDateLine: reportDateLine,
-                periodLine: periodLine,
-                officialDocumentId: officialId,
-                generatedAt: generatedAt,
-                interval: interval,
-                receipts: receipts,
-                traceability: traceability,
-                productions: productions,
-                links: links,
-                logs: logs,
-                images: images,
-                checklistLogs: checklistLogs,
-                temperatureLogs: temperatureLogs
-            )
-        case (.settimanale, .tracciabilita):
-            builtPayload = HACCPRegisterPDFContentFactory.buildGiornalieroModulo(
-                flavor: .giornalieroTracciabilita,
-                restaurant: restaurant,
-                reportTitle: heading,
-                reportDateLine: reportDateLine,
-                periodLine: periodLine,
-                officialDocumentId: officialId,
-                generatedAt: generatedAt,
-                interval: interval,
-                receipts: receipts,
-                traceability: traceability,
-                productions: productions,
-                links: links,
-                logs: logs,
-                images: images,
-                checklistLogs: checklistLogs,
-                temperatureLogs: temperatureLogs
-            )
-        case (.annuale, .haccpCombinato):
-            builtPayload = HACCPRegisterPDFContentFactory.buildAnnualeCombinatoUfficiale(
-                restaurant: restaurant,
-                reportTitle: heading,
-                reportDateLine: reportDateLine,
-                periodLine: periodLine,
-                officialDocumentId: officialId,
-                generatedAt: generatedAt,
-                interval: interval,
-                calendar: calendar,
-                receipts: receipts,
-                traceability: traceability,
-                productions: productions,
-                links: links,
-                logs: logs,
-                images: images,
-                checklistLogs: checklistLogs,
-                temperatureLogs: temperatureLogs,
-                existingDocuments: docsForRestaurant
-            )
-        case (.nonConformita, _):
-            builtPayload = HACCPRegisterPDFContentFactory.buildRegistroNonConformitaMensile(
-                restaurant: restaurant,
-                reportTitle: heading,
-                reportDateLine: reportDateLine,
-                periodLine: periodLine,
-                officialDocumentId: officialId,
-                generatedAt: generatedAt,
-                interval: interval,
-                receipts: receipts,
-                traceability: traceability,
-                images: images,
-                checklistLogs: checklistLogs,
-                temperatureLogs: temperatureLogs,
-                logs: logs
-            )
-        default:
-            builtPayload = nil
+        } else {
+            switch (type, module) {
+            case (.mensile, .haccpCombinato):
+                builtPayload = HACCPRegisterPDFContentFactory.buildMensileCombinatoUfficiale(
+                    restaurant: restaurant,
+                    reportTitle: heading,
+                    reportDateLine: reportDateLine,
+                    periodLine: periodLine,
+                    officialDocumentId: officialId,
+                    generatedAt: generatedAt,
+                    interval: interval,
+                    calendar: calendar,
+                    receipts: receipts,
+                    traceability: traceability,
+                    productions: productions,
+                    links: links,
+                    logs: logs,
+                    images: images,
+                    checklistLogs: checklistLogs,
+                    temperatureLogs: temperatureLogs,
+                    existingDocuments: docsForRestaurant,
+                    operational: operational
+                )
+            case (.mensile, .nonConformita):
+                builtPayload = HACCPRegisterPDFContentFactory.buildRegistroNonConformitaMensile(
+                    restaurant: restaurant,
+                    reportTitle: heading,
+                    reportDateLine: reportDateLine,
+                    periodLine: periodLine,
+                    officialDocumentId: officialId,
+                    generatedAt: generatedAt,
+                    interval: interval,
+                    receipts: receipts,
+                    traceability: traceability,
+                    images: images,
+                    checklistLogs: checklistLogs,
+                    temperatureLogs: temperatureLogs,
+                    logs: logs
+                )
+            case (.mensile, let combined) where DocumentArchiveLayout.isAffinityCombined(combined):
+                builtPayload = HACCPRegisterPDFContentFactory.buildMensileAffinityCombined(
+                    combinedModule: combined,
+                    restaurant: restaurant,
+                    reportTitle: heading,
+                    reportDateLine: reportDateLine,
+                    periodLine: periodLine,
+                    officialDocumentId: officialId,
+                    generatedAt: generatedAt,
+                    interval: interval,
+                    receipts: receipts,
+                    traceability: traceability,
+                    productions: productions,
+                    links: links,
+                    logs: logs,
+                    images: images,
+                    checklistLogs: checklistLogs,
+                    temperatureLogs: temperatureLogs,
+                    operational: operational
+                )
+            default:
+                builtPayload = nil
+            }
         }
 
         guard let built = builtPayload else {
@@ -783,20 +625,33 @@ final class DocumentGenerationService {
             }
         }
 
-        guard let rawPDF = HACCPDocumentPDFRenderer.render(
+        let pdfContext = HACCPPDFDocumentContext(
             restaurantName: restaurant.name,
             reportTitle: heading,
             periodLine: periodLine,
+            reportDateLine: reportDateLine,
+            officialDocumentId: officialId,
             generatedAt: generatedAt,
+            haccpManager: restaurant.haccpManager,
+            restaurantAddress: [restaurant.address, restaurant.city].filter { !$0.isEmpty }.joined(separator: ", "),
+            restaurantContacts: [restaurant.phone, restaurant.email].filter { !$0.isEmpty }.joined(separator: " · ")
+        )
+
+        guard let rawPDF = HACCPDocumentPDFRenderer.render(
+            context: pdfContext,
             sections: built.sections,
             omitBuiltInFooter: true,
-            bodyFontSize: 8.4
+            bodyFontSize: 9.2
         ) else {
             existing.status = .fallito
             throw DocumentGeneratorError.renderFailed
         }
 
-        guard let stamped = HACCPPDFOfficialFooterStamper.stamp(data: rawPDF, generatedAt: generatedAt) else {
+        guard let stamped = HACCPPDFOfficialFooterStamper.stamp(
+            data: rawPDF,
+            generatedAt: generatedAt,
+            officialDocumentId: officialId
+        ) else {
             existing.status = .fallito
             throw DocumentGeneratorError.renderFailed
         }
@@ -852,9 +707,11 @@ final class DocumentGenerationService {
         }
     }
 
-    /// Documenti mensili «non conformità» legacy usavano `type == .mensile`; la chiave e la generazione usano `.nonConformita`.
+    /// Normalizza tipi legacy (es. registro NC con `type == .nonConformita`) al mensile.
     private func effectiveDocType(_ item: DocumentItem) -> DocumentType {
-        if item.type == .mensile && item.module == .nonConformita { return .nonConformita }
+        if item.type == .nonConformita || item.module == .nonConformita {
+            return .mensile
+        }
         return item.type
     }
 
@@ -941,17 +798,6 @@ final class DocumentGenerationService {
         }
     }
 
-    private func enumerateWeeks(from start: Date, through end: Date, calendar: Calendar, body: (Date, Bool) -> Void) {
-        guard start <= end else { return }
-        guard var weekStart = calendar.dateInterval(of: .weekOfYear, for: start)?.start else { return }
-        while weekStart <= end {
-            let isCurrent = calendar.isDate(weekStart, equalTo: end, toGranularity: .weekOfYear)
-            body(weekStart, isCurrent)
-            guard let next = calendar.date(byAdding: .weekOfYear, value: 1, to: weekStart) else { break }
-            weekStart = next
-        }
-    }
-
     private func enumerateYears(from start: Date, through end: Date, calendar: Calendar, body: (Date, Bool) -> Void) {
         let y0 = calendar.component(.year, from: start)
         let y1 = calendar.component(.year, from: end)
@@ -964,28 +810,61 @@ final class DocumentGenerationService {
     }
 
     private func resolveFolderId(
-        restaurantId: UUID,
+        restaurant: Restaurant,
         type: DocumentType,
         module: DocumentModule,
         folders: [DocumentFolder]
     ) -> UUID? {
-        let periodRoot = periodRootName(for: type)
+        let venueName = DocumentArchiveLayout.venueFolderName(for: restaurant)
+        let periodRoot = DocumentArchiveLayout.monthlyPeriodName
 
-        guard let root = folders.first(where: { $0.restaurantId == restaurantId && $0.parentId == nil && $0.name == periodRoot }) else {
+        guard let venue = folders.first(where: {
+            $0.restaurantId == restaurant.id && $0.parentId == nil && $0.name == venueName
+        }) else {
             return nil
         }
 
-        if type == .annuale {
-            guard let child = folders.first(where: { $0.parentId == root.id && $0.name == "HACCP combinato" }) else { return nil }
-            return child.id
-        }
-
-        if type == .nonConformita || module == .nonConformita {
-            return folders.first(where: { $0.restaurantId == restaurantId && $0.parentId == nil && $0.name == "Non conformità" })?.id
+        guard let mensili = folders.first(where: {
+            $0.restaurantId == restaurant.id && $0.parentId == venue.id && $0.name == periodRoot
+        }) else {
+            return nil
         }
 
         let moduleTitle = DocumentArchiveLayout.moduleFolderTitle(module)
-        return folders.first(where: { $0.parentId == root.id && $0.name == moduleTitle })?.id
+        let groupName = DocumentArchiveLayout.groupFolderName(for: module)
+
+        if let group = folders.first(where: { $0.parentId == mensili.id && $0.name == groupName }),
+           let leaf = folders.first(where: { $0.parentId == group.id && $0.name == moduleTitle }) {
+            return leaf.id
+        }
+
+        return folders.first(where: { $0.parentId == mensili.id && $0.name == moduleTitle })?.id
+    }
+
+    private func fetchOperationalSource(in modelContext: ModelContext, restaurantId: UUID) -> HACCPOperationalSourceData {
+        func scoped<T>(_ descriptor: FetchDescriptor<T>, filter: (T) -> Bool) -> [T] {
+            ((try? modelContext.fetch(descriptor)) ?? []).filter(filter)
+        }
+
+        let temperatureRecords = scoped(FetchDescriptor<TemperatureRecord>(), filter: { $0.restaurantId == restaurantId })
+        let cleaningRecords = scoped(FetchDescriptor<CleaningRecord>(), filter: { $0.restaurantId == restaurantId })
+        let defrostRecords = scoped(FetchDescriptor<DefrostRecord>(), filter: { $0.restaurantId == restaurantId })
+        let blastChillingRecords = scoped(FetchDescriptor<BlastChillingRecord>(), filter: { $0.restaurantId == restaurantId })
+        let oilControlRecords = scoped(FetchDescriptor<OilControlRecord>(), filter: { $0.restaurantId == restaurantId })
+        let checklistRuns = scoped(FetchDescriptor<ChecklistRun>(), filter: { $0.restaurantId == restaurantId })
+        let checklistItemResults = (try? modelContext.fetch(FetchDescriptor<ChecklistItemResult>())) ?? []
+        let productionLabels = scoped(FetchDescriptor<ProductionLabelRecord>(), filter: { $0.restaurantId == restaurantId })
+
+        return HACCPOperationalSourceData(
+            temperatureRecords: temperatureRecords,
+            cleaningRecords: cleaningRecords,
+            defrostRecords: defrostRecords,
+            blastChillingRecords: blastChillingRecords,
+            oilControlRecords: oilControlRecords,
+            checklistRuns: checklistRuns,
+            checklistItemResults: checklistItemResults,
+            productionLabels: productionLabels
+        )
     }
 
     private func makeReportHeading(type: DocumentType, module: DocumentModule, interval: DateInterval, calendar: Calendar) -> String {
@@ -1068,14 +947,8 @@ final class DocumentGenerationService {
         }
     }
 
-    private func periodRootName(for type: DocumentType) -> String {
-        switch type {
-        case .giornaliero: return "Giornalieri"
-        case .settimanale: return "Settimanali"
-        case .mensile: return "Mensili"
-        case .annuale: return "Annuali"
-        default: return "Giornalieri"
-        }
+    private func periodRootName(for _: DocumentType) -> String {
+        "Mensili"
     }
 
     private func registerTypeLabel(_ type: DocumentType) -> String {
@@ -1101,20 +974,21 @@ final class DocumentGenerationService {
 /// Alias per compatibilità con chiamate esistenti al servizio di generazione documenti.
 typealias DocumentGeneratorService = DocumentGenerationService
 
-enum DocumentArchiveLayout {
-    static let dailyModules: [DocumentModule] = [.ricezioneMerci, .tracciabilita, .haccpCombinato]
-    static let weeklyModules: [DocumentModule] = dailyModules
-    static let monthlyModules: [DocumentModule] = dailyModules
-
-    static func moduleFolderTitle(_ module: DocumentModule) -> String {
-        switch module {
-        case .ricezioneMerci: return "Ricezione merci"
-        case .tracciabilita: return "Tracciabilità"
-        case .haccpCombinato: return "HACCP combinato"
-        case .nonConformita: return "Non conformità"
-        default: return module.label
-        }
-    }
+private struct ArchiveBatchContext {
+    let restaurant: Restaurant
+    let user: LocalUser
+    let folders: [DocumentFolder]
+    let receipts: [GoodsReceipt]
+    let traceability: [TraceabilityRecord]
+    let images: [ProductImage]
+    let productions: [Production]
+    let links: [TraceabilityLink]
+    let logs: [TraceabilityLog]
+    let checklistLogs: [ChecklistAuditLog]
+    let temperatureLogs: [TemperatureAuditLog]
+    let allDocuments: [DocumentItem]
+    let calendar: Calendar
+    let modelContext: ModelContext
 }
 
 enum DocumentGeneratorError: Error {

@@ -40,7 +40,7 @@ struct RestaurantSettingsView: View {
                 
                 Spacer()
                 
-                if currentUser?.role == .master && restaurants.isEmpty {
+                if currentUser.permissions.can(.manageRestaurantSettings) && restaurants.isEmpty {
                     Button(action: { showingAddSheet = true }) {
                         Label("Aggiungi Locale", systemImage: "plus.circle.fill")
                             .fontWeight(.bold)
@@ -136,7 +136,7 @@ struct RestaurantSettingsView: View {
                 .cornerRadius(8)
             }
             
-            if currentUser?.role == .master {
+            if currentUser.permissions.can(.manageRestaurantSettings) {
                 HStack(spacing: 15) {
                     Button(action: { restaurantToEdit = restaurant }) {
                         Image(systemName: "pencil.circle.fill")

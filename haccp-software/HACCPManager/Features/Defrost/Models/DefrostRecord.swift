@@ -11,6 +11,9 @@ final class DefrostRecord {
     var methodRaw: String = DefrostMethod.frigorifero.rawValue
     var lotNumber: String?
     var traceabilityItemId: UUID?
+    var productTemplateId: UUID?
+    var productionId: UUID?
+    var categoryNameSnapshot: String?
     var startAt: Date
     var expectedEndAt: Date?
     var endAt: Date?
@@ -34,6 +37,9 @@ final class DefrostRecord {
         method: DefrostMethod,
         lotNumber: String? = nil,
         traceabilityItemId: UUID? = nil,
+        productTemplateId: UUID? = nil,
+        productionId: UUID? = nil,
+        categoryNameSnapshot: String? = nil,
         startAt: Date = Date(),
         expectedEndAt: Date? = nil,
         endAt: Date? = nil,
@@ -55,6 +61,9 @@ final class DefrostRecord {
         self.method = method.label
         self.lotNumber = lotNumber
         self.traceabilityItemId = traceabilityItemId
+        self.productTemplateId = productTemplateId
+        self.productionId = productionId
+        self.categoryNameSnapshot = categoryNameSnapshot
         self.startAt = startAt
         self.expectedEndAt = expectedEndAt
         self.endAt = endAt
@@ -103,15 +112,12 @@ extension DefrostRecord {
 
     var duration: TimeInterval? {
         guard let end = endAt else { return nil }
-        return end.timeIntervalSince(startAt)
+        return max(0, end.timeIntervalSince(startAt))
     }
 
     var durationText: String {
         guard let duration else { return "—" }
-        let hours = Int(duration / 3600)
-        let minutes = Int((duration.truncatingRemainder(dividingBy: 3600)) / 60)
-        if hours > 0 { return "\(hours)h \(minutes)m" }
-        return "\(minutes) min"
+        return ProcessElapsedFormatter.formatReadable(elapsed: duration)
     }
 
     /// Stato calcolato per record non chiusi.
@@ -162,17 +168,29 @@ struct DefrostNewDraft: Equatable {
     var productName: String = ""
     var lotNumber: String = ""
     var traceabilityItemId: UUID?
+    var productTemplateId: UUID?
+    var productionId: UUID?
+    var categoryName: String?
     var method: DefrostMethod = .frigorifero
-    var startAt: Date = Date()
     var notes: String = ""
 
     var isValid: Bool {
         !productName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
+
+    static func from(subject: KitchenProcessSubject) -> DefrostNewDraft {
+        var draft = DefrostNewDraft()
+        draft.productName = subject.productName
+        draft.lotNumber = subject.lotNumber ?? ""
+        draft.traceabilityItemId = subject.traceabilityItemId
+        draft.productTemplateId = subject.productTemplateId
+        draft.productionId = subject.productionId
+        draft.categoryName = subject.categoryName
+        return draft
+    }
 }
 
 struct DefrostCompleteDraft: Equatable {
-    var actualEndAt: Date = Date()
     var finalTemperature: String = ""
     var outcome: DefrostOutcome = .conforme
     var notes: String = ""

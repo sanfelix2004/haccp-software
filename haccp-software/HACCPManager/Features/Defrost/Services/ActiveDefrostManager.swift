@@ -1,6 +1,7 @@
 //
 //  ActiveDefrostManager.swift
-//  Stato globale decongelamenti in corso + tick UI (solo overlay).
+//  Stato globale decongelamenti in corso (overlay). Nessun tick @Published:
+//  i cronometri UI usano LiveProcessDurationText / TimelineView.
 //
 
 import Foundation
@@ -23,14 +24,6 @@ struct ActiveDefrostSnapshot: Identifiable, Equatable {
         startAt = record.startAt
         operatorName = record.createdByNameSnapshot
     }
-
-    func elapsed(at now: Date) -> TimeInterval {
-        DefrostDurationFormatter.elapsed(since: startAt, now: now)
-    }
-
-    func formattedElapsed(at now: Date) -> String {
-        DefrostDurationFormatter.format(since: startAt, now: now)
-    }
 }
 
 @MainActor
@@ -41,33 +34,27 @@ final class ActiveDefrostManager: ObservableObject {
     private static let maxActiveFetch = 32
 
     @Published private(set) var activeSnapshots: [ActiveDefrostSnapshot] = []
-    @Published private(set) var now: Date = Date()
     @Published var showActiveListSheet = false
     @Published var recordIdPendingComplete: UUID?
     @Published var errorMessage: String?
 
-    private var tickCancellable: AnyCancellable?
     private let service = DefrostService()
 
     private init() {}
 
     var hasActiveDefrosts: Bool { !activeSnapshots.isEmpty }
 
-    var primarySnapshot: ActiveDefrostSnapshot? {
-        activeSnapshots.min(by: { $0.startAt < $1.startAt })
-    }
+    var primarySnapshot: ActiveDefrostSnapshot? { activeSnapshots.first }
 
     var collapsedTitle: String {
-        guard let primary = primarySnapshot else { return "" }
-        if activeSnapshots.count == 1 {
-            return "Decongelamento \(primary.formattedElapsed(at: now))"
+        switch activeSnapshots.count {
+        case 0: return ""
+        case 1: return "Decongelamento"
+        default: return "\(activeSnapshots.count) decongelamenti attivi"
         }
-        return "\(activeSnapshots.count) decongelamenti attivi"
     }
 
-    var collapsedSubtitle: String {
-        "Tocca per terminare"
-    }
+    var collapsedSubtitle: String { "Tocca per terminare" }
 
     func reset() {
         clearActiveState()
@@ -77,39 +64,49 @@ final class ActiveDefrostManager: ObservableObject {
 
     func refresh(context: ModelContext, restaurantId: UUID?) {
         guard let restaurantId else {
+            recordIdPendingComplete = nil
             clearActiveState()
             return
         }
 
-        switch fetchActiveRecords(context: context, restaurantId: restaurantId) {
-        case .success(let records):
-            applyActiveRecords(records)
-        case .failure:
+        reconcilePendingComplete(context: context, restaurantId: restaurantId)
+
+        guard let records = fetchActiveRecords(context: context, restaurantId: restaurantId) else {
             // Evita di azzerare la bubble su errori SwiftData transitori.
-            break
+            return
         }
+        applyActiveRecords(records)
+        reconcilePendingComplete(context: context, restaurantId: restaurantId)
     }
 
-    func fetchRecord(id: UUID, context: ModelContext) -> DefrostRecord? {
+    func fetchRecord(id: UUID, restaurantId: UUID, context: ModelContext) -> DefrostRecord? {
+        let rid = restaurantId
+        let targetId = id
         var descriptor = FetchDescriptor<DefrostRecord>(
-            predicate: #Predicate { $0.id == id }
+            predicate: #Predicate { $0.id == targetId && $0.restaurantId == rid }
         )
         descriptor.fetchLimit = 1
         return try? context.fetch(descriptor).first
     }
 
-    func fetchCriticalities(restaurantId: UUID, context: ModelContext) -> [DefrostCriticality] {
+    func fetchCriticalities(recordId: UUID, restaurantId: UUID, context: ModelContext) -> [DefrostCriticality] {
         let rid = restaurantId
+        let targetRecordId = recordId
         var descriptor = FetchDescriptor<DefrostCriticality>(
-            predicate: #Predicate { $0.restaurantId == rid }
+            predicate: #Predicate {
+                $0.restaurantId == rid && $0.recordId == targetRecordId
+            }
         )
-        descriptor.fetchLimit = 300
+        descriptor.fetchLimit = 8
         return (try? context.fetch(descriptor)) ?? []
     }
 
     func cancel(record: DefrostRecord, context: ModelContext) {
         do {
             try service.cancelDefrost(record, modelContext: context)
+            if recordIdPendingComplete == record.id {
+                recordIdPendingComplete = nil
+            }
             refresh(context: context, restaurantId: record.restaurantId)
         } catch {
             errorMessage = error.localizedDescription
@@ -118,15 +115,10 @@ final class ActiveDefrostManager: ObservableObject {
 
     // MARK: - Private
 
-    private enum FetchResult {
-        case success([DefrostRecord])
-        case failure
-    }
-
     private func fetchActiveRecords(
         context: ModelContext,
         restaurantId: UUID
-    ) -> FetchResult {
+    ) -> [DefrostRecord]? {
         let rid = restaurantId
         let inProgressStatus = DefrostStatus.inProgress.rawValue
         let delayedStatus = DefrostStatus.delayed.rawValue
@@ -134,6 +126,8 @@ final class ActiveDefrostManager: ObservableObject {
         var descriptor = FetchDescriptor<DefrostRecord>(
             predicate: #Predicate { record in
                 record.restaurantId == rid
+                    && !record.isArchived
+                    && record.endAt == nil
                     && (record.statusRaw == inProgressStatus || record.statusRaw == delayedStatus)
             },
             sortBy: [SortDescriptor(\DefrostRecord.startAt)]
@@ -142,31 +136,59 @@ final class ActiveDefrostManager: ObservableObject {
 
         do {
             let fetched = try context.fetch(descriptor)
-            service.refreshDelayedStatuses(records: fetched)
-            if !fetched.isEmpty {
-                try? context.save()
+            if shouldRefreshDelayedStatuses(fetched) {
+                let statusChanged = service.refreshDelayedStatusesIfNeeded(
+                    records: fetched,
+                    settings: SettingsStorageService.shared.haccp
+                )
+                if statusChanged {
+                    try? context.save()
+                }
             }
-            return .success(fetched.filter(\.isActive))
+            return fetched.filter(\.isActive)
         } catch {
-            return .failure
+            return nil
+        }
+    }
+
+    /// Salta il loop di ricalcolo se nessun record può ancora diventare "ritardato".
+    private func shouldRefreshDelayedStatuses(_ records: [DefrostRecord]) -> Bool {
+        if records.contains(where: { $0.isActive && $0.expectedEndAt == nil }) {
+            return true
+        }
+        let now = Date()
+        return records.contains { record in
+            guard record.endAt == nil, let expected = record.expectedEndAt else { return false }
+            return now > expected && record.statusRaw != DefrostStatus.delayed.rawValue
         }
     }
 
     private func applyActiveRecords(_ records: [DefrostRecord]) {
-        activeSnapshots = records.map(ActiveDefrostSnapshot.init(record:))
-
-        if activeSnapshots.isEmpty {
+        let newSnapshots = records.map(ActiveDefrostSnapshot.init(record:))
+        if newSnapshots.isEmpty {
             clearActiveState()
-        } else {
-            KitchenProcessTimerTicker.start(&tickCancellable) { [weak self] date in
-                self?.now = date
-            }
+            return
         }
+        if newSnapshots == activeSnapshots { return }
+        activeSnapshots = newSnapshots
     }
 
     private func clearActiveState() {
+        guard !activeSnapshots.isEmpty else {
+            showActiveListSheet = false
+            return
+        }
         activeSnapshots = []
         showActiveListSheet = false
-        KitchenProcessTimerTicker.stop(&tickCancellable)
+    }
+
+    /// Chiude sheet di completamento se il record non è più valido (cambio ristorante, annullamento, chiusura altrove).
+    private func reconcilePendingComplete(context: ModelContext, restaurantId: UUID) {
+        guard let pendingId = recordIdPendingComplete else { return }
+        guard let record = fetchRecord(id: pendingId, restaurantId: restaurantId, context: context),
+              record.isActive else {
+            recordIdPendingComplete = nil
+            return
+        }
     }
 }

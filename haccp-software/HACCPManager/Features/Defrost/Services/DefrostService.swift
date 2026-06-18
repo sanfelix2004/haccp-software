@@ -14,6 +14,7 @@ struct DefrostService {
         draft: DefrostNewDraft,
         restaurantId: UUID,
         user: LocalUser,
+        settings: HACCPSettings,
         modelContext: ModelContext
     ) throws -> DefrostRecord {
         let name = draft.productName.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -21,7 +22,8 @@ struct DefrostService {
             throw defrostError("Il nome prodotto è obbligatorio.")
         }
 
-        let startAt = min(draft.startAt, Date())
+        let startAt = Date()
+        let expectedEndAt = draft.method.expectedEndAt(from: startAt, settings: settings)
 
         let record = DefrostRecord(
             restaurantId: restaurantId,
@@ -29,8 +31,11 @@ struct DefrostService {
             method: draft.method,
             lotNumber: draft.lotNumber.nilIfEmpty,
             traceabilityItemId: draft.traceabilityItemId,
+            productTemplateId: draft.productTemplateId,
+            productionId: draft.productionId,
+            categoryNameSnapshot: draft.categoryName,
             startAt: startAt,
-            expectedEndAt: nil,
+            expectedEndAt: expectedEndAt,
             status: .inProgress,
             createdByUserId: user.id,
             createdByNameSnapshot: user.name,
@@ -78,7 +83,7 @@ struct DefrostService {
             )
         }
 
-        let endAt = max(draft.actualEndAt, record.startAt)
+        let endAt = max(Date(), record.startAt)
         record.endAt = endAt
         record.finalTemperature = temp
         record.outcome = outcome
@@ -131,11 +136,35 @@ struct DefrostService {
         criticalities.first { $0.recordId == recordId && !$0.isResolved }
     }
 
-    func refreshDelayedStatuses(records: [DefrostRecord]) {
+    func refreshDelayedStatuses(records: [DefrostRecord], settings: HACCPSettings) {
+        _ = refreshDelayedStatusesIfNeeded(records: records, settings: settings)
+    }
+
+    /// Aggiorna stati ritardati solo se cambiano — evita `save()` inutili su ogni refresh.
+    @discardableResult
+    func refreshDelayedStatusesIfNeeded(records: [DefrostRecord], settings: HACCPSettings) -> Bool {
         let now = Date()
+        var changed = false
         for record in records where record.isActive {
+            if record.expectedEndAt == nil {
+                record.expectedEndAt = record.defrostMethod.expectedEndAt(from: record.startAt, settings: settings)
+                changed = true
+            }
+            let before = record.statusRaw
             record.refreshComputedStatus(at: now)
+            if record.statusRaw != before {
+                changed = true
+            }
         }
+        return changed
+    }
+
+    func draft(from production: Production) -> DefrostNewDraft {
+        var d = DefrostNewDraft()
+        d.productName = production.name
+        d.productionId = production.id
+        d.categoryName = production.categoryNameSnapshot
+        return d
     }
 
     func draft(from trace: TraceabilityRecord) -> DefrostNewDraft {
@@ -143,7 +172,6 @@ struct DefrostService {
         d.productName = trace.productName
         d.lotNumber = trace.lotCode
         d.traceabilityItemId = trace.id
-        d.startAt = Date()
         return d
     }
 

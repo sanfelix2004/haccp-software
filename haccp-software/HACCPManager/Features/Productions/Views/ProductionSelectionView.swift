@@ -10,6 +10,7 @@ struct ProductionSelectionView: View {
     @Query private var links: [TraceabilityLink]
     @Query private var blastRecords: [BlastChillingRecord]
     @StateObject private var vm = ProductionSelectionViewModel()
+    @State private var masterAuth = MasterAuthCoordinator()
     @State private var showMasterAuthForEdit = false
     @State private var showMasterAuthForDelete = false
     @State private var productionPendingDeletion: Production?
@@ -42,9 +43,9 @@ struct ProductionSelectionView: View {
         users.first { $0.id == appState.currentUserId }
     }
 
-    private var isMaster: Bool {
-        currentUser?.role == .master
-    }
+    private var permissions: UserPermissions { currentUser.permissions }
+    private var canManageProductions: Bool { permissions.can(.manageProductionLibrary) }
+    private var canExecute: Bool { permissions.can(.executeRecords) }
 
     private var categoryOrderById: [UUID: Int] {
         Dictionary(uniqueKeysWithValues: scopedCategories.map { ($0.id, $0.orderIndex) })
@@ -87,8 +88,10 @@ struct ProductionSelectionView: View {
 
                 HStack(spacing: 10) {
                     Button("+ Aggiungere") {
-                        vm.newProductionCategoryId = vm.selectedCategoryId ?? scopedCategories.first?.id
-                        vm.showAddSheet = true
+                        masterAuth.request(permission: .manageProductionLibrary, permissions: permissions) {
+                            vm.newProductionCategoryId = vm.selectedCategoryId ?? scopedCategories.first?.id
+                            vm.showAddSheet = true
+                        }
                     }
                     .buttonStyle(.bordered)
                     .tint(ThemeManager.shared.colorPrimary)
@@ -177,6 +180,7 @@ struct ProductionSelectionView: View {
             } message: {
                 Text(vm.errorMessage ?? "")
             }
+            .masterAuthCover(coordinator: masterAuth, master: users.first(where: { $0.role == .master }))
         }
     }
 
@@ -255,7 +259,10 @@ struct ProductionSelectionView: View {
 
         do {
             if let production {
-                guard isMaster else { return }
+                guard permissions.canPerform(.manageProductionLibrary) else {
+                    vm.errorMessage = "Serve l'autorizzazione MASTER."
+                    return
+                }
                 try service.updateProduction(
                     production,
                     name: vm.newProductionName,
@@ -264,6 +271,10 @@ struct ProductionSelectionView: View {
                     modelContext: modelContext
                 )
             } else {
+                guard permissions.canPerform(.manageProductionLibrary) else {
+                    vm.errorMessage = "Serve l'autorizzazione MASTER."
+                    return
+                }
                 try service.addProduction(
                     name: vm.newProductionName,
                     category: category,
@@ -295,7 +306,7 @@ struct ProductionSelectionView: View {
     }
 
     private func deleteProduction(_ production: Production) {
-        guard isMaster else {
+        guard canManageProductions else {
             productionPendingDeletion = production
             showMasterAuthForDelete = true
             return

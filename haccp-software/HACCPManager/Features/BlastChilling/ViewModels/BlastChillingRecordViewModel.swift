@@ -3,8 +3,6 @@ import Combine
 
 @MainActor
 final class BlastChillingRecordViewModel: ObservableObject {
-    @Published var startedAt = Date()
-    @Published var endedAt = Date()
     @Published var initialTemperatureText = ""
     @Published var finalTemperatureText = ""
     @Published var activeTemperatureField: TemperatureField = .initial
@@ -33,8 +31,6 @@ final class BlastChillingRecordViewModel: ObservableObject {
     }
 
     func reset() {
-        startedAt = Date()
-        endedAt = Date()
         initialTemperatureText = ""
         finalTemperatureText = ""
         activeTemperatureField = .initial

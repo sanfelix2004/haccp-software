@@ -9,7 +9,6 @@ struct DefrostCompleteSheet: View {
     let record: DefrostRecord
     let user: LocalUser
     let criticalities: [DefrostCriticality]
-    var elapsedNow: Date = Date()
     let onCompleted: () -> Void
     let onCancel: () -> Void
 
@@ -32,11 +31,14 @@ struct DefrostCompleteSheet: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: theme.spacing.sectionSpacing) {
-                    DefrostRecordCardView(record: record, elapsedNow: elapsedNow)
+                    DefrostRecordCardView(record: record)
 
                     DashboardCardView(title: "Chiusura processo") {
                         VStack(spacing: 14) {
-                            DatePicker("Ora fine reale", selection: $draft.actualEndAt)
+                            Text("L'ora di fine viene registrata al momento del salvataggio.")
+                                .font(theme.typography.caption)
+                                .foregroundStyle(theme.colorTextSecondary)
+
                             TextField("Temperatura finale °C (opzionale)", text: $draft.finalTemperature)
                                 .keyboardType(.decimalPad)
                                 .textFieldStyle(.roundedBorder)

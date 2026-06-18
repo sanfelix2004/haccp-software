@@ -29,7 +29,10 @@ final class DefrostDataStore: ObservableObject {
             records = data.records
             criticalities = data.criticalities
             traceabilityRecords = data.traceabilityRecords
-            DefrostService().refreshDelayedStatuses(records: records)
+            DefrostService().refreshDelayedStatuses(
+                records: records,
+                settings: SettingsStorageService.shared.haccp
+            )
             isLoading = false
         }
     }

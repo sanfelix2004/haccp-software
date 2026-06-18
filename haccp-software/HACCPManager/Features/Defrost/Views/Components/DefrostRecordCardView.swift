@@ -7,7 +7,6 @@ import SwiftUI
 struct DefrostRecordCardView: View {
     let record: DefrostRecord
     var showCompleteAction: Bool = false
-    var elapsedNow: Date = Date()
     var onComplete: (() -> Void)?
 
     @Environment(\.theme) private var theme
@@ -40,11 +39,21 @@ struct DefrostRecordCardView: View {
 
             if isActiveProcess {
                 HStack {
-                    infoColumn(
-                        icon: "timer",
-                        title: "Durata",
-                        value: DefrostDurationFormatter.format(since: record.startAt, now: elapsedNow)
-                    )
+                    VStack(alignment: .leading, spacing: 2) {
+                        Label("Durata", systemImage: "timer")
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(theme.colorTextSecondary)
+                        LiveProcessDurationText(
+                            since: record.startAt,
+                            font: theme.typography.subheadline.monospacedDigit(),
+                            color: theme.colorTextPrimary
+                        )
+                    }
+                    Spacer()
+                }
+            } else if record.endAt != nil {
+                HStack {
+                    infoColumn(icon: "timer", title: "Durata", value: record.durationText)
                     Spacer()
                 }
             }
