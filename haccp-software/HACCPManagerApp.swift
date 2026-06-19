@@ -99,17 +99,15 @@ struct HACCPManagerApp: App {
                         await DataArchiveService.runIfNeeded(context: context, restaurantId: restaurantId)
                     }
                     ClabelPrinterManager.shared.reconnectIfSaved()
-                    await tickReportEngine(modelContext: context)
+                    await tickMonthlyArchive(modelContext: context)
                 }
             }
         }
     }
 
-    /// "Catch-up" del motore report: appena l'app torna in foreground, verifica se
-    /// sono state attraversate frontiere mensili e, in caso, esegue la pipeline completa.
-    /// in caso, esegue la pipeline completa senza richiedere azioni manuali.
+    /// Generazione PDF mensile e backup iCloud: catch-up all'apertura dell'app.
     @MainActor
-    private func tickReportEngine(modelContext: ModelContext) async {
+    private func tickMonthlyArchive(modelContext: ModelContext) async {
         guard let restaurantId = appState.activeRestaurantId,
               let userId = appState.currentUserId else { return }
         let restaurants = (try? modelContext.fetch(FetchDescriptor<Restaurant>())) ?? []
@@ -127,6 +125,5 @@ struct HACCPManagerApp: App {
             user: user,
             modelContext: modelContext
         )
-        HACCPReportEngine.shared.refreshStats(restaurantId: restaurant.id, in: modelContext)
     }
 }

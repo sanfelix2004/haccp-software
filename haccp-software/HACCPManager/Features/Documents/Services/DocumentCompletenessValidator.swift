@@ -19,6 +19,7 @@ enum OfficialReportFlavor: Sendable {
     case giornalieroRicezione
     case giornalieroTracciabilita
     case mensileHACCPCombinato
+    case mensileAffinityCombined
     case annualeHACCPCombinato
     case registroNonConformitaMensile
 }
@@ -36,6 +37,9 @@ enum DocumentCompletenessError: Error, LocalizedError {
 enum DocumentCompletenessValidator {
     /// Mappa tipo/modulo documento SwiftData al flavor di validazione.
     static func reportFlavor(type: DocumentType, module: DocumentModule) -> OfficialReportFlavor? {
+        if type == .mensile, DocumentArchiveLayout.isAffinityCombined(module) {
+            return .mensileAffinityCombined
+        }
         switch (type, module) {
         case (.giornaliero, .haccpCombinato): return .giornalieroHACCPCombinato
         case (.giornaliero, .ricezioneMerci): return .giornalieroRicezione
@@ -63,6 +67,8 @@ enum DocumentCompletenessValidator {
             return [.intestazione, .tracciabilita, .auditLog, .riepilogo]
         case .mensileHACCPCombinato:
             return [.intestazione, .riepilogo, .nonConformita, .auditLog, .allegatoPeriodo]
+        case .mensileAffinityCombined:
+            return [.intestazione, .riepilogo]
         case .annualeHACCPCombinato:
             return [.intestazione, .riepilogo, .allegatoPeriodo, .indiceMensile]
         case .registroNonConformitaMensile:

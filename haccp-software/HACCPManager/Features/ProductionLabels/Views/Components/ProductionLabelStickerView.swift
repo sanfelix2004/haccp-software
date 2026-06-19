@@ -98,7 +98,7 @@ struct ProductionLabelStickerView: View {
                     .background(Color.white)
                     .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                 }
-                Text(label.sourceModule.label)
+                Text(label.sourceModule.displayLabel)
                     .font(.system(size: 9, weight: .semibold))
                     .foregroundStyle(theme.colorTextSecondary)
                     .lineLimit(1)

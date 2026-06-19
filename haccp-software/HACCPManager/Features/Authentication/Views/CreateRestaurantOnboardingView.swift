@@ -24,6 +24,7 @@ public struct CreateRestaurantOnboardingView: View {
     @State private var confirmPin: String = ""
     
     @State private var showError = false
+    @State private var emailError: String?
     
     public var body: some View {
         ZStack {
@@ -60,7 +61,7 @@ public struct CreateRestaurantOnboardingView: View {
                             
                             HStack(spacing: 20) {
                                 onboardingTextField(label: "Telefono", text: $phone, icon: "phone.fill")
-                                onboardingTextField(label: "Email", text: $email, icon: "envelope.fill")
+                                onboardingEmailField
                             }
                             
                             onboardingTextField(label: "Note", text: $notes, icon: "note.text")
@@ -76,10 +77,16 @@ public struct CreateRestaurantOnboardingView: View {
                     .transition(.scale.combined(with: .opacity))
                     
                     if showError {
-                        Text("Nome, Responsabile e PIN ristorante (4 cifre) sono obbligatori.")
+                        Text("Nome, Responsabile, email valida e PIN ristorante (4 cifre) sono obbligatori.")
                             .foregroundColor(.red)
                             .fontWeight(.bold)
                             .transition(.opacity)
+                    }
+                    
+                    if let emailError {
+                        Text(emailError)
+                            .foregroundColor(.orange)
+                            .font(.subheadline.weight(.semibold))
                     }
                     
                     Button(action: createRestaurant) {
@@ -101,6 +108,42 @@ public struct CreateRestaurantOnboardingView: View {
             }
         }
         .animation(.spring(response: 0.6, dampingFraction: 0.8), value: showError)
+        .onAppear {
+            guard email.isEmpty,
+                  let master = users.first(where: { $0.role == .master }),
+                  let masterEmail = master.email,
+                  !masterEmail.isEmpty else { return }
+            email = masterEmail
+        }
+    }
+
+    private var onboardingEmailField: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Email iCloud / contatto*")
+                .font(.caption)
+                .fontWeight(.bold)
+                .foregroundStyle(ThemeManager.shared.colorTextSecondary)
+
+            HStack(spacing: 12) {
+                Image(systemName: "envelope.fill")
+                    .foregroundColor(.red)
+                TextField("nome@icloud.com", text: $email)
+                    .keyboardType(.emailAddress)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .foregroundColor(ThemeManager.shared.text)
+                    .onChange(of: email) { _, _ in
+                        emailError = nil
+                    }
+            }
+            .padding()
+            .background(ThemeManager.shared.colorSurface)
+            .cornerRadius(12)
+
+            Text("Usa l'email dell'account iCloud per il backup mensile dei PDF.")
+                .font(.caption2)
+                .foregroundStyle(ThemeManager.shared.colorTextSecondary)
+        }
     }
     
     private func onboardingTextField(label: String, text: Binding<String>, icon: String) -> some View {
@@ -147,7 +190,11 @@ public struct CreateRestaurantOnboardingView: View {
     }
 
     private var formInvalid: Bool {
-        name.isEmpty || manager.isEmpty || pin.count != 4 || pin != confirmPin
+        name.isEmpty
+            || manager.isEmpty
+            || pin.count != 4
+            || pin != confirmPin
+            || !EmailValidator.isValid(email)
     }
     
     private func createRestaurant() {
@@ -155,19 +202,29 @@ public struct CreateRestaurantOnboardingView: View {
             showError = true
             return
         }
+
+        guard EmailValidator.isValid(email) else {
+            emailError = "Inserisci un'email valida (consigliata: account iCloud)."
+            showError = true
+            return
+        }
         
+        let normalizedEmail = EmailValidator.normalized(email)
         let newRestaurant = Restaurant(
             name: name,
             address: address,
             city: city,
             haccpManager: manager,
             phone: phone,
-            email: email,
+            email: normalizedEmail,
             notes: notes,
             restaurantPinHash: PinHasher.hash(pin: pin)
         )
         
         modelContext.insert(newRestaurant)
+        
+        DocumentsUserSettings.setICloudContactEmail(normalizedEmail, restaurantId: newRestaurant.id)
+        DocumentsUserSettings.isICloudPDFSyncEnabled = true
         
         // Set as active in AppDataStore
         if let store = stores.first {

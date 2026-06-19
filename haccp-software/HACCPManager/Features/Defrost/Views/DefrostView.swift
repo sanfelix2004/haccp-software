@@ -13,7 +13,9 @@ struct DefrostView: View {
     @EnvironmentObject private var defrostManager: ActiveDefrostManager
 
     @Query private var users: [LocalUser]
+    @Query private var restaurants: [Restaurant]
     @Query private var productTemplates: [ProductTemplate]
+    @Query private var productionLabels: [ProductionLabelRecord]
 
     @StateObject private var vm = DefrostViewModel()
     @StateObject private var dataStore = DefrostDataStore()
@@ -23,9 +25,22 @@ struct DefrostView: View {
     @State private var recordPendingDelete: DefrostRecord?
     @State private var showMasterAuthDelete = false
     @State private var errorMessage: String?
+    @State private var labelDraft: ProductionLabelDraft?
+
+    private let labelService = ProductionLabelsService()
 
     private var currentUser: LocalUser? {
         users.first { $0.id == appState.currentUserId }
+    }
+
+    private var activeRestaurant: Restaurant? {
+        guard let rid = appState.activeRestaurantId else { return nil }
+        return restaurants.first { $0.id == rid }
+    }
+
+    private var scopedLabels: [ProductionLabelRecord] {
+        guard let rid = appState.activeRestaurantId else { return [] }
+        return productionLabels.filter { $0.restaurantId == rid }
     }
 
     private var permissions: UserPermissions { currentUser.permissions }
@@ -71,39 +86,10 @@ struct DefrostView: View {
             defrostManager.refresh(context: modelContext, restaurantId: appState.activeRestaurantId)
         }
         .sheet(isPresented: $showNewSheet) {
-            if let rid = appState.activeRestaurantId, let user = currentUser {
-                DefrostNewSheet(
-                    restaurantId: rid,
-                    user: user,
-                    traceabilityRecords: dataStore.traceabilityRecords,
-                    incomingFoodTemplates: scopedTemplates,
-                    onSaved: {
-                        showNewSheet = false
-                        reload()
-                    },
-                    onCancel: { showNewSheet = false }
-                )
-            }
+            newDefrostSheet
         }
-        .sheet(isPresented: Binding(
-            get: { recordIdToComplete != nil },
-            set: { if !$0 { recordIdToComplete = nil } }
-        )) {
-            if let id = recordIdToComplete,
-               let record = dataStore.records.first(where: { $0.id == id }),
-               let user = currentUser {
-                DefrostCompleteSheet(
-                    record: record,
-                    user: user,
-                    criticalities: dataStore.criticalities,
-                    onCompleted: {
-                        recordIdToComplete = nil
-                        bumpHistoryRangeToIncludeToday()
-                        reload()
-                    },
-                    onCancel: { recordIdToComplete = nil }
-                )
-            }
+        .sheet(isPresented: completeSheetPresented) {
+            completeDefrostSheet
         }
         .fullScreenCover(isPresented: $showMasterAuthDelete) {
             if let master = users.first(where: { $0.role == .master }) {
@@ -131,6 +117,84 @@ struct DefrostView: View {
             Button("OK", role: .cancel) {}
         } message: {
             Text(errorMessage ?? "")
+        }
+        .sheet(isPresented: labelEditorPresented) {
+            labelEditorSheet
+        }
+    }
+
+    private var completeSheetPresented: Binding<Bool> {
+        Binding(
+            get: { recordIdToComplete != nil },
+            set: { if !$0 { recordIdToComplete = nil } }
+        )
+    }
+
+    private var labelEditorPresented: Binding<Bool> {
+        Binding(
+            get: { labelDraft != nil },
+            set: { if !$0 { labelDraft = nil } }
+        )
+    }
+
+    @ViewBuilder
+    private var newDefrostSheet: some View {
+        if let rid = appState.activeRestaurantId, let user = currentUser {
+            DefrostNewSheet(
+                restaurantId: rid,
+                user: user,
+                traceabilityRecords: dataStore.traceabilityRecords,
+                incomingFoodTemplates: scopedTemplates,
+                onSaved: {
+                    showNewSheet = false
+                    reload()
+                },
+                onCancel: { showNewSheet = false }
+            )
+        }
+    }
+
+    @ViewBuilder
+    private var completeDefrostSheet: some View {
+        if let id = recordIdToComplete,
+           let record = dataStore.records.first(where: { $0.id == id }),
+           let user = currentUser {
+            DefrostCompleteSheet(
+                record: record,
+                user: user,
+                criticalities: dataStore.criticalities,
+                onCompleted: { handleDefrostCompleted(record) },
+                onCancel: { recordIdToComplete = nil }
+            )
+        }
+    }
+
+    @ViewBuilder
+    private var labelEditorSheet: some View {
+        if let draft = labelDraft,
+           let rid = appState.activeRestaurantId,
+           let user = currentUser {
+            ProductionLabelEditorSheet(
+                mode: .create(draft),
+                restaurantId: rid,
+                user: user,
+                onSaved: { record, shouldPrint in
+                    handleLabelSaved(record, shouldPrint: shouldPrint)
+                },
+                onCancel: { labelDraft = nil }
+            )
+        }
+    }
+
+    private func handleDefrostCompleted(_ record: DefrostRecord) {
+        recordIdToComplete = nil
+        bumpHistoryRangeToIncludeToday()
+        reload()
+        if record.defrostStatus == .completed || record.defrostStatus == .completedWithCriticality {
+            let draft = labelService.draft(from: record)
+            if ProductionLabelLinkMatcher.existingLabel(for: draft, in: scopedLabels) == nil {
+                labelDraft = draft
+            }
         }
     }
 
@@ -337,5 +401,18 @@ struct DefrostView: View {
     private func ensureTemplates() {
         guard let rid = appState.activeRestaurantId else { return }
         ProductTemplateSeeder.ensureTemplates(restaurantId: rid, modelContext: modelContext)
+    }
+
+    private func handleLabelSaved(_ record: ProductionLabelRecord, shouldPrint: Bool) {
+        labelDraft = nil
+        guard shouldPrint else { return }
+        Task {
+            await ProductionLabelPrintQueue.shared.schedulePrint(
+                label: record,
+                restaurantName: activeRestaurant?.name,
+                modelContext: modelContext,
+                countAsReprint: false
+            )
+        }
     }
 }

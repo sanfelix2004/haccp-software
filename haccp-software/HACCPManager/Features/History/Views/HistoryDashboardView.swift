@@ -19,10 +19,6 @@ struct HistoryDashboardView: View {
         entries.filter { Calendar.current.isDateInToday($0.date) }.count
     }
 
-    private var recentEntries: [HistoryEntry] {
-        entries.sorted { $0.date > $1.date }.prefix(6).map { $0 }
-    }
-
     private var visibleModules: [HistoryModule] {
         HistoryModule.dashboardModules.filter { module in
             let moduleEntries = entriesByModule[module] ?? []
@@ -41,9 +37,6 @@ struct HistoryDashboardView: View {
                 heroHeader
                 statsRow
                 searchBar
-                if !recentEntries.isEmpty {
-                    recentActivitySection
-                }
                 modulesSection
             }
             .padding(theme.spacing.screenPadding + 8)
@@ -125,30 +118,6 @@ struct HistoryDashboardView: View {
         }
     }
 
-    private var recentActivitySection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Attività recente")
-                .font(theme.typography.headline)
-                .foregroundStyle(theme.colorTextPrimary)
-
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 12) {
-                    ForEach(recentEntries) { entry in
-                        NavigationLink {
-                            HistoryModuleDetailView(
-                                module: entry.module,
-                                entries: entriesByModule[entry.module] ?? []
-                            )
-                        } label: {
-                            HistoryRecentChip(entry: entry)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-            }
-        }
-    }
-
     private var modulesSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Moduli")
@@ -178,41 +147,5 @@ struct HistoryDashboardView: View {
                 }
             }
         }
-    }
-}
-
-private struct HistoryRecentChip: View {
-    let entry: HistoryEntry
-
-    @Environment(\.theme) private var theme
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Image(systemName: entry.module.icon)
-                    .font(.caption.weight(.bold))
-                    .foregroundStyle(entry.module.accentColor(theme: theme))
-                Spacer()
-                Text(entry.date.formatted(date: .omitted, time: .shortened))
-                    .font(theme.typography.caption2)
-                    .foregroundStyle(theme.colorTextSecondary)
-            }
-            Text(entry.title)
-                .font(theme.typography.subheadline.weight(.semibold))
-                .foregroundStyle(theme.colorTextPrimary)
-                .lineLimit(2)
-                .multilineTextAlignment(.leading)
-            Text(entry.module.shortTitle)
-                .font(theme.typography.caption)
-                .foregroundStyle(theme.colorTextSecondary)
-        }
-        .frame(width: 168, alignment: .leading)
-        .padding(12)
-        .background(theme.colorSurfaceElevated)
-        .clipShape(RoundedRectangle(cornerRadius: theme.spacing.cornerLarge, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: theme.spacing.cornerLarge, style: .continuous)
-                .strokeBorder(theme.colorDivider.opacity(0.6), lineWidth: 1)
-        )
     }
 }

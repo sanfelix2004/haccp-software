@@ -136,7 +136,8 @@ struct ProductionLibraryService {
                 receivedItemId: record.id,
                 productionId: production.id,
                 actionType: .linkedToProduction,
-                operatorName: operatorName
+                operatorName: operatorName,
+                detail: production.name
             )
         )
         try modelContext.save()

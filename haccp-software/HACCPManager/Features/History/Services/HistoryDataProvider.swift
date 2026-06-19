@@ -71,8 +71,14 @@ struct GoodsReceivingHistoryProvider: HistoryDataProvider {
 }
 
 struct TraceabilityHistoryProvider {
-    func entries(records: [TraceabilityRecord], logs: [TraceabilityLog], restaurantId: UUID) -> [HistoryEntry] {
+    func entries(
+        records: [TraceabilityRecord],
+        logs: [TraceabilityLog],
+        productions: [Production],
+        restaurantId: UUID
+    ) -> [HistoryEntry] {
         let recordsById = Dictionary(uniqueKeysWithValues: records.map { ($0.id, $0) })
+        let productionsById = Dictionary(uniqueKeysWithValues: productions.map { ($0.id, $0) })
         let recordEntries = records.filter { $0.restaurantId == restaurantId }.map { record in
             HistoryEntry(
                 id: "trace-\(record.id)",
@@ -112,7 +118,10 @@ struct TraceabilityHistoryProvider {
                     .init(label: "Fornitore", value: HistoryFormat.text(record.supplier)),
                     .init(label: "Evento", value: action),
                     .init(label: "Dettaglio", value: HistoryFormat.text(log.detail)),
-                    .init(label: "Produzione collegata", value: log.productionId.map { String($0.uuidString.prefix(8)).uppercased() } ?? "—")
+                    .init(
+                        label: "Produzione collegata",
+                        value: HistoryFormat.text(log.linkedProductionDisplayName(productionsById: productionsById))
+                    )
                 ],
                 hasCriticality: log.actionType == .nonCompliance || log.actionType == .expired || log.actionType == .rejected || log.actionType == .withdrawn
             )

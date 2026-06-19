@@ -19,81 +19,43 @@ struct ProductionLabelDetailView: View {
     @State private var errorMessage: String?
     @State private var isPrinting = false
     @State private var photoData: Data?
+    @State private var queuedPrintMessage: String?
+    @State private var selectedTab: DetailTab = .sticker
 
     @ObservedObject private var printerManager = ClabelPrinterManager.shared
+    @ObservedObject private var printQueue = ProductionLabelPrintQueue.shared
+
+    private enum DetailTab: String, CaseIterable, Identifiable {
+        case sticker = "Etichetta"
+        case details = "Dettagli"
+
+        var id: String { rawValue }
+    }
 
     private let service = ProductionLabelsService()
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: theme.spacing.sectionSpacing) {
-                if let photoData,
-                   let preview = HACCPZoomablePhotoPreview(data: photoData, height: 220, zoomTitle: label.productName) {
-                    DashboardCardView(title: "Foto prodotto", subtitle: "Da tracciabilità o ricezione collegata") {
-                        preview
-                    }
-                }
-
-                ProductionLabelStickerView(label: label)
-
-                if SettingsStorageService.shared.printer.showQRCode {
-                    DashboardCardView(title: "Codice QR", subtitle: "Leggibile da qualsiasi dispositivo") {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Il QR contiene prodotto, lotto, date, allergeni e altre info HACCP. Puoi scansionarlo da un altro telefono anche senza archivio locale.")
-                                .font(theme.typography.subheadline)
-                                .foregroundStyle(theme.colorTextSecondary)
-                            Text("ID: \(label.id.uuidString.prefix(8).uppercased())…")
-                                .font(theme.typography.caption)
-                                .foregroundStyle(theme.colorTextSecondary)
-                        }
-                    }
-                }
-
-                DashboardCardView(title: "Collegamenti HACCP") {
-                    VStack(alignment: .leading, spacing: 10) {
-                        linkRow("Origine", label.sourceModule.label, icon: label.sourceModule.icon)
-                        if label.traceabilityRecordId != nil {
-                            linkRow("Tracciabilità", "Collegata", icon: "link")
-                        }
-                        if label.goodsReceiptId != nil {
-                            linkRow("Ricezione merci", "Collegata", icon: "shippingbox.fill")
-                        }
-                        if label.blastChillingRecordId != nil {
-                            linkRow("Abbattimento", "Collegata", icon: "wind.snow")
-                        }
-                        if label.defrostRecordId != nil {
-                            linkRow("Decongelamento", "Collegata", icon: "snowflake")
-                        }
-                        linkRow("Ristampe", "\(label.reprintCount)", icon: "printer")
-                        linkRow("Creata", label.createdAt.formatted(date: .abbreviated, time: .shortened), icon: "clock")
-                        linkRow("Aggiornata", label.updatedAt.formatted(date: .abbreviated, time: .shortened), icon: "arrow.clockwise")
-                    }
-                }
-
-                if !label.allergenList.isEmpty {
-                    DashboardCardView(title: "Allergeni") {
-                        FlowLayoutBadges(items: label.allergenList)
-                    }
-                }
-
-                VStack(spacing: 12) {
-                    PrimaryButton(title: isPrinting ? "Stampa…" : "Stampa etichetta", icon: "printer.fill") {
-                        Task { await printLabel() }
-                    }
-                    .disabled(isPrinting || !printerManager.isReadyToPrint)
-
-                    if printerManager.isConnected && !printerManager.isReadyToPrint {
-                        Text("Stampante collegata ma canale stampa non pronto. Attendi o riconnetti da Impostazioni.")
-                            .font(theme.typography.caption)
-                            .foregroundStyle(theme.colorWarning)
-                            .multilineTextAlignment(.center)
-                    }
-                    if !label.isArchived {
-                        SecondaryButton(title: "Archivia", icon: "archivebox") { archive() }
-                    }
+        VStack(spacing: 0) {
+            Picker("Scheda", selection: $selectedTab) {
+                ForEach(DetailTab.allCases) { tab in
+                    Text(tab.rawValue).tag(tab)
                 }
             }
-            .padding(theme.spacing.screenPadding + 8)
+            .pickerStyle(.segmented)
+            .padding(.horizontal, theme.spacing.screenPadding + 8)
+            .padding(.vertical, 12)
+
+            ScrollView {
+                VStack(spacing: theme.spacing.sectionSpacing) {
+                    switch selectedTab {
+                    case .sticker:
+                        stickerTab
+                    case .details:
+                        detailsTab
+                    }
+                }
+                .padding(theme.spacing.screenPadding + 8)
+            }
         }
         .background(theme.colorBackground.ignoresSafeArea())
         .navigationTitle(label.productName)
@@ -108,9 +70,11 @@ struct ProductionLabelDetailView: View {
                 mode: .edit(label),
                 restaurantId: label.restaurantId,
                 user: user,
-                onSaved: {
+                onSaved: { _, shouldPrint in
                     showEdit = false
                     onChanged()
+                    guard shouldPrint else { return }
+                    Task { await printLabel(countAsReprint: true) }
                 },
                 onCancel: { showEdit = false }
             )
@@ -139,6 +103,89 @@ struct ProductionLabelDetailView: View {
         }
     }
 
+    @ViewBuilder
+    private var stickerTab: some View {
+        if let photoData,
+           let preview = HACCPZoomablePhotoPreview(data: photoData, height: 220, zoomTitle: label.productName) {
+            DashboardCardView(title: "Foto prodotto", subtitle: "Da tracciabilità o ricezione collegata") {
+                preview
+            }
+        }
+
+        ProductionLabelStickerView(label: label)
+
+        VStack(spacing: 12) {
+            PrimaryButton(title: isPrinting ? "Stampa…" : "Stampa etichetta", icon: "printer.fill") {
+                Task { await printLabel() }
+            }
+            .disabled(isPrinting)
+
+            if let queuedPrintMessage {
+                Text(queuedPrintMessage)
+                    .font(theme.typography.caption)
+                    .foregroundStyle(theme.colorInfo)
+                    .multilineTextAlignment(.center)
+            } else if printerManager.isConnected && !printerManager.isReadyToPrint {
+                Text("Stampante collegata: la stampa verrà accodata finché il canale non è pronto.")
+                    .font(theme.typography.caption)
+                    .foregroundStyle(theme.colorWarning)
+                    .multilineTextAlignment(.center)
+            } else if !printerManager.isConnected {
+                Text("Collega la stampante da Impostazioni → Stampanti.")
+                    .font(theme.typography.caption)
+                    .foregroundStyle(theme.colorWarning)
+                    .multilineTextAlignment(.center)
+            }
+
+            if !label.isArchived {
+                SecondaryButton(title: "Archivia", icon: "archivebox") { archive() }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var detailsTab: some View {
+        if SettingsStorageService.shared.printer.showQRCode {
+            DashboardCardView(title: "Codice QR", subtitle: "Leggibile da qualsiasi dispositivo") {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Il QR contiene prodotto, lotto, date, allergeni e altre info HACCP. Puoi scansionarlo da un altro telefono anche senza archivio locale.")
+                        .font(theme.typography.subheadline)
+                        .foregroundStyle(theme.colorTextSecondary)
+                    Text("ID: \(label.id.uuidString.prefix(8).uppercased())…")
+                        .font(theme.typography.caption)
+                        .foregroundStyle(theme.colorTextSecondary)
+                }
+            }
+        }
+
+        DashboardCardView(title: "Collegamenti HACCP") {
+            VStack(alignment: .leading, spacing: 10) {
+                linkRow("Origine", label.sourceModule.displayLabel, icon: label.sourceModule.icon)
+                if label.traceabilityRecordId != nil {
+                    linkRow("Tracciabilità", "Collegata", icon: "link")
+                }
+                if label.goodsReceiptId != nil {
+                    linkRow("Ricezione merci", "Collegata", icon: "shippingbox.fill")
+                }
+                if label.blastChillingRecordId != nil {
+                    linkRow("Abbattimento", "Collegata", icon: "wind.snow")
+                }
+                if label.defrostRecordId != nil {
+                    linkRow("Decongelamento", "Collegata", icon: "snowflake")
+                }
+                linkRow("Ristampe", "\(label.reprintCount)", icon: "printer")
+                linkRow("Creata", label.createdAt.formatted(date: .abbreviated, time: .shortened), icon: "clock")
+                linkRow("Aggiornata", label.updatedAt.formatted(date: .abbreviated, time: .shortened), icon: "arrow.clockwise")
+            }
+        }
+
+        if !label.allergenList.isEmpty {
+            DashboardCardView(title: "Allergeni") {
+                FlowLayoutBadges(items: label.allergenList)
+            }
+        }
+    }
+
     private func linkRow(_ title: String, _ value: String, icon: String) -> some View {
         HStack {
             Label(title, systemImage: icon)
@@ -151,24 +198,43 @@ struct ProductionLabelDetailView: View {
         }
     }
 
-    private func printLabel() async {
-        guard printerManager.isReadyToPrint else {
-            errorMessage = printerManager.isConnected
-                ? "Canale stampa non pronto. Vai in Impostazioni → Stampanti e attendi «Connessa»."
-                : "Collega la stampante da Impostazioni → Stampanti."
-            return
-        }
+    private func printLabel(countAsReprint: Bool = true) async {
         isPrinting = true
         defer { isPrinting = false }
-        do {
-            try await ProductionLabelPrintQueue.shared.printNow(
-                label: label,
-                restaurantName: restaurantName
-            )
-            errorMessage = nil
-        } catch {
-            errorMessage = error.localizedDescription
-            printerManager.lastErrorMessage = error.localizedDescription
+        queuedPrintMessage = nil
+
+        if printerManager.isReadyToPrint {
+            do {
+                try await printQueue.printNow(
+                    label: label,
+                    restaurantName: restaurantName,
+                    modelContext: modelContext,
+                    countAsReprint: countAsReprint
+                )
+                errorMessage = nil
+                onChanged()
+            } catch {
+                errorMessage = error.localizedDescription
+                printerManager.lastErrorMessage = error.localizedDescription
+            }
+            return
+        }
+
+        guard printerManager.isConnected else {
+            errorMessage = "Collega la stampante da Impostazioni → Stampanti."
+            return
+        }
+
+        printQueue.enqueue(labelId: label.id, countAsReprint: countAsReprint)
+        queuedPrintMessage = "Etichetta in coda. Stampa automatica appena la stampante è pronta."
+        await printQueue.processPending(
+            labels: [label],
+            modelContext: modelContext,
+            restaurantName: restaurantName
+        )
+        if printQueue.pendingJobs.contains(where: { $0.labelId == label.id }) == false {
+            queuedPrintMessage = nil
+            onChanged()
         }
     }
 

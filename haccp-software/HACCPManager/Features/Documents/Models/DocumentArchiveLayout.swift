@@ -13,10 +13,47 @@ enum DocumentArchiveLayout {
     static let singoliGroup = "Singoli"
     static let combinatiGroup = "Combinati"
 
-    /// Un report mensile per ogni modulo operativo (cartella in Singoli).
-    static let singleMonthlyModules: [DocumentModule] = [
+    /// Cartella nascosta per PDF di moduli ritirati (es. HACCP combinato).
+    static let legacyReportsArchiveFolderName = "Archivio report legacy"
+
+    /// Moduli/cartelle non più esposti in archivio (sostituiti da «Ingresso e tracciabilità»).
+    static let retiredSingoliFolderTitles: Set<String> = [
+        moduleFolderTitle(.ricezioneMerci),
+        moduleFolderTitle(.tracciabilita)
+    ]
+    static let retiredCombinatiFolderTitles: Set<String> = [
+        moduleFolderTitle(.haccpCombinato)
+    ]
+    static var retiredModuleFolderTitles: Set<String> {
+        retiredSingoliFolderTitles.union(retiredCombinatiFolderTitles)
+    }
+
+    static func isRetiredFolderTitle(_ title: String) -> Bool {
+        retiredModuleFolderTitles.contains { $0.caseInsensitiveCompare(title) == .orderedSame }
+    }
+
+    /// Moduli non più generati come PDF singoli/combinato generale mensile.
+    static let retiredMonthlyGenerationModules: Set<DocumentModule> = [
         .ricezioneMerci,
         .tracciabilita,
+        .haccpCombinato
+    ]
+
+    static func isRetiredMonthlyModule(_ module: DocumentModule) -> Bool {
+        retiredMonthlyGenerationModules.contains(module)
+    }
+
+    /// Moduli ammessi nella generazione automatica mensile.
+    static var activeMonthlyGenerationModules: [DocumentModule] {
+        monthEndSingleModules + monthEndCombinedModules
+    }
+
+    static func isEligibleForMonthlyGeneration(type: DocumentType, module: DocumentModule) -> Bool {
+        type == .mensile && activeMonthlyGenerationModules.contains(module)
+    }
+
+    /// Un report mensile per ogni modulo operativo (cartella in Singoli).
+    static let singleMonthlyModules: [DocumentModule] = [
         .frigoriferi,
         .controlloPulizia,
         .abbattimento,
@@ -26,39 +63,30 @@ enum DocumentArchiveLayout {
         .etichetteProduzione
     ]
 
-    /// Report combinati mensili (cartella in Combinati) — funzioni affini + sintesi generale.
+    /// Report combinati mensili (cartella in Combinati) — funzioni affini + registro NC.
     static let combinedMonthlyModules: [DocumentModule] = [
         .combinatoIngressoTracciabilita,
         .combinatoCatenaFreddo,
         .combinatoIgieneControlli,
         .combinatoProduzione,
-        .haccpCombinato,
         .nonConformita
     ]
 
     static var monthEndSingleModules: [DocumentModule] { singleMonthlyModules }
     static var monthEndCombinedModules: [DocumentModule] { combinedMonthlyModules }
 
-    static let singleModuleFolderTitles: [String] = [
-        "Ricezione merci",
-        "Tracciabilità",
-        "Frigoriferi",
-        "Controllo pulizia",
-        "Abbattimento",
-        "Decongelamento",
-        "Controllo olio",
-        "Checklist",
-        "Etichette di produzione"
-    ]
+    /// Titoli cartella derivati dai moduli attivi — unica fonte di verità con le liste sopra.
+    static var singleModuleFolderTitles: [String] {
+        singleMonthlyModules.map(moduleFolderTitle)
+    }
 
-    static let combinedModuleFolderTitles: [String] = [
-        "Ingresso e tracciabilità",
-        "Catena del freddo",
-        "Igiene e controlli",
-        "Produzione ed etichettatura",
-        "HACCP combinato",
-        "Non conformità"
-    ]
+    static var combinedModuleFolderTitles: [String] {
+        combinedMonthlyModules.map(moduleFolderTitle)
+    }
+
+    static var ingressoTracciabilitaFolderTitle: String {
+        moduleFolderTitle(.combinatoIngressoTracciabilita)
+    }
 
     static func venueFolderName(for restaurant: Restaurant) -> String {
         LocalDocumentStorageService.sanitizeFolderName(restaurant.name)
@@ -89,13 +117,7 @@ enum DocumentArchiveLayout {
     }
 
     static func isOperationalSingle(_ module: DocumentModule) -> Bool {
-        switch module {
-        case .frigoriferi, .controlloPulizia, .abbattimento, .decongelamento,
-             .controlloOlio, .checklist, .etichetteProduzione:
-            return true
-        default:
-            return false
-        }
+        isSingleModule(module)
     }
 
     static func groupFolderName(for module: DocumentModule) -> String {
@@ -133,5 +155,36 @@ enum DocumentArchiveLayout {
         default:
             return []
         }
+    }
+
+    /// Ricostruisce il path iCloud dopo migrazione cartella (evita replace string fragile).
+    static func remappedICloudRelativePath(
+        _ path: String,
+        restaurantDisplayName: String,
+        oldGroup: String,
+        oldModuleFolder: String,
+        newGroup: String,
+        newModuleFolder: String?
+    ) -> String? {
+        let oldSegment = "/\(oldGroup)/\(oldModuleFolder)/"
+        guard path.contains(oldSegment),
+              let fileName = path.split(separator: "/").last.map(String.init) else { return nil }
+
+        let prefix = "HACCP Manager/\(venueFolderName(fromDisplayName: restaurantDisplayName))/\(monthlyPeriodName)"
+        let moduleFolder = newModuleFolder ?? ""
+        if moduleFolder.isEmpty {
+            return "\(prefix)/\(newGroup)/\(fileName)"
+        }
+        return LocalDocumentStorageService.shared.relativePathForICloud(
+            restaurantDisplayName: restaurantDisplayName,
+            periodFolder: monthlyPeriodName,
+            groupFolder: newGroup,
+            moduleFolder: moduleFolder,
+            fileName: fileName
+        )
+    }
+
+    private static func venueFolderName(fromDisplayName name: String) -> String {
+        LocalDocumentStorageService.sanitizeFolderName(name)
     }
 }

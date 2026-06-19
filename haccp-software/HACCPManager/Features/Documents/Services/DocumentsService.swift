@@ -58,6 +58,13 @@ struct DocumentsService {
             order += 1
         }
 
+        list.append(FolderTemplate(
+            name: DocumentArchiveLayout.legacyReportsArchiveFolderName,
+            type: .archive,
+            order: order,
+            parentPath: "\(venueName)/\(period)/\(DocumentArchiveLayout.combinatiGroup)"
+        ))
+
         return list
     }
 
@@ -111,13 +118,26 @@ struct DocumentsService {
             restaurantFolders.append(folder)
         }
 
+        retireDeprecatedModuleFolders(
+            venueFolderName: venueName,
+            restaurantDisplayName: restaurantDisplayName,
+            folders: &restaurantFolders,
+            items: restaurantItems,
+            modelContext: modelContext,
+            user: user
+        )
+
         deduplicateSiblingFolders(
             folders: &restaurantFolders,
             items: restaurantItems,
             modelContext: modelContext
         )
 
-        try? modelContext.save()
+        do {
+            try modelContext.save()
+        } catch {
+            assertionFailure("Salvataggio cartelle archivio fallito: \(error.localizedDescription)")
+        }
     }
 
     private func depth(of parentPath: String?) -> Int {
@@ -294,6 +314,145 @@ struct DocumentsService {
         )
 
         return workingFolders
+    }
+
+    /// Rimuove cartelle legacy (Ricezione merci, Tracciabilità, HACCP combinato) dall'archivio mensile.
+    private func retireDeprecatedModuleFolders(
+        venueFolderName: String,
+        restaurantDisplayName: String,
+        folders: inout [DocumentFolder],
+        items: [DocumentItem],
+        modelContext: ModelContext,
+        user: LocalUser
+    ) {
+        var pathIndex = DocumentFolderPathIndex(folders: folders)
+        let singoli = DocumentArchiveLayout.singoliGroup
+        let combinati = DocumentArchiveLayout.combinatiGroup
+        let ingressoTitle = DocumentArchiveLayout.ingressoTracciabilitaFolderTitle
+
+        guard let ingressoTarget = pathIndex.folder(
+            venueFolderName: venueFolderName,
+            monthlyPathSuffix: "\(combinati)/\(ingressoTitle)"
+        ) else {
+            return
+        }
+
+        for title in DocumentArchiveLayout.retiredSingoliFolderTitles {
+            guard let deprecated = pathIndex.folder(
+                venueFolderName: venueFolderName,
+                monthlyPathSuffix: "\(singoli)/\(title)"
+            ) else { continue }
+            mergeFolderContents(
+                from: deprecated,
+                into: ingressoTarget,
+                folders: &folders,
+                items: items,
+                modelContext: modelContext
+            )
+            pathIndex.rebuild(from: folders)
+            reassignRetiredICloudPaths(
+                items: items,
+                restaurantDisplayName: restaurantDisplayName,
+                oldGroup: singoli,
+                oldModuleFolder: title,
+                newGroup: combinati,
+                newModuleFolder: ingressoTitle
+            )
+        }
+
+        guard let legacyArchiveTarget = ensureLegacyArchiveFolder(
+            venueFolderName: venueFolderName,
+            folders: &folders,
+            pathIndex: &pathIndex,
+            restaurantId: ingressoTarget.restaurantId,
+            user: user,
+            modelContext: modelContext
+        ) else { return }
+
+        for title in DocumentArchiveLayout.retiredCombinatiFolderTitles {
+            guard let deprecated = pathIndex.folder(
+                venueFolderName: venueFolderName,
+                monthlyPathSuffix: "\(combinati)/\(title)"
+            ) else { continue }
+            mergeFolderContents(
+                from: deprecated,
+                into: legacyArchiveTarget,
+                folders: &folders,
+                items: items,
+                modelContext: modelContext
+            )
+            pathIndex.rebuild(from: folders)
+            reassignRetiredICloudPaths(
+                items: items,
+                restaurantDisplayName: restaurantDisplayName,
+                oldGroup: combinati,
+                oldModuleFolder: title,
+                newGroup: combinati,
+                newModuleFolder: DocumentArchiveLayout.legacyReportsArchiveFolderName
+            )
+        }
+    }
+
+    private func ensureLegacyArchiveFolder(
+        venueFolderName: String,
+        folders: inout [DocumentFolder],
+        pathIndex: inout DocumentFolderPathIndex,
+        restaurantId: UUID,
+        user: LocalUser,
+        modelContext: ModelContext
+    ) -> DocumentFolder? {
+        let combinati = DocumentArchiveLayout.combinatiGroup
+        let archiveName = DocumentArchiveLayout.legacyReportsArchiveFolderName
+        if let existing = pathIndex.folder(
+            venueFolderName: venueFolderName,
+            monthlyPathSuffix: "\(combinati)/\(archiveName)"
+        ) {
+            return existing
+        }
+
+        guard let combinatiParent = pathIndex.folder(
+            venueFolderName: venueFolderName,
+            monthlyPathSuffix: combinati
+        ) else {
+            return nil
+        }
+
+        let archive = DocumentFolder(
+            restaurantId: restaurantId,
+            name: archiveName,
+            type: .archive,
+            parentId: combinatiParent.id,
+            orderIndex: 999,
+            createdByUserId: user.id,
+            createdByNameSnapshot: user.name
+        )
+        modelContext.insert(archive)
+        folders.append(archive)
+        pathIndex.rebuild(from: folders)
+        return archive
+    }
+
+    private func reassignRetiredICloudPaths(
+        items: [DocumentItem],
+        restaurantDisplayName: String,
+        oldGroup: String,
+        oldModuleFolder: String,
+        newGroup: String,
+        newModuleFolder: String?
+    ) {
+        for item in items {
+            guard let path = item.iCloudRelativePath,
+                  let remapped = DocumentArchiveLayout.remappedICloudRelativePath(
+                    path,
+                    restaurantDisplayName: restaurantDisplayName,
+                    oldGroup: oldGroup,
+                    oldModuleFolder: oldModuleFolder,
+                    newGroup: newGroup,
+                    newModuleFolder: newModuleFolder
+                  ) else { continue }
+            item.iCloudRelativePath = remapped
+            item.isSyncedToICloud = false
+        }
     }
 
     private func mergeFolderContents(

@@ -30,38 +30,44 @@ struct DocumentItemCard: View {
     var body: some View {
         GlassCard(elevated: true) {
             HStack(alignment: .top, spacing: theme.spacing.md) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(theme.colorPrimary.opacity(0.12))
-                        .frame(width: 44, height: 52)
-                    Image(systemName: document.format == .pdf ? "doc.richtext.fill" : "doc.fill")
-                        .font(.title3)
-                        .foregroundStyle(theme.colorPrimary)
-                }
+                Button(action: onOpen) {
+                    HStack(alignment: .top, spacing: theme.spacing.md) {
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .fill(theme.colorPrimary.opacity(0.12))
+                                .frame(width: 44, height: 52)
+                            Image(systemName: document.format == .pdf ? "doc.richtext.fill" : "doc.fill")
+                                .font(.title3)
+                                .foregroundStyle(theme.colorPrimary)
+                        }
 
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(displayTitle)
-                        .font(theme.typography.headline)
-                        .foregroundStyle(theme.colorTextPrimary)
-                        .lineLimit(2)
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text(displayTitle)
+                                .font(theme.typography.headline)
+                                .foregroundStyle(theme.colorTextPrimary)
+                                .lineLimit(2)
 
-                    Text(subtitle)
-                        .font(theme.typography.caption)
-                        .foregroundStyle(theme.colorTextSecondary)
+                            Text(subtitle)
+                                .font(theme.typography.caption)
+                                .foregroundStyle(theme.colorTextSecondary)
 
-                    Text(metaLine)
-                        .font(theme.typography.caption)
-                        .foregroundStyle(theme.colorTextSecondary.opacity(0.9))
+                            Text(metaLine)
+                                .font(theme.typography.caption)
+                                .foregroundStyle(theme.colorTextSecondary.opacity(0.9))
 
-                    HStack(spacing: 8) {
-                        statusBadge
-                        if document.isSyncedToICloud {
-                            syncBadge
+                            HStack(spacing: 8) {
+                                statusBadge
+                                if document.isSyncedToICloud {
+                                    syncBadge
+                                }
+                            }
                         }
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
-
-                Spacer(minLength: 0)
+                .buttonStyle(PremiumPressButtonStyle(scale: 0.99))
+                .disabled(!pdfExists)
+                .accessibilityLabel("Apri \(displayTitle)")
 
                 Menu {
                     Button {
@@ -150,19 +156,28 @@ struct DocumentFolderCard: View {
             GlassCard(elevated: true) {
                 VStack(alignment: .leading, spacing: theme.spacing.sm) {
                     HStack {
-                        Image(systemName: "folder.fill")
-                            .font(.title2)
-                            .foregroundStyle(theme.colorWarning)
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .fill(theme.colorWarning.opacity(0.14))
+                                .frame(width: 40, height: 40)
+                            Image(systemName: "folder.fill")
+                                .font(.title3.weight(.semibold))
+                                .foregroundStyle(theme.colorWarning)
+                        }
                         Spacer()
                         if hasNew {
                             HACCPBadge(title: "Nuovo", style: .nonConforme)
                         }
+                        Image(systemName: "chevron.right")
+                            .font(theme.typography.caption.weight(.bold))
+                            .foregroundStyle(theme.colorTextSecondary.opacity(0.7))
                     }
 
                     Text(folder.name)
                         .font(theme.typography.headline)
                         .foregroundStyle(theme.colorTextPrimary)
                         .multilineTextAlignment(.leading)
+                        .lineLimit(2)
 
                     Text(documentCount == 0 ? "Nessun documento" : "\(documentCount) documenti")
                         .font(theme.typography.caption)
@@ -170,12 +185,13 @@ struct DocumentFolderCard: View {
 
                     if let latestUpdate {
                         Text("Aggiornata \(latestUpdate.formatted(date: .abbreviated, time: .shortened))")
-                            .font(theme.typography.caption)
+                            .font(theme.typography.caption2)
                             .foregroundStyle(theme.colorTextSecondary.opacity(0.85))
                     }
                 }
             }
         }
-        .buttonStyle(.plain)
+        .buttonStyle(PremiumPressButtonStyle(scale: 0.98))
+        .accessibilityHint("Apri cartella \(folder.name)")
     }
 }

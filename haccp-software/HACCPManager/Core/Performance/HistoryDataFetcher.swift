@@ -19,6 +19,7 @@ struct HistoryFetchedData {
     var goodsRecords: [GoodsReceipt] = []
     var traceabilityRecords: [TraceabilityRecord] = []
     var traceabilityLogs: [TraceabilityLog] = []
+    var productions: [Production] = []
     var oilRecords: [OilControlRecord] = []
 }
 
@@ -46,6 +47,7 @@ enum HistoryDataFetcher {
             recordIds: Set(data.traceabilityRecords.map(\.id)),
             limit: limit
         )
+        data.productions = fetchLimited(context, restaurantId: rid, limit: 500, sort: SortDescriptor(\Production.name, order: .forward))
         data.oilRecords = fetchLimited(context, restaurantId: rid, limit: limit, sort: SortDescriptor(\OilControlRecord.checkedAt, order: .reverse))
         return data
     }
@@ -106,6 +108,7 @@ extension CleaningRecord: RestaurantScoped {}
 extension DefrostRecord: RestaurantScoped {}
 extension BlastChillingRecord: RestaurantScoped {}
 extension ProductionLabelRecord: RestaurantScoped {}
+extension Production: RestaurantScoped {}
 extension GoodsReceipt: RestaurantScoped {}
 extension TraceabilityRecord: RestaurantScoped {}
 extension ScheduledTask: RestaurantScoped {}

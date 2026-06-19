@@ -15,6 +15,7 @@ struct HistoryService {
         goodsRecords: [GoodsReceipt],
         traceabilityRecords: [TraceabilityRecord],
         traceabilityLogs: [TraceabilityLog],
+        productions: [Production],
         oilRecords: [OilControlRecord]
     ) -> [HistoryEntry] {
         let temperature = TemperatureHistoryProvider().entries(records: temperatureRecords, legacyRecords: fridgeRecords, restaurantId: restaurantId)
@@ -134,7 +135,12 @@ struct HistoryService {
                 )
             }
         let goods = GoodsReceivingHistoryProvider().entries(from: goodsRecords, restaurantId: restaurantId)
-        let traceability = TraceabilityHistoryProvider().entries(records: traceabilityRecords, logs: traceabilityLogs, restaurantId: restaurantId)
+        let traceability = TraceabilityHistoryProvider().entries(
+            records: traceabilityRecords,
+            logs: traceabilityLogs,
+            productions: productions,
+            restaurantId: restaurantId
+        )
         let expiry = ExpiryHistoryProvider().entries(traceabilityRecords: traceabilityRecords, restaurantId: restaurantId)
 
         let oil = OilControlHistoryProvider().entries(from: oilRecords, restaurantId: restaurantId)

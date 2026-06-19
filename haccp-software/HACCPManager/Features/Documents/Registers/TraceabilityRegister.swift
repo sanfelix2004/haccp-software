@@ -34,6 +34,13 @@ enum TraceabilityRegister {
         return filtered.map { t in
             let linkList = linksByReceived[t.id] ?? []
             let prodNames = linkList.compactMap { prodById[$0.productionId]?.name }.joined(separator: ", ")
+            let productionsLabel: String = {
+                if !prodNames.isEmpty { return prodNames }
+                if let ref = t.productionReference?.trimmingCharacters(in: .whitespacesAndNewlines), !ref.isEmpty {
+                    return ref
+                }
+                return "—"
+            }()
 
             var ncParts: [String] = []
             if t.isNonCompliant { ncParts.append("Segnalata") }
@@ -62,7 +69,7 @@ enum TraceabilityRegister {
                 supplier: t.supplier,
                 receivedAt: df.string(from: t.receivedAt),
                 status: t.productStatus.label,
-                productions: prodNames.isEmpty ? "—" : prodNames,
+                productions: productionsLabel,
                 nonCompliance: ncParts.isEmpty ? "—" : ncParts.joined(separator: "; "),
                 operatorName: t.createdByNameSnapshot,
                 imageData: photo

@@ -47,67 +47,70 @@ final class HACCPReportEngine: ObservableObject {
 
     /// Sincronizza l'archivio completo (delega al `DocumentGenerationService`),
     /// poi cattura snapshot JSON + revisioni v1/v2 e registra l'evento in audit.
+    /// - Returns: `true` se il run è stato eseguito; `false` se saltato (debounce / già in corso).
+    @discardableResult
     func runFullArchive(
         restaurant: Restaurant,
         user: LocalUser,
         in modelContext: ModelContext,
-        force: Bool = false
-    ) async {
-        if isRunning { return }
-        if !force, !canRunNow { return }
+        force: Bool = false,
+        monthBoundaryCrossed: Bool = false
+    ) async -> Bool {
+        if isRunning { return false }
+        if !force, !canRunNow { return false }
         isRunning = true
         defer { isRunning = false }
 
-        let receipts = fetchReceipts(in: modelContext, restaurantId: restaurant.id)
-        let traceability = fetchTraceability(in: modelContext, restaurantId: restaurant.id)
-        let images = fetchAllImages(in: modelContext)
-        let productions = fetchProductions(in: modelContext, restaurantId: restaurant.id)
-        let links = fetchAllLinks(in: modelContext)
-        let logs = fetchAllTraceabilityLogs(in: modelContext)
-        let checklistLogs = fetchChecklistLogs(in: modelContext, restaurantId: restaurant.id)
-        let temperatureLogs = fetchTemperatureLogs(in: modelContext, restaurantId: restaurant.id)
+        let folders = fetchAllFolders(in: modelContext)
+        let items = fetchDocuments(in: modelContext, restaurantId: restaurant.id)
+        DocumentsService().ensureDefaultFolders(
+            restaurantId: restaurant.id,
+            restaurantDisplayName: restaurant.name,
+            user: user,
+            existingFolders: folders.filter { $0.restaurantId == restaurant.id },
+            existingItems: items,
+            modelContext: modelContext
+        )
+
+        let source = fetchArchiveSource(in: modelContext, restaurantId: restaurant.id)
 
         let before = fetchDocuments(in: modelContext, restaurantId: restaurant.id)
-        let beforeIds = Set(before.map(\.id))
+        let beforeById = Dictionary(uniqueKeysWithValues: before.map { ($0.id, $0) })
 
         await DocumentGenerationService.shared.syncArchive(
             restaurant: restaurant,
             user: user,
-            receipts: receipts,
-            traceabilityRecords: traceability,
-            traceabilityImages: images,
-            productions: productions,
-            traceabilityLinks: links,
-            traceabilityLogs: logs,
-            checklistAuditLogs: checklistLogs,
-            temperatureAuditLogs: temperatureLogs,
+            receipts: source.receipts,
+            traceabilityRecords: source.traceability,
+            traceabilityImages: source.images,
+            productions: source.productions,
+            traceabilityLinks: source.links,
+            traceabilityLogs: source.logs,
+            checklistAuditLogs: source.checklistLogs,
+            temperatureAuditLogs: source.temperatureLogs,
             modelContext: modelContext
         )
 
         let after = fetchDocuments(in: modelContext, restaurantId: restaurant.id)
         let newOrUpdated = after.filter { doc in
-            !beforeIds.contains(doc.id) ||
-            (before.first(where: { $0.id == doc.id })?.checksumSHA256 ?? "") != doc.checksumSHA256
+            guard let previous = beforeById[doc.id] else { return true }
+            return previous.checksumSHA256 != doc.checksumSHA256
+                || previous.status != doc.status
+                || previous.localFilePresent != doc.localFilePresent
         }
 
         var snapshotsCreated = 0
         var revisionsCreated = 0
         for doc in newOrUpdated where doc.status == .generato && doc.localFilePresent {
-            if captureSnapshotAndRevision(
+            let captured = captureSnapshotAndRevision(
                 for: doc,
                 restaurant: restaurant,
                 user: user,
-                receipts: receipts,
-                traceability: traceability,
-                productions: productions,
-                checklistLogs: checklistLogs,
-                temperatureLogs: temperatureLogs,
-                traceabilityLogs: logs,
+                source: source,
                 in: modelContext
-            ) {
-                snapshotsCreated += 1
-                revisionsCreated += 1
-            }
+            )
+            if captured.snapshot { snapshotsCreated += 1 }
+            if captured.revision { revisionsCreated += 1 }
         }
 
         HACCPAuditManager.shared.record(
@@ -129,6 +132,21 @@ final class HACCPReportEngine: ObservableObject {
         df.dateStyle = .short
         df.timeStyle = .short
         lastRunSummary = "Ultimo run: \(df.string(from: lastRunAt!)) · \(newOrUpdated.count) doc aggiornati · \(snapshotsCreated) snapshot JSON · \(revisionsCreated) revisioni"
+
+        let hasPendingICloud = after.contains {
+            $0.format == .pdf && $0.localFilePresent && !$0.isSyncedToICloud
+        }
+        if hasPendingICloud {
+            await ICloudDocumentSyncService.shared.syncMonthlyArchive(
+                restaurantId: restaurant.id,
+                restaurantName: restaurant.name,
+                items: after,
+                modelContext: modelContext,
+                monthBoundaryCrossed: monthBoundaryCrossed
+            )
+        }
+
+        return true
     }
 
     // MARK: - Rigenerazione manuale (con audit + revisione)
@@ -140,14 +158,7 @@ final class HACCPReportEngine: ObservableObject {
         reason: String = "Rigenerazione manuale",
         in modelContext: ModelContext
     ) throws {
-        let receipts = fetchReceipts(in: modelContext, restaurantId: restaurant.id)
-        let traceability = fetchTraceability(in: modelContext, restaurantId: restaurant.id)
-        let images = fetchAllImages(in: modelContext)
-        let productions = fetchProductions(in: modelContext, restaurantId: restaurant.id)
-        let links = fetchAllLinks(in: modelContext)
-        let logs = fetchAllTraceabilityLogs(in: modelContext)
-        let checklistLogs = fetchChecklistLogs(in: modelContext, restaurantId: restaurant.id)
-        let temperatureLogs = fetchTemperatureLogs(in: modelContext, restaurantId: restaurant.id)
+        let source = fetchArchiveSource(in: modelContext, restaurantId: restaurant.id)
         let folders = fetchAllFolders(in: modelContext)
         let allItems = fetchDocuments(in: modelContext, restaurantId: restaurant.id)
 
@@ -156,14 +167,14 @@ final class HACCPReportEngine: ObservableObject {
             restaurant: restaurant,
             user: user,
             folders: folders,
-            receipts: receipts,
-            traceabilityRecords: traceability,
-            traceabilityImages: images,
-            productions: productions,
-            traceabilityLinks: links,
-            traceabilityLogs: logs,
-            checklistAuditLogs: checklistLogs,
-            temperatureAuditLogs: temperatureLogs,
+            receipts: source.receipts,
+            traceabilityRecords: source.traceability,
+            traceabilityImages: source.images,
+            productions: source.productions,
+            traceabilityLinks: source.links,
+            traceabilityLogs: source.logs,
+            checklistAuditLogs: source.checklistLogs,
+            temperatureAuditLogs: source.temperatureLogs,
             allDocumentItems: allItems,
             modelContext: modelContext
         )
@@ -172,12 +183,7 @@ final class HACCPReportEngine: ObservableObject {
             for: document,
             restaurant: restaurant,
             user: user,
-            receipts: receipts,
-            traceability: traceability,
-            productions: productions,
-            checklistLogs: checklistLogs,
-            temperatureLogs: temperatureLogs,
-            traceabilityLogs: logs,
+            source: source,
             reason: reason,
             in: modelContext
         )
@@ -191,25 +197,27 @@ final class HACCPReportEngine: ObservableObject {
 
     // MARK: - Snapshot + revisione (interno)
 
+    private struct CaptureResult {
+        let snapshot: Bool
+        let revision: Bool
+    }
+
     @discardableResult
     private func captureSnapshotAndRevision(
         for document: DocumentItem,
         restaurant: Restaurant,
         user: LocalUser,
-        receipts: [GoodsReceipt],
-        traceability: [TraceabilityRecord],
-        productions: [Production],
-        checklistLogs: [ChecklistAuditLog],
-        temperatureLogs: [TemperatureAuditLog],
-        traceabilityLogs: [TraceabilityLog],
+        source: ArchiveSourceData,
         reason: String = "Rigenerazione automatica",
         in modelContext: ModelContext
-    ) -> Bool {
+    ) -> CaptureResult {
         guard document.localFilePresent,
               FileManager.default.fileExists(atPath: document.filePath) else {
-            return false
+            return CaptureResult(snapshot: false, revision: false)
         }
-        guard let periodStart = document.periodStart, let periodEnd = document.periodEnd else { return false }
+        guard let periodStart = document.periodStart, let periodEnd = document.periodEnd else {
+            return CaptureResult(snapshot: false, revision: false)
+        }
         let interval = DateInterval(start: periodStart, end: periodEnd.addingTimeInterval(1))
         let period = enginePeriod(for: document)
 
@@ -219,37 +227,76 @@ final class HACCPReportEngine: ObservableObject {
             user: user,
             period: period,
             interval: interval,
-            receipts: receipts,
-            traceability: traceability,
-            productions: productions,
-            checklistLogs: checklistLogs,
-            temperatureLogs: temperatureLogs,
-            traceabilityLogs: traceabilityLogs
+            receipts: source.receipts,
+            traceability: source.traceability,
+            productions: source.productions,
+            checklistLogs: source.checklistLogs,
+            temperatureLogs: source.temperatureLogs,
+            traceabilityLogs: source.logs
         )
 
-        // Persist snapshot (file + record).
-        _ = try? HACCPReportSnapshotService.shared.persist(
+        let snapshotSaved = (try? HACCPReportSnapshotService.shared.persist(
             payload: payload,
             document: document,
             in: modelContext
-        )
+        )) != nil
 
-        // Cattura revisione (vN) se il fingerprint è cambiato.
         let fingerprint = sourceFingerprint(
             checksum: document.checksumSHA256,
-            receipts: receipts,
-            traceability: traceability,
+            receipts: source.receipts,
+            traceability: source.traceability,
             interval: interval
         )
-        _ = HACCPHistoryManager.shared.captureRevision(
+        let revisionSaved = HACCPHistoryManager.shared.captureRevision(
             for: document,
             sourceFingerprint: fingerprint,
             reason: reason,
             user: user,
             in: modelContext
-        )
+        ) != nil
 
-        return true
+        return CaptureResult(snapshot: snapshotSaved, revision: revisionSaved)
+    }
+
+    // MARK: - Source data bundle
+
+    private struct ArchiveSourceData {
+        let receipts: [GoodsReceipt]
+        let traceability: [TraceabilityRecord]
+        let images: [ProductImage]
+        let productions: [Production]
+        let links: [TraceabilityLink]
+        let logs: [TraceabilityLog]
+        let checklistLogs: [ChecklistAuditLog]
+        let temperatureLogs: [TemperatureAuditLog]
+    }
+
+    private func fetchArchiveSource(in modelContext: ModelContext, restaurantId: UUID) -> ArchiveSourceData {
+        let receipts = fetchReceipts(in: modelContext, restaurantId: restaurantId)
+        let traceability = fetchTraceability(in: modelContext, restaurantId: restaurantId)
+        let traceIds = Set(traceability.map(\.id))
+        let productions = fetchProductions(in: modelContext, restaurantId: restaurantId)
+        let productionIds = Set(productions.map(\.id))
+
+        let allImages = (try? modelContext.fetch(FetchDescriptor<ProductImage>())) ?? []
+        let images = allImages.filter { traceIds.contains($0.receivedItemId) }
+
+        let allLinks = (try? modelContext.fetch(FetchDescriptor<TraceabilityLink>())) ?? []
+        let links = allLinks.filter { traceIds.contains($0.receivedItemId) || productionIds.contains($0.productionId) }
+
+        let allLogs = (try? modelContext.fetch(FetchDescriptor<TraceabilityLog>())) ?? []
+        let logs = allLogs.filter { traceIds.contains($0.receivedItemId) }
+
+        return ArchiveSourceData(
+            receipts: receipts,
+            traceability: traceability,
+            images: images,
+            productions: productions,
+            links: links,
+            logs: logs,
+            checklistLogs: fetchChecklistLogs(in: modelContext, restaurantId: restaurantId),
+            temperatureLogs: fetchTemperatureLogs(in: modelContext, restaurantId: restaurantId)
+        )
     }
 
     // MARK: - Builders
@@ -452,21 +499,6 @@ final class HACCPReportEngine: ObservableObject {
     private func fetchDocuments(in modelContext: ModelContext, restaurantId: UUID) -> [DocumentItem] {
         let all = (try? modelContext.fetch(FetchDescriptor<DocumentItem>())) ?? []
         return all.filter { $0.restaurantId == restaurantId }
-    }
-
-    private func fetchAllImages(in modelContext: ModelContext) -> [ProductImage] {
-        let descriptor = FetchDescriptor<ProductImage>()
-        return (try? modelContext.fetch(descriptor)) ?? []
-    }
-
-    private func fetchAllLinks(in modelContext: ModelContext) -> [TraceabilityLink] {
-        let descriptor = FetchDescriptor<TraceabilityLink>()
-        return (try? modelContext.fetch(descriptor)) ?? []
-    }
-
-    private func fetchAllTraceabilityLogs(in modelContext: ModelContext) -> [TraceabilityLog] {
-        let descriptor = FetchDescriptor<TraceabilityLog>()
-        return (try? modelContext.fetch(descriptor)) ?? []
     }
 
     private func fetchAllFolders(in modelContext: ModelContext) -> [DocumentFolder] {

@@ -12,10 +12,16 @@ struct DataBackupSettingsView: View {
     @EnvironmentObject var appState: AppState
     @Query private var users: [LocalUser]
     @Query private var documentItems: [DocumentItem]
+    @Query private var restaurants: [Restaurant]
 
     @ObservedObject private var iCloudSync = ICloudDocumentSyncService.shared
 
-    @AppStorage(DocumentsUserSettings.iCloudPDFSyncEnabledKey) private var iCloudPDFSyncEnabled = false
+    @AppStorage(DocumentsUserSettings.iCloudPDFSyncEnabledKey) private var iCloudPDFSyncEnabled = true
+
+    @State private var iCloudContactEmail: String = ""
+    @State private var emailValidationMessage: String?
+    @State private var isSyncingICloud = false
+    @State private var pulseICloud = false
 
     @State private var usage = AppStorageUsageBreakdown.empty
     @State private var isCalculatingUsage = false
@@ -32,13 +38,46 @@ struct DataBackupSettingsView: View {
         currentUser.permissions.can(.manageDataAndBackup)
     }
 
+    private var activeRestaurant: Restaurant? {
+        guard let rid = appState.activeRestaurantId else { return nil }
+        return restaurants.first { $0.id == rid }
+    }
+
+    private var scopedDocumentItems: [DocumentItem] {
+        guard let rid = appState.activeRestaurantId else { return [] }
+        return documentItems.filter { $0.restaurantId == rid }
+    }
+
+    private var pdfTotalCount: Int {
+        scopedDocumentItems.filter { $0.format == .pdf && $0.localFilePresent }.count
+    }
+
     private var pdfSyncedCount: Int {
-        documentItems.filter { $0.format == .pdf && $0.localFilePresent && $0.isSyncedToICloud }.count
+        scopedDocumentItems.filter { $0.format == .pdf && $0.localFilePresent && $0.isSyncedToICloud }.count
     }
 
     private var pdfPendingICloudCount: Int {
         guard iCloudPDFSyncEnabled else { return 0 }
-        return documentItems.filter { $0.format == .pdf && $0.localFilePresent && !$0.isSyncedToICloud }.count
+        return scopedDocumentItems.filter { $0.format == .pdf && $0.localFilePresent && !$0.isSyncedToICloud }.count
+    }
+
+    private var iCloudSyncProgress: Double {
+        guard pdfTotalCount > 0 else { return isSyncingICloud ? 0.35 : 0 }
+        return Double(pdfSyncedCount) / Double(pdfTotalCount)
+    }
+
+    private var iCloudAccent: Color {
+        if !iCloudPDFSyncEnabled || !iCloudSync.isUbiquityContainerAvailable { return theme.colorWarning }
+        if pdfPendingICloudCount > 0 { return theme.colorInfo }
+        return theme.colorSuccess
+    }
+
+    private var lastMonthlyICloudSyncText: String {
+        guard let rid = appState.activeRestaurantId,
+              let date = DocumentsUserSettings.lastMonthlyICloudSync(restaurantId: rid) else {
+            return "Mai eseguita"
+        }
+        return date.formatted(date: .abbreviated, time: .shortened)
     }
 
     private var lastArchiveText: String {
@@ -51,11 +90,14 @@ struct DataBackupSettingsView: View {
     }
 
     var body: some View {
-        VStack(spacing: theme.spacing.sectionSpacing) {
+        VStack(spacing: theme.spacing.lg) {
             storageUsageCard
+            if canManageData {
+                iCloudBackupCard
+            }
             archiveCard
             if canManageData {
-                advancedCard
+                dangerZoneCard
             }
         }
         .task { await refreshUsage() }
@@ -82,192 +124,428 @@ struct DataBackupSettingsView: View {
         }
     }
 
+    // MARK: - Storage
+
     private var storageUsageCard: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack {
-                Text("Spazio occupato")
-                    .font(theme.typography.headline)
-                    .foregroundStyle(theme.colorTextPrimary)
-                Spacer()
-                Button {
-                    Task { await refreshUsage() }
-                } label: {
-                    if isCalculatingUsage {
-                        ProgressView()
-                    } else {
-                        Label("Aggiorna", systemImage: "arrow.clockwise")
+        GlassCard(elevated: true) {
+            VStack(alignment: .leading, spacing: theme.spacing.md) {
+                HStack(alignment: .center) {
+                    VStack(alignment: .leading, spacing: theme.spacing.xxs) {
+                        Text("Spazio occupato")
+                            .font(theme.typography.headline)
+                            .foregroundStyle(theme.colorTextPrimary)
+                        Text("Solo su questo dispositivo")
+                            .font(theme.typography.caption)
+                            .foregroundStyle(theme.colorTextSecondary)
                     }
+                    Spacer()
+                    Button {
+                        Task { await refreshUsage() }
+                    } label: {
+                        Group {
+                            if isCalculatingUsage {
+                                ProgressView().controlSize(.small)
+                            } else {
+                                Image(systemName: "arrow.clockwise")
+                                    .font(.body.weight(.semibold))
+                            }
+                        }
+                        .frame(width: 44, height: 44)
+                        .background(theme.colorSurfaceElevated.opacity(0.8))
+                        .clipShape(Circle())
+                    }
+                    .buttonStyle(PremiumPressButtonStyle(scale: 0.94))
+                    .disabled(isCalculatingUsage)
+                    .accessibilityLabel("Aggiorna uso memoria")
                 }
-                .buttonStyle(.bordered)
-                .tint(theme.colorPrimary)
-                .disabled(isCalculatingUsage)
-            }
 
-            usageRow(
-                title: "Database HACCP (SwiftData)",
-                subtitle: "Registrazioni, impostazioni, storico operativo",
-                bytes: usage.swiftDataBytes,
-                icon: "cylinder.split.1x2.fill"
-            )
-            usageRow(
-                title: "PDF e allegati",
-                subtitle: "File in Application Support",
-                bytes: usage.attachmentsBytes,
-                icon: "doc.fill"
-            )
-            usageRow(
-                title: "Cache app",
-                subtitle: "File temporanei di sistema",
-                bytes: usage.cacheBytes,
-                icon: "internaldrive"
-            )
+                usageRow(
+                    title: "Database HACCP",
+                    subtitle: "Registrazioni e impostazioni",
+                    bytes: usage.swiftDataBytes,
+                    icon: "cylinder.split.1x2.fill",
+                    color: theme.colorPrimary
+                )
+                usageRow(
+                    title: "PDF e allegati",
+                    subtitle: "Application Support",
+                    bytes: usage.attachmentsBytes,
+                    icon: "doc.richtext.fill",
+                    color: theme.colorInfo
+                )
+                usageRow(
+                    title: "Cache app",
+                    subtitle: "File temporanei",
+                    bytes: usage.cacheBytes,
+                    icon: "internaldrive",
+                    color: theme.colorTextSecondary
+                )
 
-            Divider().background(theme.colorDivider)
+                Divider().background(theme.colorDivider)
 
-            HStack {
-                VStack(alignment: .leading, spacing: 4) {
+                HStack(alignment: .firstTextBaseline) {
                     Text("Totale stimato")
-                        .font(theme.typography.headline)
+                        .font(theme.typography.subheadline.weight(.semibold))
                         .foregroundStyle(theme.colorTextPrimary)
-                    Text("Solo su questo iPad")
+                    Spacer()
+                    Text(AppStorageUsageService.formattedBytes(usage.totalBytes))
+                        .font(theme.typography.title2.weight(.bold))
+                        .foregroundStyle(theme.colorPrimary)
+                }
+
+                HStack {
+                    Label("Ultima archiviazione automatica", systemImage: "archivebox")
                         .font(theme.typography.caption)
+                        .foregroundStyle(theme.colorTextSecondary)
+                    Spacer()
+                    Text(lastArchiveText)
+                        .font(theme.typography.caption.weight(.semibold))
+                        .foregroundStyle(theme.colorTextSecondary)
+                }
+            }
+        }
+    }
+
+    private func usageRow(title: String, subtitle: String, bytes: Int64, icon: String, color: Color) -> some View {
+        let fraction = usage.totalBytes > 0 ? min(1, Double(bytes) / Double(usage.totalBytes)) : 0
+
+        return VStack(alignment: .leading, spacing: theme.spacing.xs) {
+            HStack(spacing: theme.spacing.sm) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(color.opacity(0.12))
+                        .frame(width: 36, height: 36)
+                    Image(systemName: icon)
+                        .font(theme.typography.caption.weight(.semibold))
+                        .foregroundStyle(color)
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(theme.typography.subheadline)
+                        .foregroundStyle(theme.colorTextPrimary)
+                    Text(subtitle)
+                        .font(theme.typography.caption2)
                         .foregroundStyle(theme.colorTextSecondary)
                 }
                 Spacer()
-                Text(AppStorageUsageService.formattedBytes(usage.totalBytes))
-                    .font(.title2.weight(.bold))
-                    .foregroundStyle(theme.colorPrimary)
+                Text(AppStorageUsageService.formattedBytes(bytes))
+                    .font(theme.typography.subheadline.weight(.semibold).monospacedDigit())
+                    .foregroundStyle(theme.colorTextPrimary)
             }
 
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(theme.colorSurfaceElevated.opacity(0.9))
+                    Capsule()
+                        .fill(color.opacity(0.75))
+                        .frame(width: max(4, geo.size.width * fraction))
+                }
+            }
+            .frame(height: 5)
+        }
+    }
+
+    // MARK: - iCloud
+
+    private var iCloudBackupCard: some View {
+        GlassCard(elevated: true) {
+            VStack(alignment: .leading, spacing: theme.spacing.lg) {
+                HStack(alignment: .top, spacing: theme.spacing.md) {
+                    ZStack {
+                        Circle()
+                            .fill(iCloudAccent.opacity(0.14))
+                            .frame(width: 52, height: 52)
+                        Image(systemName: iCloudSync.isUbiquityContainerAvailable ? "icloud.fill" : "icloud.slash")
+                            .font(.title2.weight(.semibold))
+                            .foregroundStyle(iCloudAccent)
+                            .scaleEffect(pulseICloud ? 1.06 : 1)
+                    }
+
+                    VStack(alignment: .leading, spacing: theme.spacing.xxs) {
+                        Text("Backup iCloud Drive")
+                            .font(theme.typography.headline)
+                            .foregroundStyle(theme.colorTextPrimary)
+                        if let name = activeRestaurant?.name {
+                            Text(name)
+                                .font(theme.typography.caption.weight(.semibold))
+                                .foregroundStyle(theme.colorTextSecondary)
+                        }
+                        Text(iCloudStatusTitle)
+                            .font(theme.typography.subheadline.weight(.semibold))
+                            .foregroundStyle(iCloudAccent)
+                        Text("Ultimo backup mensile: \(lastMonthlyICloudSyncText)")
+                            .font(theme.typography.caption)
+                            .foregroundStyle(theme.colorTextSecondary)
+                    }
+                    Spacer(minLength: 0)
+                }
+
+                Toggle(isOn: $iCloudPDFSyncEnabled) {
+                    Text("Backup automatico mensile")
+                        .font(theme.typography.subheadline)
+                }
+                .tint(theme.colorInfo)
+                .disabled(!iCloudSync.isUbiquityContainerAvailable)
+
+                iCloudProgressStrip
+
+                emailFieldSection
+
+                if !iCloudSync.connectionExplanation.isEmpty {
+                    Text(iCloudSync.connectionExplanation)
+                        .font(theme.typography.caption2)
+                        .foregroundStyle(theme.colorTextSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                if !iCloudSync.lastSyncActivity.isEmpty, !isSyncingICloud {
+                    Label(iCloudSync.lastSyncActivity, systemImage: "clock.arrow.circlepath")
+                        .font(theme.typography.caption2)
+                        .foregroundStyle(theme.colorTextSecondary)
+                }
+
+                HStack(spacing: theme.spacing.sm) {
+                    SecondaryButton(title: "Stato iCloud", icon: "arrow.clockwise") {
+                        iCloudSync.refreshConnectionDiagnostics()
+                    }
+                    .frame(maxWidth: .infinity)
+
+                    Button {
+                        Task { await runManualICloudSync() }
+                    } label: {
+                        HStack(spacing: theme.spacing.sm) {
+                            if isSyncingICloud {
+                                ProgressView().tint(theme.colorTextOnPrimary)
+                            } else {
+                                Image(systemName: "arrow.triangle.2.circlepath.icloud")
+                                    .font(.headline.weight(.semibold))
+                            }
+                            Text(isSyncingICloud ? "Sync…" : "Sincronizza")
+                                .font(theme.typography.headline)
+                        }
+                        .foregroundStyle(theme.colorTextOnPrimary)
+                        .frame(maxWidth: .infinity)
+                        .frame(minHeight: theme.spacing.buttonMinHeight)
+                        .background(
+                            RoundedRectangle(cornerRadius: theme.spacing.buttonCornerRadius, style: .continuous)
+                                .fill(
+                                    LinearGradient(
+                                        colors: [theme.colorInfo, theme.colorInfo.opacity(0.88)],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    )
+                                )
+                        )
+                    }
+                    .buttonStyle(PremiumPressButtonStyle())
+                    .disabled(isSyncingICloud || !iCloudPDFSyncEnabled || !iCloudSync.isUbiquityContainerAvailable)
+                    .opacity(isSyncingICloud || !iCloudPDFSyncEnabled || !iCloudSync.isUbiquityContainerAvailable ? 0.55 : 1)
+                    .frame(maxWidth: .infinity)
+                }
+
+                Text("A fine mese i PDF vengono copiati su iCloud con la struttura Mensili → Singoli / Combinati.")
+                    .font(theme.typography.caption2)
+                    .foregroundStyle(theme.colorTextSecondary)
+            }
+        }
+        .onAppear {
+            loadICloudContactEmail()
+            iCloudSync.refreshConnectionDiagnostics()
+            updateICloudPulse(isSyncingICloud)
+        }
+        .onChange(of: isSyncingICloud) { _, syncing in
+            updateICloudPulse(syncing)
+        }
+        .onChange(of: appState.activeRestaurantId) { _, _ in
+            loadICloudContactEmail()
+        }
+        .onChange(of: iCloudContactEmail) { _, newValue in
+            persistEmail(newValue)
+        }
+        .onChange(of: iCloudPDFSyncEnabled) { _, enabled in
+            DocumentsUserSettings.isICloudPDFSyncEnabled = enabled
+            guard enabled else { return }
+            Task { await runManualICloudSync() }
+        }
+    }
+
+    private var iCloudStatusTitle: String {
+        if !iCloudPDFSyncEnabled { return "Backup disattivato" }
+        if !iCloudSync.isUbiquityContainerAvailable { return "iCloud non disponibile" }
+        if isSyncingICloud { return "Sincronizzazione in corso…" }
+        if pdfPendingICloudCount > 0 { return "\(pdfPendingICloudCount) PDF in coda" }
+        if pdfTotalCount > 0 { return "Archivio allineato" }
+        return "In attesa dei PDF mensili"
+    }
+
+    private var iCloudProgressStrip: some View {
+        VStack(alignment: .leading, spacing: theme.spacing.xs) {
             HStack {
-                Text("Ultima archiviazione automatica")
-                    .font(theme.typography.caption)
+                Text("Copertura cloud")
+                    .font(theme.typography.caption2.weight(.semibold))
                     .foregroundStyle(theme.colorTextSecondary)
                 Spacer()
-                Text(lastArchiveText)
-                    .font(theme.typography.caption.weight(.semibold))
-                    .foregroundStyle(theme.colorTextSecondary)
+                Text("\(pdfSyncedCount)/\(pdfTotalCount) PDF")
+                    .font(theme.typography.caption2.weight(.bold))
+                    .foregroundStyle(theme.colorTextPrimary)
             }
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(theme.colorSurfaceElevated.opacity(0.9))
+                    Capsule()
+                        .fill(
+                            LinearGradient(
+                                colors: [iCloudAccent.opacity(0.85), iCloudAccent],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
+                        .frame(width: max(8, geo.size.width * iCloudSyncProgress))
+                        .animation(theme.spring, value: iCloudSyncProgress)
+                }
+            }
+            .frame(height: 8)
         }
-        .padding(16)
-        .background(theme.colorSurface)
-        .clipShape(RoundedRectangle(cornerRadius: theme.spacing.cornerMedium, style: .continuous))
     }
 
-    private func usageRow(title: String, subtitle: String, bytes: Int64, icon: String) -> some View {
-        HStack(spacing: 12) {
-            Image(systemName: icon)
-                .foregroundStyle(theme.colorInfo)
-                .frame(width: 28)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .font(theme.typography.subheadline)
-                    .foregroundStyle(theme.colorTextPrimary)
-                Text(subtitle)
-                    .font(theme.typography.caption)
-                    .foregroundStyle(theme.colorTextSecondary)
+    private var emailFieldSection: some View {
+        VStack(alignment: .leading, spacing: theme.spacing.xs) {
+            Text("Email di riferimento iCloud")
+                .font(theme.typography.caption.weight(.semibold))
+                .foregroundStyle(theme.colorTextSecondary)
+            TextField("nome@icloud.com", text: $iCloudContactEmail)
+                .keyboardType(.emailAddress)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .padding(theme.spacing.sm)
+                .background(theme.colorSurfaceElevated.opacity(0.7))
+                .clipShape(RoundedRectangle(cornerRadius: theme.spacing.cornerSmall, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: theme.spacing.cornerSmall, style: .continuous)
+                        .stroke(
+                            emailValidationMessage == nil ? theme.colorBorder.opacity(0.5) : theme.colorWarning,
+                            lineWidth: 1
+                        )
+                )
+                .disabled(activeRestaurant == nil)
+            Text("Usa la stessa email dell'account iCloud del dispositivo.")
+                .font(theme.typography.caption2)
+                .foregroundStyle(theme.colorTextSecondary)
+            if let emailValidationMessage {
+                Label(emailValidationMessage, systemImage: "exclamationmark.triangle.fill")
+                    .font(theme.typography.caption2)
+                    .foregroundStyle(theme.colorWarning)
             }
-            Spacer()
-            Text(AppStorageUsageService.formattedBytes(bytes))
-                .font(theme.typography.headline.monospacedDigit())
-                .foregroundStyle(theme.colorTextPrimary)
         }
     }
+
+    // MARK: - Archive
 
     private var archiveCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Archiviazione dati")
-                .font(theme.typography.headline)
-                .foregroundStyle(theme.colorTextPrimary)
-
-            Text("I record più vecchi di \(PerformanceConfig.activeDataRetentionMonths) mesi vengono contrassegnati come archiviati per alleggerire le schermate operative. I dati restano sul dispositivo.")
-                .font(theme.typography.caption)
-                .foregroundStyle(theme.colorTextSecondary)
-
-            if let archiveMessage {
-                Text(archiveMessage)
-                    .font(theme.typography.caption)
-                    .foregroundStyle(theme.colorSuccess)
-            }
-
-            Button {
-                Task { await runManualArchive() }
-            } label: {
-                Label(isArchiving ? "Archiviazione…" : "Esegui archiviazione ora", systemImage: "archivebox.fill")
-                    .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.borderedProminent)
-            .tint(theme.colorPrimary)
-            .disabled(isArchiving || appState.activeRestaurantId == nil)
-        }
-        .padding(16)
-        .background(theme.colorSurface)
-        .clipShape(RoundedRectangle(cornerRadius: theme.spacing.cornerMedium, style: .continuous))
-    }
-
-    private var advancedCard: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Operazioni avanzate (MASTER)")
-                .font(theme.typography.headline)
-                .foregroundStyle(theme.colorTextPrimary)
-
-            iCloudSection
-
-            Divider().background(theme.colorDivider)
-
-            Button(role: .destructive) {
-                showResetConfirm = true
-            } label: {
-                Label("Reset completo app", systemImage: "trash.fill")
-                    .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.bordered)
-        }
-        .padding(16)
-        .background(theme.colorSurface)
-        .clipShape(RoundedRectangle(cornerRadius: theme.spacing.cornerMedium, style: .continuous))
-    }
-
-    @ViewBuilder
-    private var iCloudSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .top, spacing: 12) {
-                Image(systemName: iCloudSync.isUbiquityContainerAvailable ? "icloud.fill" : "icloud.slash")
-                    .font(.title2)
-                    .foregroundStyle(iCloudSync.isUbiquityContainerAvailable ? theme.colorSuccess : theme.colorWarning)
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(iCloudSync.isUbiquityContainerAvailable ? "iCloud collegato" : "iCloud non disponibile")
-                        .font(theme.typography.subheadline.weight(.semibold))
-                    Text("PDF copiati: \(pdfSyncedCount) · in coda: \(pdfPendingICloudCount)")
-                        .font(theme.typography.caption)
-                        .foregroundStyle(theme.colorTextSecondary)
+        GlassCard(elevated: true) {
+            VStack(alignment: .leading, spacing: theme.spacing.md) {
+                HStack(spacing: theme.spacing.sm) {
+                    Image(systemName: "archivebox.fill")
+                        .foregroundStyle(theme.colorPrimary)
+                    Text("Archiviazione dati")
+                        .font(theme.typography.headline)
+                        .foregroundStyle(theme.colorTextPrimary)
                 }
-                Spacer(minLength: 0)
-            }
 
-            Text(iCloudSync.connectionExplanation)
-                .font(theme.typography.caption)
-                .foregroundStyle(theme.colorTextSecondary)
+                Text("I record più vecchi di \(PerformanceConfig.activeDataRetentionMonths) mesi vengono contrassegnati come archiviati per alleggerire le schermate operative. I dati restano sul dispositivo.")
+                    .font(theme.typography.caption)
+                    .foregroundStyle(theme.colorTextSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
 
-            Button("Aggiorna stato iCloud") {
-                iCloudSync.refreshConnectionDiagnostics()
-            }
-            .buttonStyle(.bordered)
-            .tint(.cyan)
+                if let archiveMessage {
+                    Label(archiveMessage, systemImage: "checkmark.circle.fill")
+                        .font(theme.typography.caption.weight(.semibold))
+                        .foregroundStyle(theme.colorSuccess)
+                }
 
-            Toggle(isOn: $iCloudPDFSyncEnabled) {
-                Text("Copia automatica PDF su iCloud")
-                    .font(theme.typography.subheadline)
-            }
-            .disabled(!iCloudSync.isUbiquityContainerAvailable)
-        }
-        .onAppear { iCloudSync.refreshConnectionDiagnostics() }
-        .onChange(of: iCloudPDFSyncEnabled) { _, enabled in
-            guard enabled else { return }
-            Task { @MainActor in
-                await iCloudSync.syncAllPendingDocuments(items: documentItems, modelContext: modelContext)
+                PrimaryButton(
+                    title: isArchiving ? "Archiviazione…" : "Esegui archiviazione ora",
+                    icon: "archivebox.fill",
+                    isLoading: isArchiving
+                ) {
+                    Task { await runManualArchive() }
+                }
+                .disabled(isArchiving || appState.activeRestaurantId == nil)
+                .opacity(appState.activeRestaurantId == nil ? 0.55 : 1)
             }
         }
+    }
+
+    // MARK: - Danger zone
+
+    private var dangerZoneCard: some View {
+        GlassCard(elevated: false) {
+            VStack(alignment: .leading, spacing: theme.spacing.md) {
+                Label("Zona pericolosa", systemImage: "exclamationmark.triangle.fill")
+                    .font(theme.typography.headline)
+                    .foregroundStyle(theme.colorError)
+
+                Text("Il reset completo cancella utenti, ristoranti e tutti i dati locali. Operazione irreversibile.")
+                    .font(theme.typography.caption)
+                    .foregroundStyle(theme.colorTextSecondary)
+
+                DangerButton(title: "Reset completo app", icon: "trash.fill") {
+                    showResetConfirm = true
+                }
+            }
+        }
+    }
+
+    // MARK: - Actions
+
+    private func updateICloudPulse(_ syncing: Bool) {
+        withAnimation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true)) {
+            pulseICloud = syncing
+        }
+    }
+
+    private func persistEmail(_ newValue: String) {
+        guard let rid = appState.activeRestaurantId else { return }
+        let trimmed = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty {
+            emailValidationMessage = nil
+            return
+        }
+        if EmailValidator.isValid(trimmed) {
+            DocumentsUserSettings.setICloudContactEmail(trimmed, restaurantId: rid)
+            if let restaurant = activeRestaurant {
+                restaurant.email = EmailValidator.normalized(trimmed)
+                try? modelContext.save()
+            }
+            emailValidationMessage = nil
+        } else {
+            emailValidationMessage = "Formato email non valido."
+        }
+    }
+
+    private func loadICloudContactEmail() {
+        guard let restaurant = activeRestaurant else {
+            iCloudContactEmail = ""
+            return
+        }
+        iCloudContactEmail = DocumentsUserSettings.iCloudContactEmail(
+            restaurantId: restaurant.id,
+            restaurantEmailFallback: restaurant.email
+        )
+    }
+
+    private func runManualICloudSync() async {
+        guard let rid = appState.activeRestaurantId else { return }
+        isSyncingICloud = true
+        iCloudSync.refreshConnectionDiagnostics()
+        await iCloudSync.syncMonthlyArchive(
+            restaurantId: rid,
+            restaurantName: activeRestaurant?.name ?? "Ristorante",
+            items: scopedDocumentItems,
+            modelContext: modelContext,
+            monthBoundaryCrossed: false
+        )
+        isSyncingICloud = false
     }
 
     private func refreshUsage() async {

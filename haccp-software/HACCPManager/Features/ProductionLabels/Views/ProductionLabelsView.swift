@@ -1,6 +1,6 @@
 //
 //  ProductionLabelsView.swift
-//  Modulo enterprise etichette HACCP.
+//  Hub etichette HACCP — una card per modulo collegato.
 //
 
 import SwiftUI
@@ -14,15 +14,17 @@ struct ProductionLabelsView: View {
     @Query private var users: [LocalUser]
     @Query private var restaurants: [Restaurant]
 
-    @StateObject private var vm = ProductionLabelsViewModel()
     @StateObject private var dataStore = ProductionLabelsDataStore()
 
     @State private var selectedLabelId: UUID?
+    @State private var pendingWorkspaceSource: ProductionLabelLinkedSource?
     @ObservedObject private var printQueue = ProductionLabelPrintQueue.shared
     @ObservedObject private var printerManager = ClabelPrinterManager.shared
     @State private var showScanner = false
     @State private var scannedLabelData: ProductionLabelScanData?
     @State private var errorMessage: String?
+
+    private let vm = ProductionLabelsViewModel()
 
     private var currentUser: LocalUser? {
         users.first { $0.id == appState.currentUserId }
@@ -31,10 +33,6 @@ struct ProductionLabelsView: View {
     private var activeRestaurant: Restaurant? {
         guard let rid = appState.activeRestaurantId else { return nil }
         return restaurants.first { $0.id == rid }
-    }
-
-    private var filteredLabels: [ProductionLabelRecord] {
-        vm.filteredLabels(from: dataStore.labels)
     }
 
     private var stats: (today: Int, expiringSoon: Int, active: Int) {
@@ -77,15 +75,15 @@ struct ProductionLabelsView: View {
         .task(id: appState.activeRestaurantId) {
             reloadData()
         }
-        .onChange(of: vm.appliedFilter.showArchived) { _, _ in
-            reloadData()
+        .onAppear {
+            Task { await drainPrintQueue() }
         }
         .onChange(of: printQueue.pendingJobs.count) { _, _ in
-            Task {
-                await printQueue.processPending(
-                    labels: dataStore.labels,
-                    restaurantName: activeRestaurant?.name
-                )
+            Task { await drainPrintQueue() }
+        }
+        .onChange(of: printerManager.isReadyToPrint) { _, ready in
+            if ready {
+                Task { await drainPrintQueue() }
             }
         }
         .navigationDestination(item: $selectedLabelId) { labelId in
@@ -93,6 +91,18 @@ struct ProductionLabelsView: View {
                 ProductionLabelDetailLoaderView(
                     labelId: labelId,
                     restaurantId: appState.activeRestaurantId,
+                    restaurantName: activeRestaurant?.name ?? "Ristorante",
+                    user: user,
+                    onChanged: { reloadData() }
+                )
+            }
+        }
+        .navigationDestination(item: $pendingWorkspaceSource) { source in
+            if let rid = appState.activeRestaurantId, let user = currentUser {
+                ProductionLabelSourceWorkspaceView(
+                    source: source,
+                    dataStore: dataStore,
+                    restaurantId: rid,
                     restaurantName: activeRestaurant?.name ?? "Ristorante",
                     user: user,
                     onChanged: { reloadData() }
@@ -114,12 +124,16 @@ struct ProductionLabelsView: View {
             LazyVStack(spacing: theme.spacing.sectionSpacing) {
                 ModuleScreenHeader(
                     title: "Etichette di produzione",
-                    subtitle: "Consulta, stampa e archivia etichette create da Tracciabilità",
+                    subtitle: "Scegli il modulo, crea l’etichetta e stampa con QR HACCP",
                     systemImage: "tag.fill",
                     help: ModuleHelpLibrary.sidebar(.productionLabels)
                 )
 
                 statsRow
+
+                if !printQueue.pendingJobs.isEmpty {
+                    printQueueCard
+                }
 
                 if ProductionLabelScannerSupport.isAvailable {
                     DashboardCardView(title: "Scansione", subtitle: "Leggi un QR etichetta già stampata") {
@@ -129,67 +143,115 @@ struct ProductionLabelsView: View {
                     }
                 }
 
-                if !printQueue.pendingJobs.isEmpty {
-                    DashboardCardView(title: "Coda stampa", subtitle: printerManager.isConnected ? "Invio alla stampante CLABEL" : "Stampante non connessa") {
-                        VStack(alignment: .leading, spacing: 8) {
-                            ForEach(printQueue.pendingJobs) { job in
-                                HStack {
-                                    Image(systemName: "printer")
-                                        .foregroundStyle(theme.colorInfo)
-                                    Text("Etichetta in attesa · \(job.copies) copie")
-                                        .font(theme.typography.subheadline)
-                                    Spacer()
-                                    if printQueue.isProcessing {
-                                        ProgressView()
-                                    }
-                                }
+                DashboardCardView(title: "Tipi di etichetta", subtitle: "Tocca un modulo per creare e stampare") {
+                    LazyVGrid(
+                        columns: [GridItem(.flexible()), GridItem(.flexible())],
+                        spacing: 14
+                    ) {
+                        ForEach(ProductionLabelLinkedSource.allCases) { source in
+                            Button {
+                                pendingWorkspaceSource = source
+                            } label: {
+                                sourceCard(source)
                             }
-                            if !printerManager.isConnected {
-                                Text("Collega la stampante da Impostazioni → Stampanti.")
-                                    .font(theme.typography.caption)
-                                    .foregroundStyle(theme.colorWarning)
-                            }
+                            .buttonStyle(PremiumPressButtonStyle())
                         }
-                    }
-                }
-
-                DashboardCardView(
-                    title: vm.appliedFilter.showArchived ? "Archivio etichette" : "Etichette attive",
-                    subtitle: "\(filteredLabels.count) risultati"
-                ) {
-                    ProductionLabelFilterBar(filter: $vm.filter, labels: dataStore.labels)
-
-                    if filteredLabels.isEmpty {
-                        DashboardEmptyStateView(state: .init(
-                            title: "Nessuna etichetta",
-                            message: "Le etichette si creano da Tracciabilità aprendo una scheda prodotto e scegliendo Crea etichetta.",
-                            actionTitle: "Vai a Tracciabilità"
-                        )) {
-                            appState.pendingSidebarNavigation = .traceability
-                        }
-                    } else {
-                        LazyVStack(spacing: 10) {
-                            ForEach(filteredLabels.prefix(80)) { label in
-                                Button {
-                                    selectedLabelId = label.id
-                                } label: {
-                                    ProductionLabelRowView(label: label)
-                                }
-                                .buttonStyle(PremiumPressButtonStyle())
-                            }
-                            if filteredLabels.count > 80 {
-                                Text("Mostrati i primi 80 risultati. Affina i filtri per trovare altro.")
-                                    .font(theme.typography.caption)
-                                    .foregroundStyle(theme.colorTextSecondary)
-                                    .frame(maxWidth: .infinity, alignment: .center)
-                                    .padding(.top, 8)
-                            }
-                        }
-                        .padding(.top, 12)
                     }
                 }
             }
             .padding(theme.spacing.screenPadding + 8)
+        }
+    }
+
+    private func sourceCard(_ source: ProductionLabelLinkedSource) -> some View {
+        let labeled = vm.labelCount(from: dataStore.labels, source: source)
+        let pending = vm.pendingSourceCount(for: source, dataStore: dataStore, labels: dataStore.labels)
+
+        return HStack(spacing: 0) {
+            RoundedRectangle(cornerRadius: 3, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: [theme.colorPrimary, theme.colorPrimary.opacity(0.55)],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                )
+                .frame(width: 5)
+                .padding(.vertical, 14)
+
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(alignment: .top) {
+                    ZStack {
+                        Circle()
+                            .fill(theme.colorPrimary.opacity(0.12))
+                            .frame(width: 44, height: 44)
+                        Image(systemName: source.icon)
+                            .font(.title3.weight(.semibold))
+                            .foregroundStyle(theme.colorPrimary)
+                    }
+                    Spacer(minLength: 8)
+                    statusBadge(pending: pending, labeled: labeled)
+                }
+
+                Text(source.title)
+                    .font(theme.typography.headline)
+                    .foregroundStyle(theme.colorTextPrimary)
+                    .multilineTextAlignment(.leading)
+
+                Text(source.subtitle)
+                    .font(theme.typography.caption)
+                    .foregroundStyle(theme.colorTextSecondary)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
+
+                HStack {
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(theme.colorTextSecondary)
+                }
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 14)
+        }
+        .frame(maxWidth: .infinity, minHeight: 156, alignment: .topLeading)
+        .background(
+            RoundedRectangle(cornerRadius: theme.spacing.cornerMedium, style: .continuous)
+                .fill(theme.colorSurface)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: theme.spacing.cornerMedium, style: .continuous)
+                .stroke(theme.colorDivider.opacity(0.8), lineWidth: 1)
+        )
+        .shadow(color: theme.shadows.card.color.opacity(0.35), radius: 6, y: 2)
+    }
+
+    @ViewBuilder
+    private func statusBadge(pending: Int, labeled: Int) -> some View {
+        if pending > 0 {
+            Text("\(pending) da fare")
+                .font(theme.typography.caption2.weight(.bold))
+                .foregroundStyle(theme.colorTextOnPrimary)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 5)
+                .background(theme.colorPrimary)
+                .clipShape(Capsule())
+        } else if labeled > 0 {
+            Label("\(labeled)", systemImage: "checkmark.seal.fill")
+                .font(theme.typography.caption2.weight(.semibold))
+                .foregroundStyle(theme.colorSuccess)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 5)
+                .background(theme.colorSuccess.opacity(0.12))
+                .clipShape(Capsule())
+        } else {
+            Text("Vuoto")
+                .font(theme.typography.caption2.weight(.semibold))
+                .foregroundStyle(theme.colorTextSecondary)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 5)
+                .background(theme.colorDivider.opacity(0.5))
+                .clipShape(Capsule())
         }
     }
 
@@ -223,6 +285,33 @@ struct ProductionLabelsView: View {
         }
     }
 
+    private var printQueueCard: some View {
+        DashboardCardView(
+            title: "Coda stampa",
+            subtitle: printerManager.isConnected ? "Invio alla stampante CLABEL" : "Stampante non connessa"
+        ) {
+            VStack(alignment: .leading, spacing: 8) {
+                ForEach(printQueue.pendingJobs) { job in
+                    HStack {
+                        Image(systemName: "printer")
+                            .foregroundStyle(theme.colorInfo)
+                        Text("Etichetta in attesa · \(job.copies) copie")
+                            .font(theme.typography.subheadline)
+                        Spacer()
+                        if printQueue.isProcessing {
+                            ProgressView()
+                        }
+                    }
+                }
+                if !printerManager.isConnected {
+                    Text("Collega la stampante da Impostazioni → Stampanti.")
+                        .font(theme.typography.caption)
+                        .foregroundStyle(theme.colorWarning)
+                }
+            }
+        }
+    }
+
     private var emptyRestaurantState: some View {
         DashboardEmptyStateView(state: .init(
             title: "Seleziona un ristorante",
@@ -236,7 +325,15 @@ struct ProductionLabelsView: View {
         dataStore.reload(
             context: modelContext,
             restaurantId: appState.activeRestaurantId,
-            includeArchived: vm.appliedFilter.showArchived
+            includeArchived: true
+        )
+    }
+
+    private func drainPrintQueue() async {
+        await printQueue.processPending(
+            labels: dataStore.labels,
+            modelContext: modelContext,
+            restaurantName: activeRestaurant?.name
         )
     }
 
@@ -255,6 +352,7 @@ struct ProductionLabelsView: View {
                 if !dataStore.labels.contains(where: { $0.id == label.id }) {
                     dataStore.mergeFetchedLabel(label)
                 }
+                pendingWorkspaceSource = ProductionLabelLinkedSource(labelSource: label.sourceModule)
                 selectedLabelId = label.id
                 return
             }

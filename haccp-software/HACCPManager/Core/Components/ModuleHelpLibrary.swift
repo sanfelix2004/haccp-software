@@ -76,7 +76,8 @@ enum ModuleHelpLibrary {
         steps: [
             "Controlla le card in alto per attività urgenti e registrazioni di oggi.",
             "Apri un modulo HACCP dalla griglia per registrare controlli.",
-            "Usa la sezione Strumenti per documenti, grafici, storico e avvisi."
+            "Gestisci cataloghi da Alimenti nel menu laterale (piatti e materie prime).",
+            "Usa la sezione Sistema per documenti, grafici, storico e avvisi."
         ],
         notes: ["I badge numerici indicano elementi da completare o da verificare."]
     )
@@ -89,9 +90,12 @@ enum ModuleHelpLibrary {
             "Registra prima le merci da Ricezione merci: qui compaiono automaticamente.",
             "Apri una scheda prodotto per vedere dettagli, decongelamenti e piatti associati.",
             "Associa un lotto ai piatti del catalogo quando la materia prima entra in produzione.",
-            "Segna non conformità e crea etichette quando necessario."
+            "Segna non conformità, ritiro o scarto; crea etichette dalla scheda o da Etichette → Tracciabilità."
         ],
         notes: [
+            "Scaduto = data di scadenza superata (aggiornamento automatico). Il lotto resta visibile.",
+            "Respinto = non conformità in ricezione: è diverso da scaduto.",
+            "I piatti associati a un lotto restano nella scheda digitale, non sull'etichetta fisica.",
             "L'eliminazione di una scheda richiede il PIN MASTER.",
             "I prodotti scaduti o respinti non sono associabili a nuove produzioni."
         ]
@@ -131,10 +135,12 @@ enum ModuleHelpLibrary {
             "Premi Nuovo abbattimento e scegli un piatto dal Catalogo piatti.",
             "Inserisci la temperatura iniziale e avvia il timer.",
             "Al termine registra temperatura finale, note e firma operatore.",
+            "Al completamento puoi creare e stampare subito l'etichetta HACCP con QR.",
             "Gli abbattimenti in corso sono visibili nell'overlay in basso a destra."
         ],
         notes: [
-            "Il catalogo piatti si gestisce da Catalogo piatti nel menu laterale.",
+            "Il catalogo piatti si gestisce dalla sezione Alimenti nel menu laterale.",
+            "Le etichette si ritrovano anche in Etichette → Abbattimento.",
             "Un solo abbattimento in corso per stesso piatto."
         ]
     )
@@ -151,7 +157,8 @@ enum ModuleHelpLibrary {
         ],
         notes: [
             "Aggiunta, modifica ed eliminazione richiedono PIN MASTER per l'operatore.",
-            "Un piatto già usato nello storico abbattimento non può essere eliminato."
+            "Un piatto già usato nello storico abbattimento non può essere eliminato.",
+            "Per etichettare un piatto preparato usa Etichette → Abbattimento dopo l'abbattimento."
         ]
     )
 
@@ -167,7 +174,8 @@ enum ModuleHelpLibrary {
         ],
         notes: [
             "Non confondere con il Catalogo piatti: qui ci sono le materie prime, non i piatti del menu.",
-            "Un alimento già usato in ricezioni o decongelamenti non può essere eliminato."
+            "Un alimento già usato in ricezioni o decongelamenti non può essere eliminato.",
+            "Per etichettare un lotto usa Etichette → Tracciabilità."
         ]
     )
 
@@ -179,9 +187,13 @@ enum ModuleHelpLibrary {
             "Controlla le card riepilogative in alto (scaduti, oggi, in scadenza).",
             "Usa filtri e ricerca per trovare un lotto specifico.",
             "Intervieni sui prodotti critici: tocca un lotto scaduto per registrare ritiro o scarto.",
-            "In Tracciabilità puoi anche segnare non conformità o eliminare la scheda (PIN MASTER)."
+            "In Tracciabilità puoi segnare non conformità, ritiro o eliminare la scheda (PIN MASTER)."
         ],
-        notes: ["I dati provengono da Tracciabilità e Ricezione merci."]
+        notes: [
+            "I dati provengono da Tracciabilità e Ricezione merci.",
+            "Un lotto diventa Scaduto automaticamente alla data di scadenza.",
+            "Respinto indica non conformità in ingresso, non la scadenza."
+        ]
     )
 
     static let defrost = ModuleHelp(
@@ -192,11 +204,13 @@ enum ModuleHelpLibrary {
             "Premi Nuovo decongelamento.",
             "Scegli Tracciabilità (lotto ricevuto), Alimenti in ingresso (template) o inserimento Manuale.",
             "Seleziona il metodo e avvia: il timer parte alla conferma.",
-            "Al termine registra temperatura finale e eventuale azione correttiva."
+            "Al termine registra temperatura finale e eventuale azione correttiva.",
+            "Al completamento puoi creare e stampare l'etichetta HACCP con QR."
         ],
         notes: [
             "Collegare un lotto tracciato migliora l'audit HACCP.",
-            "Gli alimenti in ingresso si gestiscono dal menu Alimenti in ingresso.",
+            "Gli alimenti in ingresso si gestiscono dalla sezione Alimenti nel menu laterale.",
+            "Le etichette si ritrovano in Etichette → Decongelamento.",
             "I processi attivi compaiono nell'overlay cucina."
         ]
     )
@@ -217,15 +231,20 @@ enum ModuleHelpLibrary {
     static let productionLabels = ModuleHelp(
         id: "labels",
         title: "Etichette di produzione",
-        purpose: "Consulta, stampa e archivia etichette HACCP create dai lotti in Tracciabilità.",
+        purpose: "Crea, stampa e archivia etichette HACCP collegate ai moduli operativi, con anteprima completa e codice QR.",
         steps: [
-            "Apri Tracciabilità e seleziona un prodotto ricevuto.",
-            "Dalla scheda dettaglio scegli Crea etichetta e compila i dati.",
-            "Stampa tramite stampante configurata in Impostazioni.",
-            "Da qui puoi ritrovare, ristampare o archiviare le etichette già create."
+            "Scegli il tipo di etichetta: Tracciabilità, Abbattimento o Decongelamento.",
+            "Seleziona il lotto o l'elemento da cui generare l'etichetta (abbattimento, decongelamento, …).",
+            "Controlla l'anteprima con dati, allergeni e QR, poi Salva e stampa.",
+            "Ritrova le etichette create nella stessa sezione; scansiona il QR per riaprirle.",
+            "Da ogni etichetta puoi ristampare o archiviare."
         ],
         notes: [
-            "Le nuove etichette si creano solo da Tracciabilità.",
+            "Ricezione merci e tracciabilità condividono lo stesso lotto: etichetta sempre da Tracciabilità.",
+            "I piatti del menu si etichettano dopo l'abbattimento (Etichette → Abbattimento), non dal catalogo.",
+            "Puoi creare etichette anche da Tracciabilità, Abbattimento e Decongelamento al termine del processo.",
+            "Ogni elemento HACCP può avere una sola etichetta: per ristampare usa l'etichetta esistente.",
+            "Se la stampante non è pronta, l'etichetta resta in coda e si stampa appena connessa.",
             "Configura la stampante CLABEL da Impostazioni → Stampanti."
         ]
     )
@@ -238,10 +257,12 @@ enum ModuleHelpLibrary {
             "Seleziona il fornitore (il MASTER gestisce l'anagrafica).",
             "Scegli il prodotto e compila checklist e temperatura di arrivo.",
             "Al termine la scheda viene creata in Tracciabilità.",
+            "Per etichettare la merce usa Etichette → Tracciabilità oppure la scheda del lotto in Tracciabilità.",
             "Allega foto se richiesta per non conformità."
         ],
         notes: [
             "È il punto di partenza corretto per la tracciabilità HACCP.",
+            "Non conformità in ricezione porta lo stato Respinto in tracciabilità.",
             "Nuovi fornitori richiedono PIN MASTER per l'operatore."
         ]
     )
@@ -265,25 +286,29 @@ enum ModuleHelpLibrary {
         purpose: "Archivio unificato di tutte le registrazioni HACCP del ristorante, raggruppate per modulo.",
         steps: [
             "Cerca per testo o filtra i moduli con attività.",
-            "Apri un modulo per vedere il dettaglio cronologico.",
+            "Apri un modulo per vedere il registro cronologico dettagliato.",
+            "Le produzioni collegate mostrano il nome del piatto, non codici interni.",
             "Usa le card riepilogative per capire volumi e criticità.",
             "Ideale per verifiche interne e ispezioni."
         ],
-        notes: ["Non sostituisce i PDF ufficiali in Documenti."]
+        notes: [
+            "Non sostituisce i PDF ufficiali in Documenti.",
+            "Ogni voce conserva data, operatore e dettaglio dell'azione registrata."
+        ]
     )
 
     static let documents = ModuleHelp(
         id: "documents",
         title: "Documenti",
-        purpose: "Archivio PDF mensili HACCP organizzato per ristorante, con registri Singoli e Combinati.",
+        purpose: "Archivio PDF mensili HACCP con backup su iCloud Drive.",
         steps: [
             "Naviga nelle cartelle Mensili → Singoli o Combinati.",
             "Apri o condividi i PDF generati a fine mese.",
-            "Il MASTER può rigenerare o eliminare documenti.",
-            "Verifica lo stato di sincronizzazione iCloud se attivo."
+            "Usa la card Backup iCloud per sincronizzare l'archivio.",
+            "Il MASTER può rigenerare o eliminare documenti."
         ],
         notes: [
-            "I PDF si generano automaticamente a chiusura mese.",
+            "I PDF si generano automaticamente a chiusura mese e si copiano su iCloud.",
             "Export e rigenerazione possono richiedere PIN MASTER."
         ]
     )
@@ -335,7 +360,7 @@ enum ModuleHelpLibrary {
             "Profilo e Aspetto sono liberamente accessibili.",
             "Le sezioni con lucchetto richiedono PIN MASTER per l'operatore.",
             "Configura temperature, stampante e dati ristorante prima del go-live.",
-            "Usa Catalogo piatti per il menu operativo."
+            "Catalogo piatti e Alimenti in ingresso sono nel menu laterale, sezione Alimenti."
         ],
         notes: ["Dopo modifiche importanti, verifica che tutti i moduli riflettano i nuovi parametri."]
     )
@@ -390,28 +415,35 @@ enum ModuleHelpLibrary {
         id: "settings-notifications",
         title: "Notifiche",
         purpose: "Promemoria checklist e avvisi operativi.",
-        steps: ["Attiva o disattiva le notifiche per tipo.", "Verifica i permessi di sistema se non arrivano alert."],
+        steps: ["Attiva o disattiva le notifiche per tipo.", "Il backup iCloud mensile invia un avviso al termine della sincronizzazione.", "Verifica i permessi di sistema se non arrivano alert."],
         notes: []
     )
 
     static let settingsData = ModuleHelp(
         id: "settings-data",
         title: "Dati e backup",
-        purpose: "Spazio occupato, export e reset dell'applicazione.",
+        purpose: "Spazio occupato, backup mensile su iCloud Drive e reset dell'applicazione.",
         steps: [
-            "Monitora l'uso memoria locale.",
-            "Esegui backup prima di reset o cambio dispositivo.",
+            "Inserisci l'email di riferimento (consigliata: account iCloud).",
+            "Attiva il backup automatico mensile su iCloud.",
+            "All'inizio di ogni mese i PDF vengono generati e copiati su iCloud Drive.",
+            "Usa «Sincronizza ora» per forzare la copia manuale.",
             "Il reset cancella tutti i dati: usare solo se necessario."
         ],
-        notes: ["Operazione critica: solo MASTER."]
+        notes: ["Operazioni critiche: solo MASTER.", "La struttura su iCloud replica Mensili → Singoli / Combinati."]
     )
 
     static let settingsPrinter = ModuleHelp(
         id: "settings-printer",
         title: "Stampanti",
-        purpose: "Configurazione stampante etichette CLABEL.",
-        steps: ["Accoppia la stampante Bluetooth.", "Esegui stampa di prova da Etichette di produzione."],
-        notes: ["Riservato al MASTER."]
+        purpose: "Configurazione stampante etichette CLABEL via Bluetooth.",
+        steps: [
+            "Accoppia la stampante Bluetooth e attendi lo stato Connessa.",
+            "Esegui una stampa di prova da questa schermata.",
+            "Le etichette operative si creano e stampano dal modulo Etichette di produzione.",
+            "Se il canale non è pronto, le stampe restano in coda finché la stampante non risponde."
+        ],
+        notes: ["Riservato al MASTER.", "Il QR sulle etichette è configurabile qui (dimensione e rotazione)."]
     )
 
     static let settingsInfo = ModuleHelp(

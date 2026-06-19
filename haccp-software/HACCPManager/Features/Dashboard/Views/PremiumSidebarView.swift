@@ -30,6 +30,12 @@ struct PremiumSidebarView: View {
                 }
 
                 Section {
+                    ForEach(SidebarItem.foodsInOrder) { sidebarRow($0) }
+                } header: {
+                    sectionHeader("Alimenti")
+                }
+
+                Section {
                     ForEach(SidebarItem.haccpModulesInOrder) { sidebarRow($0) }
                 } header: {
                     sectionHeader("Moduli HACCP")

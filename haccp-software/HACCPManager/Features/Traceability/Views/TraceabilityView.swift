@@ -15,6 +15,8 @@ struct TraceabilityView: View {
     @Environment(\.theme) private var theme
     @EnvironmentObject var appState: AppState
     @Query private var users: [LocalUser]
+    @Query private var restaurants: [Restaurant]
+    @Query private var productionLabels: [ProductionLabelRecord]
     @StateObject private var dataStore = TraceabilityDataStore()
 
     @State private var selectedTraceabilityForProduction: TraceabilityRecord?
@@ -86,6 +88,16 @@ struct TraceabilityView: View {
         users.first(where: { $0.id == appState.currentUserId })
     }
 
+    private var activeRestaurant: Restaurant? {
+        guard let rid = appState.activeRestaurantId else { return nil }
+        return restaurants.first { $0.id == rid }
+    }
+
+    private var scopedLabels: [ProductionLabelRecord] {
+        guard let rid = appState.activeRestaurantId else { return [] }
+        return productionLabels.filter { $0.restaurantId == rid }
+    }
+
     private var permissions: UserPermissions { currentUser.permissions }
     private var canDeleteRecords: Bool { permissions.can(.deleteTraceabilityRecords) }
 
@@ -107,6 +119,9 @@ struct TraceabilityView: View {
             dataStore.reload(context: modelContext, restaurantId: appState.activeRestaurantId)
         }
         .onAppear(perform: refreshExpiredStatuses)
+        .task(id: appState.activeRestaurantId) {
+            refreshExpiredStatuses()
+        }
         .alert("Tracciabilità", isPresented: Binding(get: { errorMessage != nil }, set: { _ in errorMessage = nil })) {
             Button("OK", role: .cancel) {}
         } message: {
@@ -248,8 +263,12 @@ struct TraceabilityView: View {
             defrostRecords: context.defrostRecords(for: record),
             receiptStatus: context.receiptStatusLabel(for: record),
             canDeleteRecords: canDeleteRecords,
+            hasExistingLabel: {
+                let draft = labelService.draft(from: record)
+                return ProductionLabelLinkMatcher.existingLabel(for: draft, in: scopedLabels) != nil
+            }(),
             onAssociate: { beginProductionAssociation(record) },
-            onLabel: { labelDraft = labelService.draft(from: record) },
+            onLabel: { beginLabel(for: record) },
             onNonCompliant: { beginNonCompliance(record) },
             onWithdraw: { withdrawRecord = record },
             onDelete: {
@@ -293,7 +312,9 @@ struct TraceabilityView: View {
                 mode: .create(draft),
                 restaurantId: rid,
                 user: user,
-                onSaved: { labelDraft = nil },
+                onSaved: { record, shouldPrint in
+                    handleLabelSaved(record, shouldPrint: shouldPrint)
+                },
                 onCancel: { labelDraft = nil }
             )
         }
@@ -332,10 +353,33 @@ struct TraceabilityView: View {
         }
     }
 
+    private func beginLabel(for record: TraceabilityRecord) {
+        let draft = labelService.draft(from: record)
+        if let existing = ProductionLabelLinkMatcher.existingLabel(for: draft, in: scopedLabels) {
+            appState.pendingSidebarNavigation = .productionLabels
+            errorMessage = "Etichetta già presente per «\(existing.productName)». Vai in Etichette → Tracciabilità per ristampare."
+            return
+        }
+        labelDraft = draft
+    }
+
     private func beginProductionAssociation(_ record: TraceabilityRecord) {
         selectedTraceabilityForProduction = record
         pendingProductionIds = Set(dataStore.links.filter { $0.receivedItemId == record.id }.map(\.productionId))
         showProductionSelection = true
+    }
+
+    private func handleLabelSaved(_ record: ProductionLabelRecord, shouldPrint: Bool) {
+        labelDraft = nil
+        guard shouldPrint else { return }
+        Task {
+            await ProductionLabelPrintQueue.shared.schedulePrint(
+                label: record,
+                restaurantName: activeRestaurant?.name,
+                modelContext: modelContext,
+                countAsReprint: false
+            )
+        }
     }
 
     private func beginNonCompliance(_ record: TraceabilityRecord) {
@@ -558,8 +602,8 @@ private struct TraceabilityContext {
         let thresholdDays = SettingsStorageService.shared.haccp.productExpiryThreshold
         let soon = Calendar.current.date(byAdding: .day, value: thresholdDays, to: Date()) ?? Date()
         let expiryWarning = expiry.map { $0 <= soon && $0 >= Date() } ?? false
-        let status = record.productStatus
-        let actionable = status != .expired && status != .rejected
+        let status = ProductExpiryEvaluator.effectiveDisplayStatus(record, expiryDate: expiry)
+        let actionable = status != .expired && status != .rejected && record.productStatus != .used
         return TraceabilityRecordDisplay(
             recordId: record.id,
             productName: productName(for: record),
@@ -569,7 +613,7 @@ private struct TraceabilityContext {
             expiryDate: expiry,
             category: category(for: record),
             statusLabel: record.isNonCompliant ? "Non conforme" : status.label,
-            badgeStyle: badgeStyle(for: record),
+            badgeStyle: badgeStyle(for: status, isNonCompliant: record.isNonCompliant),
             productionCount: productionIdsByRecord[record.id]?.count ?? 0,
             defrostCount: defrostByTrace[record.id]?.count ?? 0,
             isActionable: actionable,
@@ -599,9 +643,9 @@ private struct TraceabilityContext {
         return nil
     }
 
-    private func badgeStyle(for record: TraceabilityRecord) -> HACCPBadgeStyle {
-        if record.isNonCompliant { return .nonConforme }
-        switch record.productStatus {
+    private func badgeStyle(for status: ProductStatus, isNonCompliant: Bool) -> HACCPBadgeStyle {
+        if isNonCompliant { return .nonConforme }
+        switch status {
         case .available: return .info
         case .partiallyUsed: return .warning
         case .used: return .conforme

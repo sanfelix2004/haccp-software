@@ -253,7 +253,14 @@ struct RestaurantEditSheet: View {
                     
                     Section("Contatti") {
                         TextField("Telefono", text: $phone)
-                        TextField("Email", text: $email)
+                            .keyboardType(.phonePad)
+                        TextField("Email iCloud / contatto", text: $email)
+                            .keyboardType(.emailAddress)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                        Text("Usata per i PDF e il backup mensile su iCloud Drive.")
+                            .font(.caption)
+                            .foregroundStyle(ThemeManager.shared.colorTextSecondary)
                     }
                     
                     Section("Altro") {
@@ -300,7 +307,11 @@ struct RestaurantEditSheet: View {
                 city = r.city
                 manager = r.haccpManager
                 phone = r.phone
-                email = r.email
+                let stored = DocumentsUserSettings.iCloudContactEmail(
+                    restaurantId: r.id,
+                    restaurantEmailFallback: r.email
+                )
+                email = stored.isEmpty ? r.email : stored
                 notes = r.notes
                 logoData = r.logoData
             }
@@ -308,17 +319,21 @@ struct RestaurantEditSheet: View {
     }
     
     private func save() {
+        let normalizedEmail = EmailValidator.normalized(email)
         if let r = restaurant {
             r.name = name
             r.address = address
             r.city = city
             r.haccpManager = manager
             r.phone = phone
-            r.email = email
+            r.email = normalizedEmail
             r.notes = notes
             r.logoData = logoData
             if !newRestaurantPin.isEmpty {
                 r.restaurantPinHash = PinHasher.hash(pin: newRestaurantPin)
+            }
+            if EmailValidator.isValid(normalizedEmail) {
+                DocumentsUserSettings.setICloudContactEmail(normalizedEmail, restaurantId: r.id)
             }
         } else {
             guard !hasExistingRestaurant else {
@@ -331,12 +346,15 @@ struct RestaurantEditSheet: View {
                 city: city,
                 haccpManager: manager,
                 phone: phone,
-                email: email,
+                email: normalizedEmail,
                 notes: notes,
                 restaurantPinHash: PinHasher.hash(pin: newRestaurantPin),
                 logoData: logoData
             )
             modelContext.insert(new)
+            if EmailValidator.isValid(normalizedEmail) {
+                DocumentsUserSettings.setICloudContactEmail(normalizedEmail, restaurantId: new.id)
+            }
             ProductTemplateSeeder.ensureTemplates(restaurantId: new.id, modelContext: modelContext)
 
             // If it's the first one, make it active

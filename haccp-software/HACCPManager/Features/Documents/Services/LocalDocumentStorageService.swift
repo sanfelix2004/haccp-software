@@ -18,9 +18,17 @@ final class LocalDocumentStorageService: LocalDocumentStorageProtocol {
         return dir
     }
 
-    func relativePathForICloud(restaurantDisplayName: String, periodFolder: String, fileName: String) -> String {
-        let safe = Self.sanitizeFolderName(restaurantDisplayName)
-        return "HACCP Manager/\(safe)/\(periodFolder)/\(fileName)"
+    func relativePathForICloud(
+        restaurantDisplayName: String,
+        periodFolder: String,
+        groupFolder: String,
+        moduleFolder: String,
+        fileName: String
+    ) -> String {
+        let safeRestaurant = Self.sanitizeFolderName(restaurantDisplayName)
+        let safeGroup = Self.sanitizeFolderName(groupFolder)
+        let safeModule = Self.sanitizeFolderName(moduleFolder)
+        return "HACCP Manager/\(safeRestaurant)/\(periodFolder)/\(safeGroup)/\(safeModule)/\(fileName)"
     }
 
     static func sanitizeFolderName(_ name: String) -> String {
