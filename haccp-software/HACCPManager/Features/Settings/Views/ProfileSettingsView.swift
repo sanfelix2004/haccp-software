@@ -101,6 +101,8 @@ struct ProfileSettingsView: View {
                 }
                 .background(ThemeManager.shared.colorSurface)
                 .cornerRadius(20)
+
+                ProfileICloudConnectionSection()
                 
                 // Actions
                 VStack(spacing: 16) {

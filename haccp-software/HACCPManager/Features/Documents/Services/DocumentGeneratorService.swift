@@ -37,10 +37,21 @@ final class DocumentGenerationService {
         calendar.locale = Locale(identifier: "it_IT")
         calendar.timeZone = .current
 
-        let allFolders = (try? modelContext.fetch(FetchDescriptor<DocumentFolder>())) ?? []
-        let scopedFolders = allFolders.filter { $0.restaurantId == rid }
+        var scopedFolders = ((try? modelContext.fetch(FetchDescriptor<DocumentFolder>())) ?? [])
+            .filter { $0.restaurantId == rid }
         let allItems = (try? modelContext.fetch(FetchDescriptor<DocumentItem>())) ?? []
         var scopedItems = allItems.filter { $0.restaurantId == rid }
+
+        DocumentsService().ensureDefaultFolders(
+            restaurantId: rid,
+            restaurantDisplayName: restaurant.name,
+            user: user,
+            existingFolders: scopedFolders,
+            existingItems: scopedItems,
+            modelContext: modelContext
+        )
+        scopedFolders = ((try? modelContext.fetch(FetchDescriptor<DocumentFolder>())) ?? [])
+            .filter { $0.restaurantId == rid }
         for it in scopedItems where it.type == .nonConformita {
             it.type = .mensile
         }
@@ -81,6 +92,7 @@ final class DocumentGenerationService {
 
         let todayStart = calendar.startOfDay(for: Date())
         let creationStart = calendar.startOfDay(for: restaurant.creationDate)
+        let operational = fetchOperationalSource(in: modelContext, restaurantId: rid)
 
         let batchContext = ArchiveBatchContext(
             restaurant: restaurant,
@@ -94,20 +106,31 @@ final class DocumentGenerationService {
             logs: traceabilityLogs,
             checklistLogs: scopedChecklistLogs,
             temperatureLogs: scopedTempLogs,
+            operational: operational,
             allDocuments: allItems,
             calendar: calendar,
             modelContext: modelContext
         )
 
-        // Nessuna generazione durante il mese corrente: i report vengono creati solo a mese chiuso.
+        // Mese corrente: report mensili aggiornati ad ogni sync (contenuto che cresce col tempo).
+        if let currentMonth = calendar.dateInterval(of: .month, for: todayStart) {
+            await generateFullMonthArchive(
+                context: batchContext,
+                monthInterval: currentMonth,
+                isOpenPeriod: true,
+                keyIndex: &keyIndex,
+                scopedItems: &scopedItems
+            )
+        }
 
-        // Fine mese: report mensile per ogni modulo + report combinato + registro NC.
+        // Mesi chiusi: backfill e finalizzazione (salta se il PDF esiste già).
         let backfillLimit = calendar.date(byAdding: .day, value: -maxBackfillDays, to: todayStart) ?? creationStart
         let monthLower = max(creationStart, backfillLimit)
         await forEachClosedMonth(from: monthLower, through: Date(), calendar: calendar) { interval in
             await self.generateFullMonthArchive(
                 context: batchContext,
                 monthInterval: interval,
+                isOpenPeriod: false,
                 keyIndex: &keyIndex,
                 scopedItems: &scopedItems
             )
@@ -223,10 +246,10 @@ final class DocumentGenerationService {
         for item in items where item.restaurantId == restaurant.id {
             guard item.status == .generato || item.status == .fallito else { continue }
             guard let ps = item.periodStart else { continue }
-            guard !isOpenPeriod(type: effectiveDocType(item), periodStart: ps, calendar: calendar) else { continue }
             let pathOk = fm.fileExists(atPath: item.filePath) && item.localFilePresent
             guard !pathOk else { continue }
             guard let interval = intervalForDocument(item, calendar: calendar) else { continue }
+            let open = isOpenPeriod(type: effectiveDocType(item), periodStart: ps, calendar: calendar)
             writePDFIgnoringRenderFailure(
                 existing: item,
                 restaurant: restaurant,
@@ -235,6 +258,7 @@ final class DocumentGenerationService {
                 type: effectiveDocType(item),
                 module: item.module,
                 interval: interval,
+                isOpenPeriod: open,
                 receipts: receipts,
                 traceability: traceability,
                 images: images,
@@ -280,16 +304,19 @@ final class DocumentGenerationService {
             logs: context.logs,
             checklistLogs: context.checklistLogs,
             temperatureLogs: context.temperatureLogs,
+            operational: context.operational,
             allDocuments: context.allDocuments,
             calendar: context.calendar,
             modelContext: context.modelContext
         )
     }
 
-    /// A chiusura mese: un report mensile per modulo + report combinato + registro NC.
+    /// Report mensile per modulo + combinati + registro NC.
+    /// Con `isOpenPeriod == true` rigenera sempre il mese corrente per riflettere i nuovi dati.
     private func generateFullMonthArchive(
         context: ArchiveBatchContext,
         monthInterval: DateInterval,
+        isOpenPeriod: Bool,
         keyIndex: inout [GenerationKey: DocumentItem],
         scopedItems: inout [DocumentItem]
     ) async {
@@ -305,7 +332,7 @@ final class DocumentGenerationService {
                 type: .mensile,
                 module: module,
                 interval: monthInterval,
-                isOpenPeriod: false,
+                isOpenPeriod: isOpenPeriod,
                 keyIndex: &keyIndex,
                 scopedItems: &scopedItems
             )
@@ -318,7 +345,7 @@ final class DocumentGenerationService {
                 type: .mensile,
                 module: module,
                 interval: monthInterval,
-                isOpenPeriod: false,
+                isOpenPeriod: isOpenPeriod,
                 keyIndex: &keyIndex,
                 scopedItems: &scopedItems
             )
@@ -367,6 +394,7 @@ final class DocumentGenerationService {
         logs: [TraceabilityLog],
         checklistLogs: [ChecklistAuditLog],
         temperatureLogs: [TemperatureAuditLog],
+        operational: HACCPOperationalSourceData,
         allDocuments: [DocumentItem],
         calendar: Calendar,
         modelContext: ModelContext
@@ -383,6 +411,18 @@ final class DocumentGenerationService {
             return
         }
 
+        if isOpenPeriod, keyIndex[key] == nil,
+           !shouldGenerateForOpenPeriod(
+               module: module,
+               interval: interval,
+               receipts: receipts,
+               traceability: traceability,
+               images: images,
+               operational: operational
+           ) {
+            return
+        }
+
         if let existing = keyIndex[key] {
             writePDFIgnoringRenderFailure(
                 existing: existing,
@@ -392,6 +432,7 @@ final class DocumentGenerationService {
                 type: type,
                 module: module,
                 interval: interval,
+                isOpenPeriod: isOpenPeriod,
                 receipts: receipts,
                 traceability: traceability,
                 images: images,
@@ -407,11 +448,14 @@ final class DocumentGenerationService {
             return
         }
 
-        guard let folderId = resolveFolderId(
+        guard let folderId = resolveFolderIdWithEnsure(
             restaurant: restaurant,
+            user: user,
             type: type,
             module: module,
-            folders: folders
+            folders: folders,
+            items: scopedItems,
+            modelContext: modelContext
         ) else { return }
 
         let fileName = LocalDocumentStorageService.officialFileName(
@@ -455,6 +499,7 @@ final class DocumentGenerationService {
             type: type,
             module: module,
             interval: interval,
+            isOpenPeriod: isOpenPeriod,
             receipts: receipts,
             traceability: traceability,
             images: images,
@@ -477,6 +522,7 @@ final class DocumentGenerationService {
         type: DocumentType,
         module: DocumentModule,
         interval: DateInterval,
+        isOpenPeriod: Bool = false,
         receipts: [GoodsReceipt],
         traceability: [TraceabilityRecord],
         images: [ProductImage],
@@ -547,7 +593,7 @@ final class DocumentGenerationService {
             throw DocumentGeneratorError.renderFailed
         }
 
-        if let flavor = DocumentCompletenessValidator.reportFlavor(type: type, module: module) {
+        if !isOpenPeriod, let flavor = DocumentCompletenessValidator.reportFlavor(type: type, module: module) {
             do {
                 try DocumentCompletenessValidator.validate(present: built.flags, flavor: flavor)
             } catch {
@@ -571,8 +617,9 @@ final class DocumentGenerationService {
         guard let rawPDF = HACCPDocumentPDFRenderer.render(
             context: pdfContext,
             sections: built.sections,
+            pageRect: HACCPPDFPageLayout.pageRect(for: module),
             omitBuiltInFooter: true,
-            bodyFontSize: 9.2
+            bodyFontSize: HACCPPDFPageLayout.bodyFontSize(for: module)
         ) else {
             existing.status = .fallito
             throw DocumentGeneratorError.renderFailed
@@ -905,6 +952,7 @@ final class DocumentGenerationService {
         type: DocumentType,
         module: DocumentModule,
         interval: DateInterval,
+        isOpenPeriod: Bool = false,
         receipts: [GoodsReceipt],
         traceability: [TraceabilityRecord],
         images: [ProductImage],
@@ -927,6 +975,7 @@ final class DocumentGenerationService {
                 type: type,
                 module: module,
                 interval: interval,
+                isOpenPeriod: isOpenPeriod,
                 receipts: receipts,
                 traceability: traceability,
                 images: images,
@@ -947,6 +996,125 @@ final class DocumentGenerationService {
             existing.localFilePresent = false
             existing.checksumSHA256 = ""
         }
+    }
+
+    private func shouldGenerateForOpenPeriod(
+        module: DocumentModule,
+        interval: DateInterval,
+        receipts: [GoodsReceipt],
+        traceability: [TraceabilityRecord],
+        images: [ProductImage],
+        operational: HACCPOperationalSourceData
+    ) -> Bool {
+        if DocumentArchiveLayout.isAffinityCombined(module) {
+            return DocumentArchiveLayout.sourceModules(for: module).contains { source in
+                moduleHasActivity(
+                    module: source,
+                    interval: interval,
+                    receipts: receipts,
+                    traceability: traceability,
+                    images: images,
+                    operational: operational
+                )
+            }
+        }
+        if module == .nonConformita {
+            let df = registerDateFormatter()
+            return !NonConformityRegister.rows(
+                in: interval,
+                receipts: receipts,
+                traceability: traceability,
+                images: images,
+                df: df
+            ).isEmpty
+        }
+        return moduleHasActivity(
+            module: module,
+            interval: interval,
+            receipts: receipts,
+            traceability: traceability,
+            images: images,
+            operational: operational
+        )
+    }
+
+    private func moduleHasActivity(
+        module: DocumentModule,
+        interval: DateInterval,
+        receipts: [GoodsReceipt],
+        traceability: [TraceabilityRecord],
+        images: [ProductImage],
+        operational: HACCPOperationalSourceData
+    ) -> Bool {
+        let df = registerDateFormatter()
+        switch module {
+        case .ricezioneMerci:
+            return !GoodsReceiptRegister.rows(in: interval, receipts: receipts, df: df).isEmpty
+        case .tracciabilita:
+            return !TraceabilityRegister.rows(
+                in: interval,
+                records: traceability,
+                productions: [],
+                links: [],
+                logs: [],
+                images: images,
+                df: df
+            ).isEmpty
+        case .frigoriferi:
+            return !TemperatureRegister.rows(in: interval, records: operational.temperatureRecords, df: df).isEmpty
+        case .controlloPulizia:
+            return !CleaningRegister.rows(in: interval, records: operational.cleaningRecords, df: df).isEmpty
+        case .abbattimento:
+            return !BlastChillingRegister.rows(in: interval, records: operational.blastChillingRecords, df: df).isEmpty
+        case .decongelamento:
+            return !DefrostRegister.rows(in: interval, records: operational.defrostRecords, df: df).isEmpty
+        case .controlloOlio:
+            return !OilControlRegister.rows(in: interval, records: operational.oilControlRecords, df: df).isEmpty
+        case .checklist:
+            return !ChecklistRegister.rows(
+                in: interval,
+                runs: operational.checklistRuns,
+                itemResults: operational.checklistItemResults,
+                df: df
+            ).isEmpty
+        case .etichetteProduzione:
+            return !ProductionLabelsRegister.rows(in: interval, labels: operational.productionLabels, df: df).isEmpty
+        default:
+            return false
+        }
+    }
+
+    private func registerDateFormatter() -> DateFormatter {
+        let df = DateFormatter()
+        df.locale = Locale(identifier: "it_IT")
+        df.dateStyle = .short
+        df.timeStyle = .short
+        return df
+    }
+
+    private func resolveFolderIdWithEnsure(
+        restaurant: Restaurant,
+        user: LocalUser,
+        type: DocumentType,
+        module: DocumentModule,
+        folders: [DocumentFolder],
+        items: [DocumentItem],
+        modelContext: ModelContext
+    ) -> UUID? {
+        if let id = resolveFolderId(restaurant: restaurant, type: type, module: module, folders: folders) {
+            return id
+        }
+        DocumentsService().ensureDefaultFolders(
+            restaurantId: restaurant.id,
+            restaurantDisplayName: restaurant.name,
+            user: user,
+            existingFolders: folders,
+            existingItems: items,
+            modelContext: modelContext
+        )
+        let refreshed = ((try? modelContext.fetch(FetchDescriptor<DocumentFolder>())) ?? [])
+            .filter { $0.restaurantId == restaurant.id }
+        return resolveFolderId(restaurant: restaurant, type: type, module: module, folders: refreshed)
     }
 
     private func registerTypeLabel(_ type: DocumentType) -> String {
@@ -984,6 +1152,7 @@ private struct ArchiveBatchContext {
     let logs: [TraceabilityLog]
     let checklistLogs: [ChecklistAuditLog]
     let temperatureLogs: [TemperatureAuditLog]
+    let operational: HACCPOperationalSourceData
     let allDocuments: [DocumentItem]
     let calendar: Calendar
     let modelContext: ModelContext

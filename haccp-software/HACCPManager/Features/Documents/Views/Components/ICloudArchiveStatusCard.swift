@@ -37,7 +37,7 @@ struct ICloudArchiveStatusCard: View {
 
     private var statusSubtitle: String {
         if !isSyncEnabled {
-            return "Attiva il backup in Impostazioni → Dati e backup."
+            return "Collega iCloud in Impostazioni → Profilo Utente."
         }
         if !isICloudAvailable {
             return "Verifica account iCloud e iCloud Drive sul dispositivo."
@@ -67,7 +67,7 @@ struct ICloudArchiveStatusCard: View {
                     metaRow(icon: "clock.arrow.circlepath", text: lastActivity)
                 }
 
-                Text("I PDF si creano a fine mese e si copiano su iCloud all'apertura dell'app.")
+                Text("I PDF si aggiornano con i dati HACCP e si copiano su iCloud dalla schermata Documenti.")
                     .font(theme.typography.caption2)
                     .foregroundStyle(theme.colorTextSecondary)
                     .fixedSize(horizontal: false, vertical: true)

@@ -6,8 +6,8 @@ import Foundation
 /// `{Ristorante} / Mensili / Singoli|Combinati / {Modulo}`
 ///
 /// Politica di generazione:
-/// - **Durante il mese corrente**: nessuna generazione automatica.
-/// - **A fine mese** (mese chiuso): PDF per ogni funzione + report combinati per affinità + NC.
+/// - **Durante il mese corrente**: PDF aggiornati in modo incrementale man mano che arrivano i dati.
+/// - **A fine mese** (mese chiuso): PDF finali congelati (non rigenerati se già presenti).
 enum DocumentArchiveLayout {
     static let monthlyPeriodName = "Mensili"
     static let singoliGroup = "Singoli"

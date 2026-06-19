@@ -89,5 +89,10 @@ struct GoodsReceivingService {
             )
         }
         try modelContext.save()
+        HACCPArchiveSyncCoordinator.requestDeferredSync(
+            restaurantId: restaurantId,
+            user: user,
+            modelContext: modelContext
+        )
     }
 }

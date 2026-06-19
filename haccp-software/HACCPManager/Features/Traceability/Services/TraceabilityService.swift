@@ -47,6 +47,11 @@ struct TraceabilityService {
             )
         )
         try modelContext.save()
+        HACCPArchiveSyncCoordinator.requestDeferredSync(
+            restaurantId: restaurantId,
+            user: user,
+            modelContext: modelContext
+        )
         return record
     }
 
@@ -92,6 +97,11 @@ struct TraceabilityService {
             )
         )
         try modelContext.save()
+        HACCPArchiveSyncCoordinator.requestDeferredSync(
+            restaurantId: record.restaurantId,
+            user: user,
+            modelContext: modelContext
+        )
     }
 
     func markWithdrawn(
@@ -140,6 +150,11 @@ struct TraceabilityService {
             )
         )
         try modelContext.save()
+        HACCPArchiveSyncCoordinator.requestDeferredSync(
+            restaurantId: record.restaurantId,
+            user: user,
+            modelContext: modelContext
+        )
     }
 
     func deleteRecord(
@@ -194,6 +209,11 @@ struct TraceabilityService {
             )
         )
         try modelContext.save()
+        HACCPArchiveSyncCoordinator.requestDeferredSync(
+            restaurantId: record.restaurantId,
+            user: user,
+            modelContext: modelContext
+        )
     }
 
     func exportTraceabilityReport(
