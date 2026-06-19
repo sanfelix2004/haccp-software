@@ -7,15 +7,19 @@ struct BlastChillingView: View {
     @EnvironmentObject var appState: AppState
     @EnvironmentObject private var blastManager: ActiveBlastChillingManager
     @Query private var users: [LocalUser]
+    @Query private var restaurants: [Restaurant]
     @Query private var records: [BlastChillingRecord]
+    @Query private var productionLabels: [ProductionLabelRecord]
     @Query private var categories: [ProductionCategory]
     @Query private var productions: [Production]
     @StateObject private var vm = BlastChillingViewModel()
     @State private var showNewSheet = false
     @State private var pendingSubject: KitchenProcessSubject?
     @State private var recordToComplete: BlastChillingRecord?
+    @State private var labelDraft: ProductionLabelDraft?
 
     private let libraryService = ProductionLibraryService()
+    private let labelService = ProductionLabelsService()
 
     private var scopedRecords: [BlastChillingRecord] {
         guard let rid = appState.activeRestaurantId else { return [] }
@@ -34,6 +38,16 @@ struct BlastChillingView: View {
 
     private var currentUser: LocalUser? {
         users.first { $0.id == appState.currentUserId }
+    }
+
+    private var activeRestaurant: Restaurant? {
+        guard let rid = appState.activeRestaurantId else { return nil }
+        return restaurants.first { $0.id == rid }
+    }
+
+    private var scopedLabels: [ProductionLabelRecord] {
+        guard let rid = appState.activeRestaurantId else { return [] }
+        return productionLabels.filter { $0.restaurantId == rid }
     }
 
     private var permissions: UserPermissions { currentUser.permissions }
@@ -158,6 +172,24 @@ struct BlastChillingView: View {
             Button("OK", role: .cancel) {}
         } message: {
             Text(vm.errorMessage ?? "")
+        }
+        .sheet(isPresented: Binding(
+            get: { labelDraft != nil },
+            set: { if !$0 { labelDraft = nil } }
+        )) {
+            if let draft = labelDraft,
+               let rid = appState.activeRestaurantId,
+               let user = currentUser {
+                ProductionLabelEditorSheet(
+                    mode: .create(draft),
+                    restaurantId: rid,
+                    user: user,
+                    onSaved: { record, shouldPrint in
+                        handleLabelSaved(record, shouldPrint: shouldPrint)
+                    },
+                    onCancel: { labelDraft = nil }
+                )
+            }
         }
     }
 
@@ -391,8 +423,27 @@ struct BlastChillingView: View {
             recordToComplete = nil
             vm.historyEndDate = Date()
             blastManager.refresh(context: modelContext, restaurantId: record.restaurantId)
+            if record.status == .conforme || record.status == .nonConforme {
+                let draft = labelService.draft(from: record)
+                if ProductionLabelLinkMatcher.existingLabel(for: draft, in: scopedLabels) == nil {
+                    labelDraft = draft
+                }
+            }
         } catch {
             vm.errorMessage = error.localizedDescription
+        }
+    }
+
+    private func handleLabelSaved(_ record: ProductionLabelRecord, shouldPrint: Bool) {
+        labelDraft = nil
+        guard shouldPrint else { return }
+        Task {
+            await ProductionLabelPrintQueue.shared.schedulePrint(
+                label: record,
+                restaurantName: activeRestaurant?.name,
+                modelContext: modelContext,
+                countAsReprint: false
+            )
         }
     }
 }

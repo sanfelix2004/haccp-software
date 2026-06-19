@@ -24,6 +24,7 @@ struct NotificationSettingsView: View {
                     Toggle("Allarmi Temperature", isOn: $storage.notifications.tempAlertsEnabled)
                     Toggle("Promemoria Checklist", isOn: $storage.notifications.checklistRemindersEnabled)
                     Toggle("Scadenze Prodotti", isOn: $storage.notifications.productExpiryAlertsEnabled)
+                    Toggle("Backup iCloud mensile", isOn: $storage.notifications.iCloudBackupAlertsEnabled)
                     Toggle("Riepilogo Serale", isOn: $storage.notifications.dailyReportSummaryEnabled)
                 }
                 .foregroundStyle(ThemeManager.shared.colorTextPrimary)
@@ -49,6 +50,7 @@ struct NotificationSettingsView: View {
         .onChange(of: storage.notifications.tempAlertsEnabled) { storage.saveAll() }
         .onChange(of: storage.notifications.checklistRemindersEnabled) { storage.saveAll() }
         .onChange(of: storage.notifications.productExpiryAlertsEnabled) { storage.saveAll() }
+        .onChange(of: storage.notifications.iCloudBackupAlertsEnabled) { storage.saveAll() }
         .onChange(of: storage.notifications.dailyReportSummaryEnabled) { storage.saveAll() }
         .onChange(of: storage.notifications.soundsEnabled) { storage.saveAll() }
         .onChange(of: storage.notifications.hapticsEnabled) { storage.saveAll() }

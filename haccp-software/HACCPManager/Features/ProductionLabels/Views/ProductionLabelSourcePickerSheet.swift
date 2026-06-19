@@ -1,6 +1,6 @@
 //
 //  ProductionLabelSourcePickerSheet.swift
-//  Crea etichetta da modulo HACCP collegato.
+//  Crea etichetta da modulo HACCP collegato — una scheda per origine.
 //
 
 import SwiftUI
@@ -8,95 +8,218 @@ import SwiftData
 
 struct ProductionLabelSourcePickerSheet: View {
     let dataStore: ProductionLabelsDataStore
+    var focusSource: ProductionLabelSource? = nil
     let onSelect: (ProductionLabelDraft) -> Void
     let onCancel: () -> Void
 
-    @Environment(\.modelContext) private var modelContext
     @Environment(\.theme) private var theme
-    @State private var segment: SourceSegment = .traceability
 
-    private let service = ProductionLabelsService()
-
-    enum SourceSegment: String, CaseIterable {
+    enum SourceSegment: String, CaseIterable, Identifiable {
         case traceability = "Tracciabilità"
-        case goods = "Ricezione"
         case blast = "Abbattimento"
         case defrost = "Decongelamento"
-        case production = "Produzioni"
+
+        var id: String { rawValue }
+
+        var icon: String {
+            switch self {
+            case .traceability: return "archivebox.fill"
+            case .blast: return "wind.snow"
+            case .defrost: return "snowflake"
+            }
+        }
+
+        var subtitle: String {
+            switch self {
+            case .traceability: return "Lotti in ingresso e in uso"
+            case .blast: return "Abbattimenti completati"
+            case .defrost: return "Decongelamenti completati"
+            }
+        }
+
+        var sourceModule: ProductionLabelSource {
+            switch self {
+            case .traceability: return .traceability
+            case .blast: return .blastChilling
+            case .defrost: return .defrost
+            }
+        }
+
+        init?(source: ProductionLabelSource) {
+            switch source {
+            case .traceability, .goodsReceiving: self = .traceability
+            case .blastChilling, .production: self = .blast
+            case .defrost: self = .defrost
+            case .manual: return nil
+            }
+        }
     }
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 0) {
-                Picker("Origine", selection: $segment) {
-                    ForEach(SourceSegment.allCases, id: \.self) { s in
-                        Text(s.rawValue).tag(s)
-                    }
+            Group {
+                if let focusSource, let segment = SourceSegment(source: focusSource) {
+                    ProductionLabelSourceListView(
+                        segment: segment,
+                        dataStore: dataStore,
+                        onSelect: onSelect
+                    )
+                } else {
+                    sourceModuleList
                 }
-                .pickerStyle(.segmented)
-                .padding()
-
-                List {
-                    switch segment {
-                    case .traceability:
-                        ForEach(dataStore.traceabilityRecords) { item in
-                            sourceRow(
-                                title: item.productName,
-                                subtitle: "Lotto \(item.lotCode) · \(item.supplier)",
-                                icon: "archivebox.fill",
-                                photoData: traceabilityPhotoData(for: item)
-                            ) {
-                                onSelect(service.draft(from: item))
-                            }
-                        }
-                    case .goods:
-                        ForEach(dataStore.goodsReceipts, id: \.id) { item in
-                            sourceRow(
-                                title: item.productNameSnapshot,
-                                subtitle: item.supplierNameSnapshot,
-                                icon: "shippingbox.fill",
-                                photoData: item.photoData
-                            ) {
-                                onSelect(service.draft(from: item))
-                            }
-                        }
-                    case .blast:
-                        ForEach(dataStore.blastRecords) { item in
-                            sourceRow(
-                                title: item.productionNameSnapshot,
-                                subtitle: item.productionCategorySnapshot,
-                                icon: "wind.snow"
-                            ) {
-                                onSelect(service.draft(from: item))
-                            }
-                        }
-                    case .defrost:
-                        ForEach(dataStore.defrostRecords) { item in
-                            sourceRow(
-                                title: item.productName,
-                                subtitle: item.method,
-                                icon: "snowflake"
-                            ) {
-                                onSelect(service.draft(from: item))
-                            }
-                        }
-                    case .production:
-                        ForEach(dataStore.productions) { item in
-                            sourceRow(title: item.name, subtitle: "Produzione", icon: "fork.knife") {
-                                onSelect(service.draft(from: item))
-                            }
-                        }
-                    }
-                }
-                .listStyle(.plain)
             }
-            .navigationTitle("Da modulo HACCP")
+            .navigationTitle(navigationTitle)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Chiudi", action: onCancel)
                 }
             }
+        }
+    }
+
+    private var navigationTitle: String {
+        if let focusSource {
+            return focusSource.tabTitle
+        }
+        return "Nuova etichetta"
+    }
+
+    private var sourceModuleList: some View {
+        List {
+            ForEach(SourceSegment.allCases) { segment in
+                    NavigationLink {
+                        ProductionLabelSourceListView(
+                            segment: segment,
+                            dataStore: dataStore,
+                            onSelect: onSelect
+                        )
+                    } label: {
+                        HStack(spacing: 14) {
+                            Image(systemName: segment.icon)
+                                .font(.title3)
+                                .foregroundStyle(theme.colorPrimary)
+                                .frame(width: 40, height: 40)
+                                .background(theme.colorPrimary.opacity(0.12))
+                                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(segment.rawValue)
+                                    .font(theme.typography.headline)
+                                    .foregroundStyle(theme.colorTextPrimary)
+                                Text(segment.subtitle)
+                                    .font(theme.typography.caption)
+                                    .foregroundStyle(theme.colorTextSecondary)
+                            }
+
+                            Spacer(minLength: 8)
+
+                            Text("\(itemCount(for: segment))")
+                                .font(theme.typography.subheadline.weight(.semibold))
+                                .foregroundStyle(theme.colorTextSecondary)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 4)
+                                .background(theme.colorDivider.opacity(0.5))
+                                .clipShape(Capsule())
+                        }
+                        .padding(.vertical, 4)
+                    }
+                }
+            }
+            .listStyle(.insetGrouped)
+    }
+
+    private func itemCount(for segment: SourceSegment) -> Int {
+        switch segment {
+        case .traceability: return dataStore.traceabilityRecords.count
+        case .blast: return dataStore.blastRecords.count
+        case .defrost: return dataStore.defrostRecords.count
+        }
+    }
+}
+
+private struct ProductionLabelSourceListView: View {
+    let segment: ProductionLabelSourcePickerSheet.SourceSegment
+    let dataStore: ProductionLabelsDataStore
+    let onSelect: (ProductionLabelDraft) -> Void
+
+    @Environment(\.modelContext) private var modelContext
+    @Environment(\.theme) private var theme
+
+    private let service = ProductionLabelsService()
+
+    var body: some View {
+        Group {
+            if items.isEmpty {
+                ContentUnavailableView(
+                    "Nessun elemento",
+                    systemImage: segment.icon,
+                    description: Text(emptyMessage)
+                )
+            } else {
+                List(items, id: \.id) { item in
+                    Button {
+                        onSelect(draft(for: item))
+                    } label: {
+                        sourceRow(for: item)
+                    }
+                }
+                .listStyle(.plain)
+            }
+        }
+        .navigationTitle(segment.rawValue)
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private var emptyMessage: String {
+        switch segment {
+        case .traceability: return "Non ci sono lotti in tracciabilità."
+        case .blast: return "Non ci sono abbattimenti completati."
+        case .defrost: return "Non ci sono decongelamenti completati."
+        }
+    }
+
+    private var items: [AnyHashableSourceItem] {
+        switch segment {
+        case .traceability:
+            return dataStore.traceabilityRecords.map { .traceability($0) }
+        case .blast:
+            return dataStore.blastRecords.map { .blast($0) }
+        case .defrost:
+            return dataStore.defrostRecords.map { .defrost($0) }
+        }
+    }
+
+    private func draft(for item: AnyHashableSourceItem) -> ProductionLabelDraft {
+        switch item {
+        case .traceability(let record): return service.draft(from: record)
+        case .blast(let record): return service.draft(from: record)
+        case .defrost(let record): return service.draft(from: record)
+        }
+    }
+
+    @ViewBuilder
+    private func sourceRow(for item: AnyHashableSourceItem) -> some View {
+        switch item {
+        case .traceability(let record):
+            sourceRowContent(
+                title: record.productName,
+                subtitle: "Lotto \(record.lotCode) · \(record.supplier) · \(record.productStatus.label)",
+                icon: segment.icon,
+                photoData: traceabilityPhotoData(for: record)
+            )
+        case .blast(let record):
+            sourceRowContent(
+                title: record.productionNameSnapshot,
+                subtitle: record.productionCategorySnapshot,
+                icon: segment.icon
+            )
+        case .defrost(let record):
+            sourceRowContent(
+                title: record.productName,
+                subtitle: record.method,
+                icon: segment.icon
+            )
         }
     }
 
@@ -114,34 +237,45 @@ struct ProductionLabelSourcePickerSheet: View {
         return ProductionLabelImageResolver.imageData(for: probe, context: modelContext)
     }
 
-    private func sourceRow(
+    private func sourceRowContent(
         title: String,
         subtitle: String,
         icon: String,
-        photoData: Data? = nil,
-        action: @escaping () -> Void
+        photoData: Data? = nil
     ) -> some View {
-        Button(action: action) {
-            HStack(spacing: 12) {
-                if let photoData,
-                   let thumb = HACCPZoomablePhotoThumbnail(data: photoData, size: 40, zoomTitle: title) {
-                    thumb
-                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                } else {
-                    Image(systemName: icon)
-                        .foregroundStyle(theme.colorPrimary)
-                        .frame(width: 40, height: 40)
-                        .background(theme.colorPrimary.opacity(0.12))
-                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                }
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(title)
-                        .foregroundStyle(theme.colorTextPrimary)
-                    Text(subtitle)
-                        .font(theme.typography.caption)
-                        .foregroundStyle(theme.colorTextSecondary)
-                }
+        HStack(spacing: 12) {
+            if let photoData,
+               let thumb = HACCPZoomablePhotoThumbnail(data: photoData, size: 40, zoomTitle: title) {
+                thumb
+                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            } else {
+                Image(systemName: icon)
+                    .foregroundStyle(theme.colorPrimary)
+                    .frame(width: 40, height: 40)
+                    .background(theme.colorPrimary.opacity(0.12))
+                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
             }
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .foregroundStyle(theme.colorTextPrimary)
+                Text(subtitle)
+                    .font(theme.typography.caption)
+                    .foregroundStyle(theme.colorTextSecondary)
+            }
+        }
+    }
+}
+
+private enum AnyHashableSourceItem: Identifiable {
+    case traceability(TraceabilityRecord)
+    case blast(BlastChillingRecord)
+    case defrost(DefrostRecord)
+
+    var id: UUID {
+        switch self {
+        case .traceability(let r): return r.id
+        case .blast(let r): return r.id
+        case .defrost(let r): return r.id
         }
     }
 }

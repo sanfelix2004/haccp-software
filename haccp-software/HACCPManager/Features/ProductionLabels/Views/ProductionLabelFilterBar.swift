@@ -22,10 +22,6 @@ struct ProductionLabelFilterBar: View {
         ["Tutti"] + Array(Set(labels.map(\.createdByNameSnapshot))).sorted()
     }
 
-    private var sourceOptions: [String] {
-        ["Tutte"] + ProductionLabelSource.allCases.map(\.label)
-    }
-
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 10) {
@@ -41,7 +37,6 @@ struct ProductionLabelFilterBar: View {
             }
             HStack(spacing: 10) {
                 filterPicker("Operatore", selection: $filter.operatorName, options: operatorOptions)
-                filterPicker("Origine", selection: $filter.source, options: sourceOptions)
             }
 
             Toggle("Mostra archivio", isOn: $filter.showArchived)

@@ -149,6 +149,7 @@ struct ExpiryStats {
 
 struct ExpiryControlView: View {
     @Environment(\.theme) private var theme
+    @Environment(\.modelContext) private var modelContext
     @EnvironmentObject var appState: AppState
     @Query private var allRecords: [TraceabilityRecord]
     @Query private var users: [LocalUser]
@@ -158,6 +159,8 @@ struct ExpiryControlView: View {
     @State private var filter: ExpiryFilter = .all
     @State private var withdrawRecord: TraceabilityRecord?
     @State private var showLoginRequiredAlert = false
+
+    private let expiryService = TraceabilityExpiryService()
 
     private var soonThresholdDays: Int {
         SettingsStorageService.shared.haccp.productExpiryThreshold
@@ -305,6 +308,14 @@ struct ExpiryControlView: View {
         } message: {
             Text("Effettua l'accesso per registrare ritiro o scarto.")
         }
+        .task(id: appState.activeRestaurantId) {
+            refreshExpiredStatuses()
+        }
+    }
+
+    private func refreshExpiredStatuses() {
+        guard appState.activeRestaurantId != nil else { return }
+        _ = expiryService.refreshStatuses(records: scoped, modelContext: modelContext)
     }
 
     // MARK: Header

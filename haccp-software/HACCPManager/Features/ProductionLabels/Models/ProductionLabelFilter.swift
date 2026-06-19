@@ -11,6 +11,5 @@ struct ProductionLabelFilter: Equatable {
     var status: String = "Tutti"
     var category: String = "Tutte"
     var operatorName: String = "Tutti"
-    var source: String = "Tutte"
     var showArchived: Bool = false
 }

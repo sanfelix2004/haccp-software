@@ -6,6 +6,7 @@ public struct NotificationSettings: Codable {
     var checklistRemindersEnabled: Bool = true
     var cleaningRemindersEnabled: Bool = true
     var productExpiryAlertsEnabled: Bool = true
+    var iCloudBackupAlertsEnabled: Bool = true
     var dailyReportSummaryEnabled: Bool = true
     var soundsEnabled: Bool = true
     var hapticsEnabled: Bool = true

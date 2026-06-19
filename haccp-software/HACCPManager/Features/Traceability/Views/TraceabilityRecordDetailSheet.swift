@@ -12,6 +12,7 @@ struct TraceabilityRecordDetailSheet: View {
     let defrostRecords: [DefrostRecord]
     let receiptStatus: String?
     let canDeleteRecords: Bool
+    let hasExistingLabel: Bool
     let onAssociate: () -> Void
     let onLabel: () -> Void
     let onNonCompliant: () -> Void
@@ -156,9 +157,16 @@ struct TraceabilityRecordDetailSheet: View {
                 }
 
                 if record.productStatus != .rejected {
-                    SecondaryButton(title: "Crea etichetta HACCP", icon: "tag.fill") {
-                        onDismiss()
-                        onLabel()
+                    if hasExistingLabel {
+                        SecondaryButton(title: "Vedi etichetta HACCP", icon: "tag.fill") {
+                            onDismiss()
+                            onLabel()
+                        }
+                    } else {
+                        SecondaryButton(title: "Crea etichetta HACCP", icon: "tag.fill") {
+                            onDismiss()
+                            onLabel()
+                        }
                     }
                 }
 

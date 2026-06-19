@@ -26,9 +26,14 @@ enum SidebarItem: String, Identifiable {
 
     /// Moduli HACCP principali (ordine ufficiale).
     static let haccpModulesInOrder: [SidebarItem] = [
-        .traceability, .fridges, .cleaningControl, .blastChilling, .productionCatalog,
-        .incomingFoodCatalog, .expiryControl, .defrost, .oilControl, .productionLabels, .goodsReceiving,
+        .traceability, .fridges, .cleaningControl, .blastChilling,
+        .expiryControl, .defrost, .oilControl, .productionLabels, .goodsReceiving,
         .checklist
+    ]
+
+    /// Cataloghi alimenti (materie prime e piatti del menu).
+    static let foodsInOrder: [SidebarItem] = [
+        .incomingFoodCatalog, .productionCatalog
     ]
 
     static let toolsInOrder: [SidebarItem] = [

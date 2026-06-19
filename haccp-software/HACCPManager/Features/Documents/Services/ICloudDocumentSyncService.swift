@@ -177,6 +177,108 @@ final class ICloudDocumentSyncService: ObservableObject, ICloudDocumentSyncServi
         recordSyncActivity("Sync batch: \(succeeded) copiati su iCloud, \(failed) non riusciti.")
     }
 
+    /// Dopo la generazione mensile dei PDF, copia l'archivio del ristorante su iCloud Drive.
+    func syncMonthlyArchive(
+        restaurantId: UUID,
+        restaurantName: String,
+        items: [DocumentItem],
+        modelContext: ModelContext,
+        monthBoundaryCrossed: Bool
+    ) async {
+        guard DocumentsUserSettings.isICloudPDFSyncEnabled else { return }
+
+        let scoped = items.filter {
+            $0.restaurantId == restaurantId && $0.format == .pdf && $0.localFilePresent
+        }
+        let pendingBefore = scoped.filter { !$0.isSyncedToICloud }.count
+
+        await syncAllPendingDocuments(items: scoped, modelContext: modelContext)
+        await pruneRetiredArchiveDirectoriesWhenSafe(
+            restaurantDisplayName: restaurantName,
+            items: scoped
+        )
+
+        let failed = scoped.filter { !$0.isSyncedToICloud }.count
+        let copied = max(0, pendingBefore - failed)
+
+        if monthBoundaryCrossed {
+            DocumentsUserSettings.setLastMonthlyICloudSync(Date(), restaurantId: restaurantId)
+            recordSyncActivity("Archivio mensile sincronizzato su iCloud Drive.")
+            ICloudSyncNotificationService.notifyMonthlyArchiveSynced(
+                restaurantName: restaurantName,
+                copiedCount: copied,
+                failedCount: failed
+            )
+        }
+    }
+
+    /// Elimina su iCloud Drive le cartelle mensili ritirate, solo se nessun PDF pendente vi punta ancora.
+    func pruneRetiredArchiveDirectoriesWhenSafe(
+        restaurantDisplayName: String,
+        items: [DocumentItem]
+    ) async {
+        guard isUbiquityContainerAvailable,
+              let container = fileManager.url(forUbiquityContainerIdentifier: Self.ubiquityContainerIdentifier) else {
+            return
+        }
+
+        let retiredSegments: [String] = {
+            var segments: [String] = []
+            let period = DocumentArchiveLayout.monthlyPeriodName
+            let singoli = DocumentArchiveLayout.singoliGroup
+            let combinati = DocumentArchiveLayout.combinatiGroup
+            for title in DocumentArchiveLayout.retiredSingoliFolderTitles {
+                segments.append("/\(period)/\(singoli)/\(title)/")
+            }
+            for title in DocumentArchiveLayout.retiredCombinatiFolderTitles {
+                segments.append("/\(period)/\(combinati)/\(title)/")
+            }
+            return segments
+        }()
+
+        let hasPendingInRetiredPath = items.contains { item in
+            guard !item.isSyncedToICloud, let path = item.iCloudRelativePath else { return false }
+            return retiredSegments.contains { path.contains($0) }
+        }
+        guard !hasPendingInRetiredPath else {
+            recordSyncActivity("Pulizia cartelle legacy iCloud rimandata: PDF ancora da ricopiare.")
+            return
+        }
+
+        let docsRoot = container.appendingPathComponent("Documents", isDirectory: true)
+        let safeRestaurant = LocalDocumentStorageService.sanitizeFolderName(restaurantDisplayName)
+        let monthlyBase = docsRoot
+            .appendingPathComponent("HACCP Manager", isDirectory: true)
+            .appendingPathComponent(safeRestaurant, isDirectory: true)
+            .appendingPathComponent(DocumentArchiveLayout.monthlyPeriodName, isDirectory: true)
+
+        let removed = await Task.detached(priority: .utility) { () -> Int in
+            let fm = FileManager.default
+            var count = 0
+            for title in DocumentArchiveLayout.retiredSingoliFolderTitles {
+                let dir = monthlyBase
+                    .appendingPathComponent(DocumentArchiveLayout.singoliGroup, isDirectory: true)
+                    .appendingPathComponent(title, isDirectory: true)
+                if fm.fileExists(atPath: dir.path), (try? fm.removeItem(at: dir)) != nil {
+                    count += 1
+                }
+            }
+            for title in DocumentArchiveLayout.retiredCombinatiFolderTitles {
+                let dir = monthlyBase
+                    .appendingPathComponent(DocumentArchiveLayout.combinatiGroup, isDirectory: true)
+                    .appendingPathComponent(title, isDirectory: true)
+                if fm.fileExists(atPath: dir.path), (try? fm.removeItem(at: dir)) != nil {
+                    count += 1
+                }
+            }
+            return count
+        }.value
+
+        if removed > 0 {
+            recordSyncActivity("Rimosse \(removed) cartelle legacy da iCloud Drive.")
+        }
+    }
+
     func scheduleSyncAfterGeneration(for itemId: UUID, modelContext: ModelContext) {
         Task { @MainActor in
             let descriptor = FetchDescriptor<DocumentItem>()

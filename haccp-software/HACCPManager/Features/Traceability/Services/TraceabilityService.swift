@@ -108,6 +108,18 @@ struct TraceabilityService {
             )
         }
 
+        if record.productStatus != .expired,
+           ProductExpiryEvaluator.shouldMarkSystemExpired(record) {
+            record.productStatus = .expired
+            modelContext.insert(
+                TraceabilityLog(
+                    receivedItemId: record.id,
+                    actionType: .expired,
+                    operatorName: "Sistema"
+                )
+            )
+        }
+
         let trimmedNote = note.trimmingCharacters(in: .whitespacesAndNewlines)
         let stamp = Date().formatted(date: .abbreviated, time: .shortened)
         let closureLine = "[\(kind.label) \(stamp)]\(trimmedNote.isEmpty ? "" : " \(trimmedNote)")"

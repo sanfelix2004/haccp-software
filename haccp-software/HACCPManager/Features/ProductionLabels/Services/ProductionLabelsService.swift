@@ -22,6 +22,18 @@ struct ProductionLabelsService {
             throw labelError("La scadenza deve essere successiva alla produzione.")
         }
 
+        if ProductionLabelLinkMatcher.hasSourceLink(draft) {
+            var descriptor = FetchDescriptor<ProductionLabelRecord>(
+                predicate: #Predicate { $0.restaurantId == restaurantId }
+            )
+            let existing = try modelContext.fetch(descriptor)
+            if let conflict = ProductionLabelLinkMatcher.existingLabel(for: draft, in: existing) {
+                throw labelError(
+                    "Esiste già un'etichetta per «\(conflict.productName)». Apri l'etichetta esistente per ristampare."
+                )
+            }
+        }
+
         let quantity = Double(draft.quantity.replacingOccurrences(of: ",", with: "."))
 
         var record = ProductionLabelRecord(
@@ -153,7 +165,8 @@ struct ProductionLabelsService {
         return d
     }
 
-    func draft(from receipt: GoodsReceivingRecord) -> ProductionLabelDraft {
+    /// Preferire `draft(from: TraceabilityRecord)` — ogni ricezione crea un lotto in tracciabilità.
+    func draft(from receipt: GoodsReceivingRecord, traceabilityRecordId: UUID? = nil) -> ProductionLabelDraft {
         var d = ProductionLabelDraft()
         d.productName = receipt.productNameSnapshot
         d.lotCode = receipt.lotNumber ?? ""
@@ -163,8 +176,9 @@ struct ProductionLabelsService {
         d.quantity = receipt.quantity.map { String($0) } ?? ""
         d.unit = receipt.unit ?? "pz"
         d.temperatureNote = receipt.temperatureValue.map { String(format: "%.1f °C", $0) } ?? ""
-        d.sourceModule = .goodsReceiving
+        d.sourceModule = .traceability
         d.goodsReceiptId = receipt.id
+        d.traceabilityRecordId = traceabilityRecordId
         return d
     }
 

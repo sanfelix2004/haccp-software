@@ -213,6 +213,6 @@ extension SidebarItem {
     }
 
     static var allNavigable: [SidebarItem] {
-        [.dashboard] + haccpModulesInOrder + toolsInOrder
+        [.dashboard] + foodsInOrder + haccpModulesInOrder + toolsInOrder
     }
 }

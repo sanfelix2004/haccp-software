@@ -28,7 +28,7 @@ enum ProductionLabelsRegister {
                     producedAt: df.string(from: label.productionDate),
                     expiresAt: df.string(from: label.expiryDate),
                     status: label.productStatus.label,
-                    source: label.sourceModule.label,
+                    source: label.sourceModule.displayLabel,
                     reprints: label.reprintCount > 0 ? "\(label.reprintCount)" : "0",
                     operatorName: label.createdByNameSnapshot,
                     notes: (label.notes ?? "").isEmpty ? HACCPRegisterCopy.notAvailable : (label.notes ?? "")

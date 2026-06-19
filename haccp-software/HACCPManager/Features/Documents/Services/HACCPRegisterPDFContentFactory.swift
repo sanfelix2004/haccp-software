@@ -612,8 +612,8 @@ enum HACCPRegisterPDFContentFactory {
 
         let monthlyIndex = monthlyDocumentIndex(existingDocuments: existingDocuments, restaurantId: restaurant.id, interval: interval)
         sections.append(.dataTable(
-            title: "Indice report mensili HACCP combinato",
-            headers: ["Mese", "Identificativo documento", "Nome file"],
+            title: "Indice report mensili archivio",
+            headers: ["Modulo", "Identificativo documento", "Nome file"],
             rows: monthlyIndex
         ))
         flags.insert(.indiceMensile)
@@ -1157,19 +1157,27 @@ enum HACCPRegisterPDFContentFactory {
         restaurantId: UUID,
         interval: DateInterval
     ) -> [[PDFTableCell]] {
+        let activeModules = Set(DocumentArchiveLayout.activeMonthlyGenerationModules)
         let monthlies = existingDocuments.filter {
             $0.restaurantId == restaurantId
                 && $0.type == .mensile
-                && $0.module == .haccpCombinato
+                && activeModules.contains($0.module)
                 && ($0.periodStart.map { interval.contains($0) } ?? false)
-        }.sorted { ($0.periodStart ?? .distantPast) < ($1.periodStart ?? .distantPast) }
+        }
+        .sorted {
+            let l = DocumentArchiveLayout.moduleFolderTitle($0.module)
+            let r = DocumentArchiveLayout.moduleFolderTitle($1.module)
+            if l == r { return ($0.periodStart ?? .distantPast) < ($1.periodStart ?? .distantPast) }
+            return l < r
+        }
 
-        let df = DateFormatter()
-        df.locale = Locale(identifier: "it_IT")
-        df.dateFormat = "MMMM yyyy"
         let rows: [[PDFTableCell]] = monthlies.compactMap { doc in
-            guard let ps = doc.periodStart else { return nil }
-            return [.text(df.string(from: ps).capitalized), .text(doc.officialDocumentId.isEmpty ? doc.id.uuidString : doc.officialDocumentId), .text(doc.fileName)]
+            guard doc.periodStart != nil else { return nil }
+            return [
+                .text(DocumentArchiveLayout.moduleFolderTitle(doc.module)),
+                .text(doc.officialDocumentId.isEmpty ? doc.id.uuidString : doc.officialDocumentId),
+                .text(doc.fileName)
+            ]
         }
         return rows.isEmpty ? [[.text(HACCPRegisterCopy.noActivityInPeriod), .text("—"), .text("—")]] : rows
     }

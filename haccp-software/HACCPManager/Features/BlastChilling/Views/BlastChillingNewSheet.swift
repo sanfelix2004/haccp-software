@@ -38,7 +38,7 @@ struct BlastChillingNewSheet: View {
                     }
 
                     DashboardCardView(title: "Catalogo piatti", subtitle: "Gestione separata") {
-                        Text("Per aggiungere o modificare i piatti del menu vai in Catalogo piatti nel menu laterale (o Impostazioni).")
+                        Text("Per aggiungere o modificare i piatti del menu vai in Catalogo piatti nella sezione Alimenti del menu laterale.")
                             .font(theme.typography.caption)
                             .foregroundStyle(theme.colorTextSecondary)
                             .frame(maxWidth: .infinity, alignment: .leading)

@@ -60,4 +60,20 @@ enum ProductExpiryEvaluator {
         guard let expiryDate = record.expiryDate else { return false }
         return isExpiredByDate(expiryDate, now: now)
     }
+
+    /// Stato da mostrare in UI: se la scadenza è passata il lotto è Scaduto,
+  /// salvo che sia già chiuso (Usato) o respinto.
+    static func effectiveDisplayStatus(
+        _ record: TraceabilityRecord,
+        expiryDate: Date?,
+        now: Date = Date(),
+        calendar: Calendar = .current
+    ) -> ProductStatus {
+        if record.isNonCompliant || record.productStatus == .rejected { return .rejected }
+        if record.productStatus == .used { return .used }
+        if record.productStatus == .expired { return .expired }
+        guard let expiryDate else { return record.productStatus }
+        if isExpiredByDate(expiryDate, now: now, calendar: calendar) { return .expired }
+        return record.productStatus
+    }
 }

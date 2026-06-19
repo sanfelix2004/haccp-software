@@ -46,6 +46,7 @@ final class HistoryLoaderViewModel: ObservableObject {
                 goodsRecords: data.goodsRecords,
                 traceabilityRecords: data.traceabilityRecords,
                 traceabilityLogs: data.traceabilityLogs,
+                productions: data.productions,
                 oilRecords: data.oilRecords
             )
 

@@ -42,7 +42,6 @@ enum DocumentArchivePurgeService {
             in: modelContext,
             force: true
         )
-        HACCPReportEngine.shared.refreshStats(restaurantId: restaurant.id, in: modelContext)
     }
 
     static func purgeAllPDFFiles() {
@@ -86,6 +85,5 @@ enum DocumentArchivePurgeService {
             in: modelContext,
             force: true
         )
-        HACCPReportEngine.shared.refreshStats(restaurantId: restaurant.id, in: modelContext)
     }
 }

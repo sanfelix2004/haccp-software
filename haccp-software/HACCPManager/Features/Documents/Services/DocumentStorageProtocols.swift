@@ -4,7 +4,13 @@ import SwiftData
 /// Astrazione storage documenti (locale + iCloud Drive opzionale).
 protocol DocumentStorageServiceProtocol: AnyObject {
     func stablePDFDirectory(restaurantId: UUID) throws -> URL
-    func relativePathForICloud(restaurantDisplayName: String, periodFolder: String, fileName: String) -> String
+    func relativePathForICloud(
+        restaurantDisplayName: String,
+        periodFolder: String,
+        groupFolder: String,
+        moduleFolder: String,
+        fileName: String
+    ) -> String
 }
 
 /// Implementazione locale: path stabili sotto Application Support.

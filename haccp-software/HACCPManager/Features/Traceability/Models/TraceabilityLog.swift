@@ -45,4 +45,13 @@ final class TraceabilityLog {
         get { TraceabilityActionType(rawValue: actionTypeRaw) ?? .created }
         set { actionTypeRaw = newValue.rawValue }
     }
+
+    /// Nome produzione collegata (da `detail` persistito o lookup catalogo).
+    func linkedProductionDisplayName(productionsById: [UUID: Production]) -> String? {
+        if let detail = detail?.trimmingCharacters(in: .whitespacesAndNewlines), !detail.isEmpty {
+            return detail
+        }
+        guard let productionId else { return nil }
+        return productionsById[productionId]?.name
+    }
 }
