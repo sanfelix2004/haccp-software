@@ -7,13 +7,73 @@ enum PDFTableCell {
 
 /// Generazione PDF professionale in italiano (intestazione ufficiale, tabelle, testo normativo, firme).
 enum HACCPDocumentPDFRenderer {
-    private static let pageRect = CGRect(x: 0, y: 0, width: 842, height: 595)
-    private static let margin: CGFloat = 40
-    private static let footerReserve: CGFloat = 36
+    private static let margin: CGFloat = HACCPPDFPageLayout.margin
+    private static let cellPad: CGFloat = 6
+    private static let minDataRowHeight: CGFloat = 28
+    private static let minKVRowHeight: CGFloat = 24
+
+    private static let continuationBandHeight: CGFloat = 28
+
+    /// Stato di impaginazione condiviso: unica fonte di verità per `y` (evita sovrapposizioni post page-break).
+    private final class PageFlow {
+        let pageRect: CGRect
+        let contentBottomY: CGFloat
+        var y: CGFloat
+        private var beginPage: (_ isFirst: Bool) -> Void
+
+        init(pageRect: CGRect, beginPage: @escaping (_ isFirst: Bool) -> Void) {
+            self.pageRect = pageRect
+            self.contentBottomY = HACCPPDFPageLayout.contentBottomY(pageRect: pageRect)
+            self.y = margin
+            self.beginPage = beginPage
+        }
+
+        func setBeginPage(_ handler: @escaping (_ isFirst: Bool) -> Void) {
+            beginPage = handler
+        }
+
+        /// Se `y + needed` supera il limite, apre una nuova pagina.
+        /// `startPage` aggiorna già `flow.y` dopo il banner di continuazione — non resettare qui.
+        @discardableResult
+        func ensureFits(_ needed: CGFloat) -> Bool {
+            guard needed > 0 else { return false }
+            if y + needed <= contentBottomY { return false }
+            beginPage(false)
+            return true
+        }
+
+        var contentWidth: CGFloat { pageRect.width - margin * 2 }
+
+        /// Riserva spazio verticale atomico per intestazione tabella + riga dati (ripete header dopo page-break).
+        func reserveTableRow(headerHeight: CGFloat, rowHeight: CGFloat, redrawHeader: () -> Void) {
+            guard rowHeight > 0 else { return }
+            if y + rowHeight <= contentBottomY { return }
+            ensureFits(headerHeight + rowHeight)
+            redrawHeader()
+        }
+    }
+
+    private static func measuredTextHeight(
+        _ text: String,
+        width: CGFloat,
+        attributes: [NSAttributedString.Key: Any],
+        padding: CGFloat = 0
+    ) -> CGFloat {
+        let core = ceil(
+            (text as NSString).boundingRect(
+                with: CGSize(width: width, height: 10_000),
+                options: [.usesLineFragmentOrigin],
+                attributes: attributes,
+                context: nil
+            ).height
+        )
+        return core + padding
+    }
 
     static func render(
         context documentContext: HACCPPDFDocumentContext,
         sections: [HACCPPDFSection],
+        pageRect: CGRect = HACCPPDFPageLayout.a4Portrait,
         omitBuiltInFooter: Bool = false,
         bodyFontSize: CGFloat = 9.2
     ) -> Data? {
@@ -26,65 +86,70 @@ enum HACCPDocumentPDFRenderer {
         let renderer = UIGraphicsPDFRenderer(bounds: pageRect)
         return renderer.pdfData { context in
             var pageIndex = 0
-            var y: CGFloat = margin
-            let bottomLimit = pageRect.height - margin - footerReserve
+            let flow = PageFlow(pageRect: pageRect, beginPage: { _ in })
 
-            func drawFooterOnCurrentPage() {
-                guard !omitBuiltInFooter else { return }
-                let footerY = pageRect.height - margin + 2
+            func drawBuiltInFooterIfNeeded() {
+                guard !omitBuiltInFooter, pageIndex > 0 else { return }
+                let bandTop = pageRect.height - margin - HACCPPDFPageLayout.officialFooterBandHeight
                 let attrs: [NSAttributedString.Key: Any] = [
                     .font: UIFont.systemFont(ofSize: 7.5, weight: .regular),
                     .foregroundColor: UIColor.gray
                 ]
                 let left = "HACCP Manager — \(documentContext.officialDocumentId) — generato il \(generatedLine)"
-                left.draw(at: CGPoint(x: margin, y: footerY), withAttributes: attrs)
+                left.draw(at: CGPoint(x: margin, y: bandTop + 2), withAttributes: attrs)
                 let pageStr = "Pag. \(pageIndex)"
                 let w = (pageStr as NSString).size(withAttributes: attrs).width
-                pageStr.draw(at: CGPoint(x: pageRect.width - margin - w, y: footerY), withAttributes: attrs)
+                pageStr.draw(at: CGPoint(x: pageRect.width - margin - w, y: bandTop + 2), withAttributes: attrs)
             }
 
             func startPage(isFirst: Bool) {
-                if pageIndex > 0, !omitBuiltInFooter { drawFooterOnCurrentPage() }
+                drawBuiltInFooterIfNeeded()
                 context.beginPage()
                 pageIndex += 1
-                y = margin
+                flow.y = margin
                 if isFirst {
-                    drawOfficialHeader(context: documentContext, generatedLine: generatedLine, y: &y)
+                    drawOfficialHeader(
+                        context: documentContext,
+                        generatedLine: generatedLine,
+                        pageRect: pageRect,
+                        flow: flow
+                    )
                 } else {
                     let attrs: [NSAttributedString.Key: Any] = [
                         .font: UIFont.systemFont(ofSize: 9.5, weight: .semibold),
                         .foregroundColor: UIColor.darkGray
                     ]
-                    "\(documentContext.reportTitle) — segue (pag. \(pageIndex))".draw(
-                        at: CGPoint(x: margin, y: y),
-                        withAttributes: attrs
+                    let continuation = "\(documentContext.reportTitle) — segue (pag. \(pageIndex))"
+                    let bandRect = CGRect(
+                        x: margin,
+                        y: flow.y,
+                        width: pageRect.width - margin * 2,
+                        height: continuationBandHeight
                     )
-                    y += 22
+                    (continuation as NSString).draw(
+                        with: bandRect,
+                        options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine],
+                        attributes: attrs,
+                        context: nil
+                    )
+                    flow.y += continuationBandHeight
                 }
             }
 
-            @discardableResult
-            func ensureSpace(_ needed: CGFloat) -> Bool {
-                if y + needed <= bottomLimit { return false }
-                startPage(isFirst: false)
-                return true
-            }
-
+            flow.setBeginPage { isFirst in startPage(isFirst: isFirst) }
             startPage(isFirst: true)
 
             for section in sections {
-                y = drawSection(
+                drawSection(
                     section,
                     cg: context.cgContext,
-                    y: y,
-                    bottomLimit: bottomLimit,
-                    bodyFontSize: bodyFontSize,
-                    ensureSpace: { ensureSpace($0) }
+                    flow: flow,
+                    bodyFontSize: bodyFontSize
                 )
-                y += 10
+                flow.y += 10
             }
 
-            if !omitBuiltInFooter { drawFooterOnCurrentPage() }
+            if !omitBuiltInFooter { drawBuiltInFooterIfNeeded() }
         }
     }
 
@@ -93,7 +158,8 @@ enum HACCPDocumentPDFRenderer {
     private static func drawOfficialHeader(
         context: HACCPPDFDocumentContext,
         generatedLine: String,
-        y: inout CGFloat
+        pageRect: CGRect,
+        flow: PageFlow
     ) {
         let bannerAttrs: [NSAttributedString.Key: Any] = [
             .font: UIFont.systemFont(ofSize: 11, weight: .heavy),
@@ -112,11 +178,11 @@ enum HACCPDocumentPDFRenderer {
             .foregroundColor: UIColor(white: 0.35, alpha: 1)
         ]
 
-        HACCPRegisterCopy.officialDocumentBanner.draw(at: CGPoint(x: margin, y: y), withAttributes: bannerAttrs)
-        y += 18
+        HACCPRegisterCopy.officialDocumentBanner.draw(at: CGPoint(x: margin, y: flow.y), withAttributes: bannerAttrs)
+        flow.y += 18
 
-        context.reportTitle.draw(at: CGPoint(x: margin, y: y), withAttributes: titleAttrs)
-        y += 24
+        context.reportTitle.draw(at: CGPoint(x: margin, y: flow.y), withAttributes: titleAttrs)
+        flow.y += 24
 
         let metaLines: [(String, String)] = [
             ("Esercizio", context.restaurantName),
@@ -132,12 +198,14 @@ enum HACCPDocumentPDFRenderer {
 
         for (label, value) in metaLines {
             let labelWidth: CGFloat = 148
-            label.draw(at: CGPoint(x: margin, y: y), withAttributes: labelAttrs)
+            let lineH = max(13, ceilMetaLineHeight(value, width: pageRect.width - margin * 2 - labelWidth, attrs: subAttrs) + 2)
+            flow.ensureFits(lineH)
+            label.draw(at: CGPoint(x: margin, y: flow.y), withAttributes: labelAttrs)
             let valueRect = CGRect(
                 x: margin + labelWidth,
-                y: y,
+                y: flow.y,
                 width: pageRect.width - margin * 2 - labelWidth,
-                height: 80
+                height: lineH
             )
             (value as NSString).draw(
                 with: valueRect,
@@ -145,21 +213,26 @@ enum HACCPDocumentPDFRenderer {
                 attributes: subAttrs,
                 context: nil
             )
-            let h = (value as NSString).boundingRect(
-                with: CGSize(width: valueRect.width, height: 200),
-                options: [.usesLineFragmentOrigin],
-                attributes: subAttrs,
-                context: nil
-            ).height
-            y += max(13, ceil(h) + 2)
+            flow.y += lineH
         }
 
-        y += 4
-        strokeHorizontalRule(at: y)
-        y += 14
+        flow.y += 4
+        strokeHorizontalRule(at: flow.y, pageRect: pageRect)
+        flow.y += 14
     }
 
-    private static func strokeHorizontalRule(at y: CGFloat) {
+    private static func ceilMetaLineHeight(_ value: String, width: CGFloat, attrs: [NSAttributedString.Key: Any]) -> CGFloat {
+        ceil(
+            (value as NSString).boundingRect(
+                with: CGSize(width: width, height: 200),
+                options: [.usesLineFragmentOrigin],
+                attributes: attrs,
+                context: nil
+            ).height
+        )
+    }
+
+    private static func strokeHorizontalRule(at y: CGFloat, pageRect: CGRect) {
         guard let ctx = UIGraphicsGetCurrentContext() else { return }
         ctx.setStrokeColor(UIColor(white: 0.78, alpha: 1).cgColor)
         ctx.setLineWidth(0.75)
@@ -173,75 +246,73 @@ enum HACCPDocumentPDFRenderer {
     private static func drawSection(
         _ section: HACCPPDFSection,
         cg: CGContext,
-        y startY: CGFloat,
-        bottomLimit: CGFloat,
-        bodyFontSize: CGFloat,
-        ensureSpace: (CGFloat) -> Bool
-    ) -> CGFloat {
-        var y = startY
-        _ = ensureSpace(36)
-
+        flow: PageFlow,
+        bodyFontSize: CGFloat
+    ) {
         let titleAttrs: [NSAttributedString.Key: Any] = [
             .font: UIFont.systemFont(ofSize: 12.5, weight: .bold),
             .foregroundColor: UIColor.black
         ]
-        section.title.draw(at: CGPoint(x: margin, y: y), withAttributes: titleAttrs)
-        y += 18
+        let subAttrs: [NSAttributedString.Key: Any] = [
+            .font: UIFont.systemFont(ofSize: 8.8, weight: .regular),
+            .foregroundColor: UIColor.gray
+        ]
 
-        if let subtitle = section.subtitle, !subtitle.isEmpty {
-            let subAttrs: [NSAttributedString.Key: Any] = [
-                .font: UIFont.systemFont(ofSize: 8.8, weight: .regular),
-                .foregroundColor: UIColor.gray
-            ]
-            let rect = CGRect(x: margin, y: y, width: pageRect.width - margin * 2, height: 40)
-            (subtitle as NSString).draw(with: rect, options: [.usesLineFragmentOrigin], attributes: subAttrs, context: nil)
-            y += 16
+        let titleH = measuredTextHeight(section.title, width: flow.contentWidth, attributes: titleAttrs, padding: 4)
+        let subtitleText = section.subtitle?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let subtitleH: CGFloat = subtitleText.isEmpty
+            ? 0
+            : measuredTextHeight(subtitleText, width: flow.contentWidth, attributes: subAttrs, padding: 6)
+
+        // Blocco atomico titolo + sottotitolo: mai spezzare tra le due righe.
+        flow.ensureFits(titleH + subtitleH)
+
+        section.title.draw(at: CGPoint(x: margin, y: flow.y), withAttributes: titleAttrs)
+        flow.y += titleH
+
+        if subtitleH > 0 {
+            let rect = CGRect(x: margin, y: flow.y, width: flow.contentWidth, height: subtitleH)
+            (subtitleText as NSString).draw(
+                with: rect,
+                options: [.usesLineFragmentOrigin],
+                attributes: subAttrs,
+                context: nil
+            )
+            flow.y += subtitleH
         }
 
         switch section.content {
         case .keyValueTable(let headers, let rows):
-            y = drawTableSection(
+            drawTableSection(
                 cg: cg,
+                flow: flow,
                 headers: headers,
                 rows: rows,
-                y: y,
-                bottomLimit: bottomLimit,
                 bodyFontSize: bodyFontSize,
-                keyValueStyle: true,
-                ensureSpace: ensureSpace
+                keyValueStyle: true
             )
         case .dataTable(let headers, let rows):
-            y = drawTableSection(
+            drawTableSection(
                 cg: cg,
+                flow: flow,
                 headers: headers,
                 rows: rows,
-                y: y,
-                bottomLimit: bottomLimit,
                 bodyFontSize: bodyFontSize,
-                keyValueStyle: false,
-                ensureSpace: ensureSpace
+                keyValueStyle: false
             )
         case .prose(let paragraphs):
-            y = drawProse(paragraphs, y: y, bottomLimit: bottomLimit, ensureSpace: ensureSpace)
+            drawProse(paragraphs, flow: flow)
         case .signatures(let block):
-            y = drawSignatures(block, y: y, bottomLimit: bottomLimit, ensureSpace: ensureSpace)
+            drawSignatures(block, flow: flow)
         }
-
-        return y
     }
 
-    private static func drawProse(
-        _ paragraphs: [String],
-        y startY: CGFloat,
-        bottomLimit: CGFloat,
-        ensureSpace: (CGFloat) -> Bool
-    ) -> CGFloat {
-        var y = startY
+    private static func drawProse(_ paragraphs: [String], flow: PageFlow) {
         let attrs: [NSAttributedString.Key: Any] = [
             .font: UIFont.systemFont(ofSize: 9.5, weight: .regular),
             .foregroundColor: UIColor.black
         ]
-        let width = pageRect.width - margin * 2
+        let width = flow.contentWidth
 
         for paragraph in paragraphs {
             let bounding = (paragraph as NSString).boundingRect(
@@ -251,22 +322,15 @@ enum HACCPDocumentPDFRenderer {
                 context: nil
             )
             let blockH = ceil(bounding.height) + 10
-            _ = ensureSpace(blockH)
-            let rect = CGRect(x: margin, y: y, width: width, height: blockH)
+            flow.ensureFits(blockH)
+            let rect = CGRect(x: margin, y: flow.y, width: width, height: blockH)
             (paragraph as NSString).draw(with: rect, options: [.usesLineFragmentOrigin], attributes: attrs, context: nil)
-            y += blockH
+            flow.y += blockH
         }
-        return y
     }
 
-    private static func drawSignatures(
-        _ block: HACCPPDFSignatureBlock,
-        y startY: CGFloat,
-        bottomLimit: CGFloat,
-        ensureSpace: (CGFloat) -> Bool
-    ) -> CGFloat {
-        var y = startY
-        y = drawProse([block.intro], y: y, bottomLimit: bottomLimit, ensureSpace: ensureSpace)
+    private static func drawSignatures(_ block: HACCPPDFSignatureBlock, flow: PageFlow) {
+        drawProse([block.intro], flow: flow)
 
         let labelAttrs: [NSAttributedString.Key: Any] = [
             .font: UIFont.systemFont(ofSize: 9, weight: .medium),
@@ -278,38 +342,60 @@ enum HACCPDocumentPDFRenderer {
         ]
 
         for role in block.roles {
-            _ = ensureSpace(52)
-            (role as NSString).draw(at: CGPoint(x: margin, y: y), withAttributes: labelAttrs)
-            y += 16
+            flow.ensureFits(52)
+            (role as NSString).draw(at: CGPoint(x: margin, y: flow.y), withAttributes: labelAttrs)
+            flow.y += 16
             let line = "Firma: _________________________________    Data: ____ / ____ / ________"
-            (line as NSString).draw(at: CGPoint(x: margin, y: y), withAttributes: lineAttrs)
-            y += 28
+            (line as NSString).draw(at: CGPoint(x: margin, y: flow.y), withAttributes: lineAttrs)
+            flow.y += 28
         }
-        return y
     }
 
     // MARK: - Tables
 
     private static func drawTableSection(
         cg: CGContext,
+        flow: PageFlow,
         headers: [String],
         rows: [[PDFTableCell]],
-        y startY: CGFloat,
-        bottomLimit: CGFloat,
         bodyFontSize: CGFloat,
-        keyValueStyle: Bool,
-        ensureSpace: (CGFloat) -> Bool
-    ) -> CGFloat {
-        var y = startY
-        let contentWidth = pageRect.width - margin * 2
+        keyValueStyle: Bool
+    ) {
+        let contentWidth = flow.contentWidth
         let colWidths = computeColumnWidths(headers: headers, totalWidth: contentWidth, keyValueStyle: keyValueStyle)
-        let headerH: CGFloat = keyValueStyle ? 26 : 30
-        let pad: CGFloat = 5
+        let baseHeaderMin: CGFloat = keyValueStyle ? 28 : 32
+        let minRowH = keyValueStyle ? minKVRowHeight : minDataRowHeight
+
+        let bodyAttrs: [NSAttributedString.Key: Any] = [
+            .font: UIFont.systemFont(ofSize: bodyFontSize, weight: .regular),
+            .foregroundColor: UIColor.black
+        ]
+
+        func measureHeaderHeight() -> CGFloat {
+            let headerFont = min(9.2, bodyFontSize + 0.4)
+            let attrs: [NSAttributedString.Key: Any] = [
+                .font: UIFont.systemFont(ofSize: headerFont, weight: .semibold),
+                .foregroundColor: UIColor.black
+            ]
+            var maxH = baseHeaderMin
+            for (idx, h) in headers.enumerated() {
+                let cellW = (colWidths[safe: idx] ?? 60) - cellPad * 2
+                let cellH = measuredTextHeight(
+                    h,
+                    width: max(cellW, 20),
+                    attributes: attrs,
+                    padding: cellPad * 2 + 2
+                )
+                maxH = max(maxH, cellH)
+            }
+            return maxH
+        }
 
         func drawHeaderRow() {
+            let headerH = measureHeaderHeight()
             var x = margin
             cg.setFillColor(UIColor(red: 0.91, green: 0.94, blue: 0.97, alpha: 1).cgColor)
-            cg.fill(CGRect(x: margin, y: y, width: contentWidth, height: headerH))
+            cg.fill(CGRect(x: margin, y: flow.y, width: contentWidth, height: headerH))
             let headerFont = min(9.2, bodyFontSize + 0.4)
             let attrs: [NSAttributedString.Key: Any] = [
                 .font: UIFont.systemFont(ofSize: headerFont, weight: .semibold),
@@ -317,78 +403,51 @@ enum HACCPDocumentPDFRenderer {
             ]
             for (idx, h) in headers.enumerated() {
                 let w = colWidths[safe: idx] ?? 60
-                let rect = CGRect(x: x + pad, y: y + pad, width: w - pad * 2, height: headerH - pad * 2)
+                let rect = CGRect(x: x + cellPad, y: flow.y + cellPad, width: w - cellPad * 2, height: headerH - cellPad * 2)
                 (h as NSString).draw(with: rect, options: [.usesLineFragmentOrigin], attributes: attrs, context: nil)
                 x += w
             }
             cg.setStrokeColor(UIColor(white: 0.72, alpha: 1).cgColor)
             cg.setLineWidth(0.6)
-            cg.stroke(CGRect(x: margin, y: y, width: contentWidth, height: headerH))
-            y += headerH
+            cg.stroke(CGRect(x: margin, y: flow.y, width: contentWidth, height: headerH))
+            flow.y += headerH
         }
 
-        let bodyAttrs: [NSAttributedString.Key: Any] = [
-            .font: UIFont.systemFont(ofSize: bodyFontSize, weight: .regular),
-            .foregroundColor: UIColor.black
-        ]
-
-        _ = ensureSpace(headerH + 34)
-        drawHeaderRow()
-
-        if rows.isEmpty {
-            _ = ensureSpace(34)
-            let emptyRowH: CGFloat = 34
-            let rect = CGRect(x: margin + pad, y: y + pad, width: contentWidth - pad * 2, height: emptyRowH - pad * 2)
-            (HACCPRegisterCopy.noActivityInPeriod as NSString).draw(
-                with: rect,
-                options: [.usesLineFragmentOrigin],
-                attributes: bodyAttrs,
-                context: nil
-            )
-            cg.stroke(CGRect(x: margin, y: y, width: contentWidth, height: emptyRowH))
-            y += emptyRowH
-            return y
-        }
-
-        for (rowIndex, row) in rows.enumerated() {
-            var rowH: CGFloat = keyValueStyle ? 22 : 26
+        func measureRowHeight(_ row: [PDFTableCell]) -> CGFloat {
+            var rowH = minRowH
             for (idx, cell) in row.enumerated() {
-                let cellW = (colWidths[safe: idx] ?? 60) - pad * 2
+                let cellW = (colWidths[safe: idx] ?? 60) - cellPad * 2
                 switch cell {
                 case .text(let s):
-                    let bounding = (s as NSString).boundingRect(
-                        with: CGSize(width: max(cellW, 24), height: 600),
-                        options: [.usesLineFragmentOrigin],
-                        attributes: bodyAttrs,
-                        context: nil
+                    rowH = max(
+                        rowH,
+                        measuredTextHeight(s, width: max(cellW, 20), attributes: bodyAttrs, padding: cellPad * 2 + 4)
                     )
-                    rowH = max(rowH, min(180, ceil(bounding.height) + pad * 2 + 6))
                 case .image(let data):
                     if let data, UIImage(data: data) != nil {
-                        rowH = max(rowH, 52)
+                        rowH = max(rowH, 56)
                     }
                 }
             }
+            return rowH
+        }
 
-            if ensureSpace(rowH + 4) {
-                drawHeaderRow()
-            }
-
+        func drawDataRow(_ row: [PDFTableCell], rowIndex: Int, rowH: CGFloat) {
             if rowIndex.isMultiple(of: 2) {
                 cg.setFillColor(UIColor(white: 0.98, alpha: 1).cgColor)
-                cg.fill(CGRect(x: margin, y: y, width: contentWidth, height: rowH))
+                cg.fill(CGRect(x: margin, y: flow.y, width: contentWidth, height: rowH))
             }
 
             var x = margin
             for (idx, cell) in row.enumerated() {
                 let w = colWidths[safe: idx] ?? 60
-                let cellRect = CGRect(x: x, y: y, width: w, height: rowH)
+                let cellRect = CGRect(x: x, y: flow.y, width: w, height: rowH)
                 cg.setStrokeColor(UIColor(white: 0.86, alpha: 1).cgColor)
                 cg.stroke(cellRect)
 
                 switch cell {
                 case .text(let s):
-                    let textRect = CGRect(x: x + pad, y: y + pad, width: w - pad * 2, height: rowH - pad * 2)
+                    let textRect = CGRect(x: x + cellPad, y: flow.y + cellPad, width: w - cellPad * 2, height: rowH - cellPad * 2)
                     (s as NSString).draw(
                         with: textRect,
                         options: [.usesLineFragmentOrigin],
@@ -397,24 +456,61 @@ enum HACCPDocumentPDFRenderer {
                     )
                 case .image(let data):
                     if let data, let image = UIImage(data: data) {
-                        let maxSide: CGFloat = 42
+                        let maxSide: CGFloat = 44
                         let aspect = image.size.width / max(image.size.height, 1)
                         var iw = maxSide
                         var ih = maxSide / max(aspect, 0.01)
                         if ih > maxSide { ih = maxSide; iw = ih * aspect }
                         let ix = x + (w - iw) / 2
-                        let iy = y + (rowH - ih) / 2
+                        let iy = flow.y + (rowH - ih) / 2
                         image.draw(in: CGRect(x: ix, y: iy, width: iw, height: ih))
                     } else {
-                        (HACCPRegisterCopy.notAvailable as NSString).draw(at: CGPoint(x: x + pad, y: y + pad), withAttributes: bodyAttrs)
+                        (HACCPRegisterCopy.notAvailable as NSString).draw(
+                            at: CGPoint(x: x + cellPad, y: flow.y + cellPad),
+                            withAttributes: bodyAttrs
+                        )
                     }
                 }
                 x += w
             }
-            y += rowH
+            flow.y += rowH
         }
 
-        return y
+        // Intestazione tabella: se non c'è spazio per header + almeno una riga, nuova pagina.
+        let initialHeaderH = measureHeaderHeight()
+        let minBodyAfterHeader: CGFloat = rows.isEmpty ? 34 : minRowH
+        if flow.y + initialHeaderH + minBodyAfterHeader > flow.contentBottomY {
+            flow.ensureFits(initialHeaderH + minBodyAfterHeader)
+        }
+        drawHeaderRow()
+
+        if rows.isEmpty {
+            let emptyRowH: CGFloat = 34
+            flow.ensureFits(emptyRowH)
+            let rect = CGRect(x: margin + cellPad, y: flow.y + cellPad, width: contentWidth - cellPad * 2, height: emptyRowH - cellPad * 2)
+            (HACCPRegisterCopy.noActivityInPeriod as NSString).draw(
+                with: rect,
+                options: [.usesLineFragmentOrigin],
+                attributes: bodyAttrs,
+                context: nil
+            )
+            cg.stroke(CGRect(x: margin, y: flow.y, width: contentWidth, height: emptyRowH))
+            flow.y += emptyRowH
+            return
+        }
+
+        for (rowIndex, row) in rows.enumerated() {
+            let rowH = measureRowHeight(row)
+
+            // Riga atomica: se non entra intera, nuova pagina + re-intestazione colonne.
+            flow.reserveTableRow(
+                headerHeight: measureHeaderHeight(),
+                rowHeight: rowH,
+                redrawHeader: drawHeaderRow
+            )
+
+            drawDataRow(row, rowIndex: rowIndex, rowH: rowH)
+        }
     }
 
     private static func computeColumnWidths(headers: [String], totalWidth: CGFloat, keyValueStyle: Bool) -> [CGFloat] {
@@ -443,7 +539,7 @@ enum HACCPDocumentPDFRenderer {
         let sum = widths.reduce(0, +)
         if sum > 0 {
             let scale = totalWidth / sum
-            widths = widths.map { max(38, $0 * scale) }
+            widths = widths.map { max(36, $0 * scale) }
         }
         let finalSum = widths.reduce(0, +)
         if abs(finalSum - totalWidth) > 0.5, let last = widths.indices.last {

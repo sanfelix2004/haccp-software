@@ -105,7 +105,7 @@ struct HACCPManagerApp: App {
         }
     }
 
-    /// Generazione PDF mensile e backup iCloud: catch-up all'apertura dell'app.
+    /// PDF mensili incrementali e backup iCloud: aggiornamento all'apertura dell'app.
     @MainActor
     private func tickMonthlyArchive(modelContext: ModelContext) async {
         guard let restaurantId = appState.activeRestaurantId,

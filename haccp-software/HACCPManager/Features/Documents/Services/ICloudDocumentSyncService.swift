@@ -47,6 +47,21 @@ final class ICloudDocumentSyncService: ObservableObject, ICloudDocumentSyncServi
         publishConnectionDiagnostics()
     }
 
+    /// Il container può essere `nil` al primo avvio anche con entitlements corretti: ritenta con breve attesa.
+    func resolveUbiquityContainerURL(maxAttempts: Int = 6) async -> URL? {
+        for attempt in 0..<maxAttempts {
+            if let url = fileManager.url(forUbiquityContainerIdentifier: Self.ubiquityContainerIdentifier) {
+                publishConnectionDiagnostics()
+                return url
+            }
+            if attempt < maxAttempts - 1 {
+                try? await Task.sleep(nanoseconds: 500_000_000)
+            }
+        }
+        publishConnectionDiagnostics()
+        return nil
+    }
+
     private func publishConnectionDiagnostics() {
         let hasIdentity = fileManager.ubiquityIdentityToken != nil
         let containerURL = fileManager.url(forUbiquityContainerIdentifier: Self.ubiquityContainerIdentifier)
@@ -55,17 +70,21 @@ final class ICloudDocumentSyncService: ObservableObject, ICloudDocumentSyncServi
             let path = url.path
             connectionExplanation =
                 "Collegato a iCloud: il container dell’app è attivo.\nPercorso tecnico: \(path)\n\n" +
-                "Quando il toggle «Copia automatica…» è attivo, i PDF vengono copiati qui sotto «Documents». " +
+                "Quando la sincronizzazione è attiva, i PDF vengono copiati qui sotto «Documents». " +
                 "In app File puoi cercare la cartella dell’app in iCloud Drive."
         } else if !hasIdentity {
             connectionExplanation =
-                "Non collegato: su questo dispositivo non risulta un account iCloud attivo per le app, " +
-                "oppure iCloud Drive è disattivato.\n\nVai in Impostazioni → [il tuo nome] → iCloud → iCloud Drive e assicurati che sia acceso."
+                "Non collegato: su questo dispositivo non risulta un account iCloud attivo, " +
+                "oppure iCloud Drive è disattivato.\n\n" +
+                "Vai in Impostazioni → [il tuo nome] → iCloud → iCloud Drive e assicurati che sia acceso, poi premi Verifica."
         } else {
             connectionExplanation =
-                "Account iCloud presente sul dispositivo, ma il container di questa app non è disponibile.\n\n" +
-                "Serve la capability «iCloud Documents» e il container `\(Self.ubiquityContainerIdentifier)` " +
-                "nel profilo di provisioning / entitlements in Xcode. Fino ad allora l’app resta solo locale (ed è normale)."
+                "Account iCloud rilevato sul dispositivo, ma questa build non può usare iCloud Drive.\n\n" +
+                "• Con team di sviluppo personale (gratuito) Apple non consente la capability iCloud\n" +
+                "• Per la sync documenti serve l’Apple Developer Program (account a pagamento)\n" +
+                "• L’app continua a funzionare: PDF e registri restano salvati sul dispositivo\n\n" +
+                "Dopo l’iscrizione al programma developer, compila in Release con il team a pagamento " +
+                "e reinstalla l’app sul dispositivo."
         }
     }
 

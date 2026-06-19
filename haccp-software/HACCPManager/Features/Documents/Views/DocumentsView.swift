@@ -190,6 +190,7 @@ struct DocumentsView: View {
                             )
                             .onAppear { iCloudSync.refreshConnectionDiagnostics() }
                         }
+
                         folderGrid(folders: rootFolders)
                     } else {
                         if !childFolders.isEmpty {
@@ -374,7 +375,7 @@ struct DocumentsView: View {
         }
     }
 
-    /// Sincronizzazione leggera all'apertura: solo cartelle e statistiche (niente generazione PDF).
+    /// All'apertura: cartelle, statistiche e aggiornamento incrementale dei PDF del mese corrente.
     private func refreshArchiveLight() {
         guard let restaurant = activeRestaurant, let currentUser else { return }
         if isRefreshingArchive { return }
@@ -393,16 +394,20 @@ struct DocumentsView: View {
             if let selected = vm.selectedFolderId, !scopedFolders.contains(where: { $0.id == selected }) {
                 vm.selectedFolderId = nil
             }
-            isRefreshingArchive = false
 
-            Task(priority: .utility) { @MainActor in
-                await DocumentArchivePurgeService.regenerateArchiveIfNeeded(
-                    modelContext: modelContext,
-                    restaurant: restaurant,
-                    user: currentUser
-                )
-                rebuildFolderMetrics()
-            }
+            await DocumentArchivePurgeService.regenerateArchiveIfNeeded(
+                modelContext: modelContext,
+                restaurant: restaurant,
+                user: currentUser
+            )
+            _ = await HACCPReportEngine.shared.runFullArchive(
+                restaurant: restaurant,
+                user: currentUser,
+                in: modelContext,
+                force: true
+            )
+            rebuildFolderMetrics()
+            isRefreshingArchive = false
         }
     }
 
@@ -544,9 +549,9 @@ struct DocumentsView: View {
             let ids = descendantFolderIds(for: folder.id)
             let items = ids.flatMap { itemsByFolder[$0] ?? [] }
             metrics[folder.id] = FolderListMetrics(
-                count: items.count,
+                count: items.filter { $0.localFilePresent && $0.status == .generato }.count,
                 latest: items.map(\.generatedAt).max(),
-                hasNew: items.contains { $0.generatedAt >= threshold }
+                hasNew: items.contains { $0.generatedAt >= threshold && $0.status == .generato }
             )
         }
         folderMetricsById = metrics

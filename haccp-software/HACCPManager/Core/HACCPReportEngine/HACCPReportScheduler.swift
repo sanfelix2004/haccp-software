@@ -5,8 +5,8 @@
 //  Pianificazione "cron-style" della generazione automatica.
 //
 //  Su iOS l'app non può girare in background a orari arbitrari (no NSCron, no daemon).
-//  Lo scheduler usa quindi una strategia *catch-up*: ogni volta che l'app diventa attiva,
-//  verifica se è stato attraversato un cambio mese (pacchetto report mensili).
+//  Lo scheduler usa una strategia *catch-up*: ad ogni foreground aggiorna i PDF del mese
+//  corrente (incrementale) e, se è cambiato il mese, finalizza i report del periodo precedente.
 //
 
 import Foundation
@@ -34,8 +34,9 @@ final class HACCPReportScheduler: ObservableObject {
         "\(tickKeyPrefix)\(restaurantId.uuidString)"
     }
 
-    /// Pianifica un tick se da `lastTickAt` ad ora è stata attraversata almeno una frontiera mensile.
+    /// Aggiorna l'archivio PDF (mese corrente incrementale + catch-up mesi chiusi).
     /// Da chiamare su `scenePhase == .active` (l'app torna in foreground).
+    /// Il motore applica un debounce (~60s) salvo `force == true`.
     @discardableResult
     func tickIfNeeded(
         restaurant: Restaurant,
@@ -48,19 +49,11 @@ final class HACCPReportScheduler: ObservableObject {
         let crossings = boundariesCrossed(from: previousTick, to: now)
         let monthCrossed = crossings.contains(.monthly)
 
-        let mustRun: Bool = {
-            if force { return true }
-            if monthCrossed { return true }
-            return lastTickAt(restaurantId: restaurant.id) == nil
-        }()
-
-        guard mustRun else { return false }
-
         let didRun = await HACCPReportEngine.shared.runFullArchive(
             restaurant: restaurant,
             user: user,
             in: modelContext,
-            force: force || monthCrossed,
+            force: force,
             monthBoundaryCrossed: monthCrossed
         )
 

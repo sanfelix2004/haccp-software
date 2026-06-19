@@ -129,6 +129,7 @@ enum HACCPRegisterPDFContentFactory {
                 img(r.imageData)
             ]
         }
+        let body = table.isEmpty ? [emptyOperationalRow(columns: 14)] : table
         let headers = [
             "Denominazione prodotto", "Categoria", "Fornitore", "N. lotto", "Data scadenza", "Data e ora ricezione",
             "Temperatura rilevata", "Range ammesso", "Esito temperatura", "Esito checklist", "Esito complessivo",
@@ -139,7 +140,7 @@ enum HACCPRegisterPDFContentFactory {
                 title: "Registro ricezione merci e materie prime",
                 subtitle: "Controllo in ingresso — temperatura, checklist e conformità",
                 headers: headers,
-                rows: table
+                rows: body
             )
         ]
     }
@@ -175,6 +176,7 @@ enum HACCPRegisterPDFContentFactory {
                 img(r.imageData)
             ]
         }
+        let body = table.isEmpty ? [emptyOperationalRow(columns: 9)] : table
         let headers = [
             "Denominazione prodotto", "N. lotto / codice", "Fornitore", "Data ricezione", "Stato prodotto",
             "Produzioni collegate", "Annotazioni NC", "Operatore addetto", "Documentazione fotografica"
@@ -184,7 +186,7 @@ enum HACCPRegisterPDFContentFactory {
                 title: "Registro tracciabilità",
                 subtitle: "Identificazione e stato dei prodotti alimentari",
                 headers: headers,
-                rows: table
+                rows: body
             )
         ]
     }
