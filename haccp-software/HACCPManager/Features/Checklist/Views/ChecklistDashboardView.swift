@@ -4,8 +4,7 @@ struct ChecklistDashboardView: View {
     let runs: [ChecklistRun]
     let templates: [ChecklistTemplate]
     let itemResults: [ChecklistItemResult]
-    let alerts: [ChecklistAlert]
-    let counts: (todo: Int, inProgress: Int, completed: Int, critical: Int)
+    let counts: (todo: Int, inProgress: Int, completed: Int)
     let onCreateTemplate: () -> Void
     let onCreateQuickTask: () -> Void
     let canCreate: Bool
@@ -14,53 +13,38 @@ struct ChecklistDashboardView: View {
 
     @Environment(\.theme) private var theme
 
+    private let engine = PeriodicTaskEngine()
+
     private var activeRuns: [ChecklistRun] {
-        runs.filter { $0.status != .completed && $0.status != .archived && $0.status != .failed }
-    }
-
-    private var overdueRuns: [ChecklistRun] {
-        activeRuns.filter { $0.status == .overdue }
-            .sorted { ($0.dueAt ?? .distantFuture) < ($1.dueAt ?? .distantFuture) }
-    }
-
-    private var todayRuns: [ChecklistRun] {
-        let calendar = Calendar.current
-        return activeRuns.filter {
-            guard let dueAt = $0.dueAt else { return false }
-            return calendar.isDateInToday(dueAt) && $0.status != .overdue && frequency(for: $0) == .daily
-        }.sorted { ($0.dueAt ?? .distantFuture) < ($1.dueAt ?? .distantFuture) }
-    }
-
-    private var weeklyUpcomingRuns: [ChecklistRun] {
-        let now = Date()
-        let limit = Calendar.current.date(byAdding: .day, value: 7, to: now) ?? now
-        return activeRuns.filter {
-            guard let dueAt = $0.dueAt else { return false }
-            return dueAt >= now && dueAt <= limit && frequency(for: $0) == .weekly
-        }.sorted { ($0.dueAt ?? .distantFuture) < ($1.dueAt ?? .distantFuture) }
-    }
-
-    private var monthlyUpcomingRuns: [ChecklistRun] {
-        let now = Date()
-        let limit = Calendar.current.date(byAdding: .day, value: 30, to: now) ?? now
-        return activeRuns.filter {
-            guard let dueAt = $0.dueAt else { return false }
-            return dueAt >= now && dueAt <= limit && frequency(for: $0) == .monthly
-        }.sorted { ($0.dueAt ?? .distantFuture) < ($1.dueAt ?? .distantFuture) }
+        runs.filter { !$0.status.isTerminal }
     }
 
     private var inProgressRuns: [ChecklistRun] {
-        activeRuns.filter { $0.status == .inProgress }
+        activeRuns
+            .filter { $0.status == .inProgress }
             .sorted { $0.startedAt > $1.startedAt }
     }
 
-    private var activeAlerts: [ChecklistAlert] {
-        alerts.filter(\.isActive).sorted { $0.createdAt > $1.createdAt }
+    /// Da fare oggi: solo controlli del giorno corrente (in ritardo solo se scadono oggi).
+    private var todayRuns: [ChecklistRun] {
+        activeRuns
+            .filter { $0.status != .inProgress }
+            .filter { run in
+                guard run.status == .notStarted || run.status == .overdue else { return false }
+                guard let frequency = frequency(for: run) else { return false }
+                let adapter = ChecklistRunPeriodicAdapter(
+                    run: run,
+                    frequency: frequency,
+                    category: template(for: run)?.category ?? .custom,
+                    areaTag: template(for: run)?.areaTag
+                )
+                return engine.isVisibleOnDashboard(adapter)
+            }
+            .sorted { ($0.dueAt ?? .distantFuture) < ($1.dueAt ?? .distantFuture) }
     }
 
     private var hasAnySectionContent: Bool {
-        !overdueRuns.isEmpty || !todayRuns.isEmpty || !weeklyUpcomingRuns.isEmpty
-            || !monthlyUpcomingRuns.isEmpty || !inProgressRuns.isEmpty
+        !todayRuns.isEmpty || !inProgressRuns.isEmpty
     }
 
     var body: some View {
@@ -68,7 +52,7 @@ struct ChecklistDashboardView: View {
             LazyVStack(spacing: theme.spacing.sectionSpacing) {
                 ModuleScreenHeader(
                     title: "Checklist operative",
-                    subtitle: "Controlli giornalieri, settimanali e mensili HACCP",
+                    subtitle: "Solo i controlli di oggi · settimanali e mensili compaiono nel giorno previsto",
                     systemImage: "checklist"
                 )
                 .padding(.horizontal, theme.spacing.screenPadding)
@@ -77,10 +61,10 @@ struct ChecklistDashboardView: View {
                     .padding(.horizontal, theme.spacing.screenPadding)
 
                 if !hasAnySectionContent {
-                    DashboardCardView(title: "Nessuna checklist in scadenza", subtitle: "Avvia da un modello") {
+                    DashboardCardView(title: "Nessuna checklist in scadenza", subtitle: "Routine leggera") {
                         DashboardEmptyStateView(state: .init(
-                            title: "Tutto aggiornato",
-                            message: "Non ci sono checklist da completare ora. Avvia un controllo dai modelli o creane uno nuovo.",
+                            title: "Tutto aggiornato per oggi",
+                            message: "Le checklist settimanali, mensili e annuali compaiono automaticamente nel giorno previsto. I modelli restano sempre consultabili nel tab Modelli.",
                             actionTitle: "Vai ai modelli"
                         )) {
                             onGoToTemplates()
@@ -102,48 +86,21 @@ struct ChecklistDashboardView: View {
                     if !inProgressRuns.isEmpty {
                         runSection(title: "Riprendi in corso", subtitle: "\(inProgressRuns.count) avviate", runs: inProgressRuns)
                     }
-                    if !overdueRuns.isEmpty {
-                        runSection(title: "In ritardo", subtitle: "Da completare subito", runs: overdueRuns)
-                    }
                     if !todayRuns.isEmpty {
-                        runSection(title: "Oggi", subtitle: "Checklist giornaliere", runs: todayRuns)
+                        runSection(title: "Oggi", subtitle: todaySectionSubtitle, runs: todayRuns)
                     }
-                    if !weeklyUpcomingRuns.isEmpty {
-                        runSection(title: "Settimana", subtitle: "Prossimi 7 giorni", runs: weeklyUpcomingRuns)
-                    }
-                    if !monthlyUpcomingRuns.isEmpty {
-                        runSection(title: "Mese", subtitle: "Prossimi 30 giorni", runs: monthlyUpcomingRuns)
-                    }
-                }
-
-                if !activeAlerts.isEmpty {
-                    DashboardCardView(title: "Criticità aperte", subtitle: "\(activeAlerts.count) da gestire") {
-                        VStack(spacing: 10) {
-                            ForEach(activeAlerts.prefix(4)) { alert in
-                                HStack(alignment: .top, spacing: 10) {
-                                    Image(systemName: "exclamationmark.triangle.fill")
-                                        .foregroundStyle(theme.colorError)
-                                    VStack(alignment: .leading, spacing: 4) {
-                                        Text(alert.message)
-                                            .font(theme.typography.subheadline)
-                                            .foregroundStyle(theme.colorTextPrimary)
-                                        Text(alert.createdAt.formatted(date: .abbreviated, time: .shortened))
-                                            .font(theme.typography.caption)
-                                            .foregroundStyle(theme.colorTextSecondary)
-                                    }
-                                    Spacer(minLength: 0)
-                                }
-                                .padding(12)
-                                .background(theme.colorError.opacity(0.08))
-                                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                            }
-                        }
-                    }
-                    .padding(.horizontal, theme.spacing.screenPadding)
                 }
             }
             .padding(.vertical, theme.spacing.screenPadding)
         }
+    }
+
+    private var todaySectionSubtitle: String {
+        let dailies = todayRuns.filter { frequency(for: $0) == .daily }.count
+        let periodic = todayRuns.count - dailies
+        if periodic == 0 { return "Routine giornaliera" }
+        if dailies == 0 { return "Controlli periodici di oggi" }
+        return "Giornaliere e controlli periodici"
     }
 
     private var statsRow: some View {
@@ -151,7 +108,7 @@ struct ChecklistDashboardView: View {
             StatCard(
                 title: "Da fare",
                 value: "\(counts.todo)",
-                subtitle: "Non iniziate / ritardo",
+                subtitle: "Visibili oggi",
                 icon: "clock.badge.exclamationmark",
                 accent: counts.todo > 0 ? theme.colorWarning : theme.colorTextSecondary
             )
@@ -169,13 +126,6 @@ struct ChecklistDashboardView: View {
                 icon: "checkmark.seal.fill",
                 accent: theme.colorSuccess
             )
-            StatCard(
-                title: "Criticità",
-                value: "\(counts.critical)",
-                subtitle: "Alert attivi",
-                icon: "exclamationmark.triangle.fill",
-                accent: counts.critical > 0 ? theme.colorError : theme.colorTextSecondary
-            )
         }
     }
 
@@ -183,7 +133,7 @@ struct ChecklistDashboardView: View {
     private func runSection(title: String, subtitle: String, runs: [ChecklistRun]) -> some View {
         DashboardCardView(title: title, subtitle: subtitle) {
             LazyVStack(spacing: 10) {
-                ForEach(runs.prefix(8)) { run in
+                ForEach(runs.prefix(12)) { run in
                     ChecklistRunCard(
                         run: run,
                         summary: ChecklistProgressSummary.from(run: run, results: itemResults),

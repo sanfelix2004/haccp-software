@@ -16,7 +16,6 @@ enum GoodsReceiptRegister {
         let conformity: String
         let notes: String
         let operatorName: String
-        let imageData: Data?
     }
 
     static func rows(in interval: DateInterval, receipts: [GoodsReceipt], df: DateFormatter) -> [Row] {
@@ -57,8 +56,7 @@ enum GoodsReceiptRegister {
                 checklist: checklistText.isEmpty ? "—" : checklistText,
                 conformity: r.status.label,
                 notes: (r.notes ?? "").isEmpty ? "—" : (r.notes ?? ""),
-                operatorName: r.createdByNameSnapshot,
-                imageData: r.photoData
+                operatorName: r.createdByNameSnapshot
             )
         }
     }

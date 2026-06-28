@@ -1,37 +1,26 @@
 import Foundation
 
-// MARK: - Operatore HACCP — cosa può e non può fare
+// MARK: - Collaboratori esterni (non MASTER)
 //
-// L'OPERATORE HACCP (`haccpOperator`) è il collaboratore standard in cucina/sala.
-// Il MASTER può sempre tutto senza richieste aggiuntive.
-// Se l'operatore tenta un'azione non consentita → richiesta PIN MASTER.
+// Cucina, sala, operatore HACCP: lavoro operativo completo senza PIN per ogni azione.
+// Riservato a MASTER / titolare (e in parte manager): documenti PDF, utenti, sicurezza,
+// backup dati, cambio ristorante, cancellazione storico pulizie.
 //
 // ┌─────────────────────────┬──────────────────────────────────┬────────────────────────────────────────┐
-// │ Funzionalità            │ Operatore PUÒ                    │ Operatore NON PUÒ (serve PIN MASTER)   │
+// │ Funzionalità            │ Collaboratore PUÒ                │ Solo MASTER / titolare (o PIN)         │
 // ├─────────────────────────┼──────────────────────────────────┼────────────────────────────────────────┤
-// │ Dashboard / Avvisi      │ Consultare, risolvere avvisi       │ —                                      │
+// │ Tutti i moduli HACCP    │ Usare e configurare (cataloghi,  │ —                                      │
+// │                         │ checklist, fornitori, frighi…)     │                                        │
+// │ Registrazioni           │ Creare, aggiornare, eliminare    │ —                                      │
+// │ Dashboard / Avvisi      │ Consultare e risolvere             │ —                                      │
 // │ Storia / Grafici        │ Consultare                         │ —                                      │
-// │ Tracciabilità           │ Creare e aggiornare schede         │ Eliminare schede                       │
-// │ Frigoriferi             │ Registrare temperature             │ Aggiungere/modificare/eliminare frigo  │
-// │ Controllo pulizia       │ Completare task e note             │ Gestire aree/task, pulire storico      │
-// │ Abbattimento            │ Iniziare/terminare cicli           │ Gestire libreria produzioni            │
-// │ Scadenze                │ Consultare e aggiornare stati      │ —                                      │
-// │ Decongelamento          │ Avviare e completare               │ Annullare/eliminare record             │
-// │ Controllo olio          │ Inserire controlli                 │ Gestire punti olio, eliminare storico  │
-// │ Etichette produzione    │ Creare e stampare etichette        │ Gestire catalogo produzioni            │
-// │ Ricezione merci         │ Registrare ricezioni               │ Gestire anagrafica fornitori           │
-// │ Checklist               │ Eseguire checklist                 │ Creare/modificare/eliminare modelli    │
-// │ Documenti               │ Aprire, condividere, export CSV    │ Rigenerare, eliminare, export archivio │
-// │ Utenti                  │ —                                │ Qualsiasi operazione (solo MASTER)      │
-// │ Impostazioni            │ Profilo, aspetto, notifiche, info  │ Sicurezza, ristorante, HACCP, dati,    │
-// │                         │                                  │ stampanti                              │
+// │ Impostazioni            │ Profilo, aspetto, notifiche      │ Sicurezza, ristorante, backup,       │
+// │                         │                                  │ parametri HACCP, stampanti             │
+// │ Documenti PDF           │ —                                │ Archivio mensile e export              │
+// │ Utenti                  │ —                                │ Solo MASTER                            │
 // └─────────────────────────┴──────────────────────────────────┴────────────────────────────────────────┘
 //
-// Altri ruoli:
-// - VIEWER: solo lettura; qualsiasi registrazione richiede PIN MASTER.
-// - CUCINA: come operatore sui moduli cucina; moduli sala (tracciabilità, ricezione, scadenze) → PIN MASTER.
-// - CAMERIERE: come operatore sui moduli sala; moduli cucina → PIN MASTER.
-// - MANAGER / TITOLARE: configurazione diretta; eliminazioni e documenti critici → PIN MASTER.
+// VIEWER: sola lettura (nessuna registrazione senza PIN MASTER).
 
 /// Operazioni e ambiti controllati per ruolo collaboratore.
 enum AppPermission: Hashable {
@@ -65,6 +54,10 @@ struct UserPermissions: Equatable {
     var isViewer: Bool { role == .viewer }
     var isOperator: Bool { role == .haccpOperator }
     var isManagement: Bool { role == .master || role == .boss || role == .manager }
+    /// Collaboratore operativo in cucina/sala (non titolare, non sola lettura).
+    var isExternalCollaborator: Bool {
+        !isMaster && !isViewer && role != .boss && role != .manager
+    }
 
     // MARK: - Capacità dirette (senza PIN MASTER)
 
@@ -87,11 +80,9 @@ struct UserPermissions: Equatable {
 
         case .manageTemperatureDevices, .manageChecklistTemplates,
              .manageCleaningConfiguration, .manageSuppliers, .manageProductionLibrary,
-             .manageIncomingFoodCatalog, .manageOilControlPoints:
-            return isManagement
-
-        case .deleteOperationalRecords, .deleteTraceabilityRecords:
-            return isManagement
+             .manageIncomingFoodCatalog, .manageOilControlPoints,
+             .deleteOperationalRecords, .deleteTraceabilityRecords:
+            return role != .viewer
 
         case .manageDocuments:
             return role == .master || role == .boss
@@ -110,15 +101,16 @@ struct UserPermissions: Equatable {
     func canAccessModule(_ item: SidebarItem) -> Bool {
         if isMaster { return true }
         switch item {
-        case .dashboard, .history, .alerts, .settings, .documents, .analytics:
+        case .dashboard, .history, .alerts, .settings, .analytics:
             return true
+        case .documents:
+            return role == .master || role == .boss
         case .users:
             return false
-        case .traceability, .goodsReceiving, .expiryControl:
-            return role != .cucina
-        case .fridges, .cleaningControl, .blastChilling, .productionCatalog, .incomingFoodCatalog,
-             .defrost, .oilControl, .productionLabels, .checklist:
-            return role != .cameriere
+        case .traceability, .goodsReceiving, .expiryControl,
+             .fridges, .cleaningControl, .blastChilling, .productionCatalog,
+             .incomingFoodCatalog, .defrost, .oilControl, .productionLabels, .checklist:
+            return role != .viewer
         }
     }
 
@@ -141,7 +133,7 @@ struct UserPermissions: Equatable {
 
     // MARK: - Risoluzione azione (diretta vs PIN MASTER)
 
-    /// MASTER → sempre diretto. Altri ruoli → PIN MASTER se non autorizzati o per azioni critiche.
+    /// MASTER → sempre diretto. Senza permesso → PIN MASTER (sessione temporanea).
     func resolve(_ permission: AppPermission) -> PermissionAuthorization {
         if isMaster { return .allowed }
         if PrivilegedSession.shared.isElevated(permission) { return .allowed }
@@ -149,15 +141,7 @@ struct UserPermissions: Equatable {
         guard can(permission) else {
             return .requiresMaster(permission.masterOperation)
         }
-
-        switch permission {
-        case .deleteOperationalRecords, .deleteTraceabilityRecords,
-             .manageDocuments, .clearCleaningHistory, .manageUsers,
-             .manageSecuritySettings, .manageDataAndBackup:
-            return .requiresMaster(permission.masterOperation)
-        default:
-            return .allowed
-        }
+        return .allowed
     }
 
     func resolveModuleAccess(_ module: SidebarItem) -> PermissionAuthorization {
@@ -168,9 +152,14 @@ struct UserPermissions: Equatable {
         return .requiresMaster(.privilegedAction)
     }
 
-    /// Tutte le sezioni impostazioni sono visibili; quelle riservate mostrano il lucchetto.
+    /// Sezioni impostazioni personali sempre visibili; le altre con lucchetto o nascoste.
     func isSettingsSectionVisible(_ section: SettingsSection) -> Bool {
-        true
+        switch section {
+        case .profile, .appearance, .notifications, .info:
+            return true
+        case .security, .restaurant, .haccp, .data, .printer:
+            return canAccessSettingsSection(section)
+        }
     }
 }
 

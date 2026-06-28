@@ -78,13 +78,12 @@ enum HACCPRegisterCSVExporter {
         var lines: [String] = []
         lines.append(makeLine([
             "Prodotto", "Categoria", "Fornitore", "Lotto", "Scadenza", "Temp. rilevata",
-            "Esito temp.", "Conformità", "Checklist", "Note", "Operatore", "Data/ora ricezione", "Foto"
+            "Esito temp.", "Conformità", "Checklist", "Note", "Operatore", "Data/ora ricezione"
         ]))
         for r in rows {
-            let foto = r.imageData != nil ? "Sì" : "No"
             lines.append(makeLine([
                 r.product, r.category, r.supplier, r.lot, r.expiry, r.temperatureRead,
-                r.temperatureOutcome, r.conformity, r.checklist, r.notes, r.operatorName, r.receivedAt, foto
+                r.temperatureOutcome, r.conformity, r.checklist, r.notes, r.operatorName, r.receivedAt
             ]))
         }
         if rows.isEmpty { lines.append(escapeRow([HACCPRegisterCopy.noActivityInPeriod])) }
@@ -112,13 +111,12 @@ enum HACCPRegisterCSVExporter {
         var lines: [String] = []
         lines.append(makeLine([
             "Prodotto", "Lotto", "Fornitore", "Data ricezione", "Stato", "Produzioni associate", "Note NC",
-            "Operatore", "Foto"
+            "Operatore"
         ]))
         for r in rows {
-            let foto = r.imageData != nil ? "Sì" : "No"
             lines.append(makeLine([
                 r.product, r.lot, r.supplier, r.receivedAt, r.status, r.productions, r.nonCompliance,
-                r.operatorName, foto
+                r.operatorName
             ]))
         }
         if rows.isEmpty { lines.append(escapeRow([HACCPRegisterCopy.noActivityInPeriod])) }
@@ -141,13 +139,12 @@ enum HACCPRegisterCSVExporter {
         )
         var lines: [String] = []
         lines.append(makeLine([
-            "Prodotto", "Lotto", "Motivo", "Azione correttiva", "Foto", "Stato", "Risolta da", "Risolta il",
+            "Prodotto", "Lotto", "Motivo", "Azione correttiva", "Stato", "Risolta da", "Risolta il",
             "Data rilevazione", "Operatore", "Origine"
         ]))
         for r in rows {
-            let foto = r.imageData != nil ? "Sì" : "No"
             lines.append(makeLine([
-                r.product, r.lot, r.reason, r.correctiveAction, foto, r.stato, r.risoltaDa, r.risoltaIl,
+                r.product, r.lot, r.reason, r.correctiveAction, r.stato, r.risoltaDa, r.risoltaIl,
                 r.date, r.operatorName, r.source
             ]))
         }

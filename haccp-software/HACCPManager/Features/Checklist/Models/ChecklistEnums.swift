@@ -39,6 +39,7 @@ enum ChecklistFrequency: String, Codable, CaseIterable {
     case daily = "DAILY"
     case weekly = "WEEKLY"
     case monthly = "MONTHLY"
+    case annual = "ANNUAL"
     case onDemand = "ON_DEMAND"
     case custom = "CUSTOM"
 
@@ -47,8 +48,17 @@ enum ChecklistFrequency: String, Codable, CaseIterable {
         case .daily: return "Giornaliera"
         case .weekly: return "Settimanale"
         case .monthly: return "Mensile"
+        case .annual: return "Annuale"
         case .onDemand: return "Su richiesta"
         case .custom: return "Personalizzata"
+        }
+    }
+
+    /// Frequenze con ciclo automatico e visibilità just-in-time nel tab Oggi.
+    var isScheduledCycle: Bool {
+        switch self {
+        case .daily, .weekly, .monthly, .annual: return true
+        case .onDemand, .custom: return false
         }
     }
 }
@@ -69,6 +79,7 @@ enum ChecklistRunStatus: String, Codable, CaseIterable {
     case completed = "COMPLETED"
     case overdue = "OVERDUE"
     case failed = "FAILED"
+    case missed = "MISSED"
     case archived = "ARCHIVED"
 
     var label: String {
@@ -78,6 +89,7 @@ enum ChecklistRunStatus: String, Codable, CaseIterable {
         case .completed: return "Completata"
         case .overdue: return "In ritardo"
         case .failed: return "Fallita"
+        case .missed: return "Non fatta"
         case .archived: return "Archiviata"
         }
     }
@@ -87,7 +99,7 @@ enum ChecklistRunStatus: String, Codable, CaseIterable {
         case .completed: return .green
         case .inProgress, .overdue: return .yellow
         case .failed: return .red
-        case .notStarted, .archived: return .gray
+        case .notStarted, .archived, .missed: return .gray
         }
     }
 }

@@ -14,8 +14,13 @@ struct HACCPSettingsView: View {
                     .foregroundStyle(ThemeManager.shared.colorTextPrimary)
                 
                 HStack(spacing: 20) {
+                    TempConfigBox(title: "Frigo (Min)", value: $storage.haccp.fridgeMinTemp, unit: "°C")
                     TempConfigBox(title: "Frigo (Max)", value: $storage.haccp.fridgeMaxTemp, unit: "°C")
+                }
+
+                HStack(spacing: 20) {
                     TempConfigBox(title: "Freezer (Min)", value: $storage.haccp.freezerMinTemp, unit: "°C")
+                    TempConfigBox(title: "Freezer (Max)", value: $storage.haccp.freezerMaxTemp, unit: "°C")
                 }
                 
                 HStack(spacing: 20) {
@@ -110,6 +115,9 @@ struct HACCPSettingsView: View {
                             .foregroundStyle(ThemeManager.shared.colorTextPrimary)
                     }
                 }
+
+                Toggle("Codice lotto obbligatorio in tracciabilità", isOn: $storage.haccp.lotEntryMandatory)
+                    .foregroundStyle(ThemeManager.shared.colorTextPrimary)
                 
                 Stepper(value: $storage.haccp.storageDurationYears, in: 1...10) {
                     HStack {
@@ -123,16 +131,39 @@ struct HACCPSettingsView: View {
             .padding()
             .background(ThemeManager.shared.colorSurface)
             .cornerRadius(16)
+
+            VStack(alignment: .leading, spacing: 20) {
+                Text("Lettura lotti (Groq AI)")
+                    .font(.headline)
+                    .foregroundStyle(ThemeManager.shared.colorTextPrimary)
+
+                Text("Chiave API Groq per leggere lotto e scadenza dalle foto etichetta (solo Groq AI — Llama 4 Maverick, immagine 768px). Crea la chiave su console.groq.com.")
+                    .font(.caption)
+                    .foregroundStyle(ThemeManager.shared.colorTextSecondary)
+
+                SecureField("Chiave API Groq", text: Binding(
+                    get: { storage.haccp.groqApiKey ?? "" },
+                    set: { storage.haccp.groqApiKey = $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0 }
+                ))
+                .textFieldStyle(.roundedBorder)
+            }
+            .padding()
+            .background(ThemeManager.shared.colorSurface)
+            .cornerRadius(16)
+            .onChange(of: storage.haccp.fridgeMinTemp) { storage.saveAll() }
             .onChange(of: storage.haccp.fridgeMaxTemp) { storage.saveAll() }
             .onChange(of: storage.haccp.freezerMinTemp) { storage.saveAll() }
+            .onChange(of: storage.haccp.freezerMaxTemp) { storage.saveAll() }
             .onChange(of: storage.haccp.blastChillerTemp) { storage.saveAll() }
             .onChange(of: storage.haccp.tempCheckFrequency) { storage.saveAll() }
             .onChange(of: storage.haccp.warningThreshold) { storage.saveAll() }
             .onChange(of: storage.haccp.productExpiryThreshold) { storage.saveAll() }
+            .onChange(of: storage.haccp.lotEntryMandatory) { storage.saveAll() }
             .onChange(of: storage.haccp.storageDurationYears) { storage.saveAll() }
             .onChange(of: storage.haccp.oilPolarAttentionLimit) { storage.saveAll() }
             .onChange(of: storage.haccp.oilPolarMaximumLimit) { storage.saveAll() }
             .onChange(of: storage.haccp.oilNonCompliancePhotoRequired) { storage.saveAll() }
+            .onChange(of: storage.haccp.groqApiKey) { storage.saveAll() }
         }
     }
 }
@@ -173,7 +204,7 @@ struct TempConfigBox: View {
                     .fontWeight(.bold)
                     .foregroundStyle(ThemeManager.shared.colorTextPrimary)
                 Text(unit)
-                    .foregroundColor(.red)
+                    .foregroundStyle(ThemeManager.shared.colorTextSecondary)
             }
             .padding()
             .background(ThemeManager.shared.colorSurfaceElevated)

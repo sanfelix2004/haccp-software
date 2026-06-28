@@ -4,26 +4,40 @@
 
 import SwiftUI
 
+enum TraceabilityCountLabel {
+    static func piatti(_ count: Int) -> String {
+        count == 1 ? "1 piatto" : "\(count) piatti"
+    }
+
+    static func alimenti(_ count: Int) -> String {
+        count == 1 ? "1 alimento" : "\(count) alimenti"
+    }
+
+    static func piattiEAlimenti(productionCount: Int, ingredientCount: Int) -> String {
+        "\(piatti(productionCount)) · \(alimenti(ingredientCount))"
+    }
+}
+
 struct TraceabilityRecordDisplay: Equatable {
     let recordId: UUID
     let productName: String
     let lot: String
     let supplier: String
     let receivedAt: Date
-    let expiryDate: Date?
     let category: String?
     let statusLabel: String
     let badgeStyle: HACCPBadgeStyle
     let productionCount: Int
+    let linkedIngredientCount: Int
     let defrostCount: Int
     let isActionable: Bool
-    let expiryWarning: Bool
+    let needsProductionLink: Bool
 }
 
 struct TraceabilityRecordCard: View {
     let display: TraceabilityRecordDisplay
-    let image: UIImage?
     let onTap: () -> Void
+    var onQuickAssociate: (() -> Void)? = nil
 
     @Environment(\.theme) private var theme
 
@@ -38,33 +52,24 @@ struct TraceabilityRecordCard: View {
                             .foregroundStyle(theme.colorTextPrimary)
                             .multilineTextAlignment(.leading)
                         Spacer(minLength: 8)
-                        HACCPBadge(title: display.statusLabel, style: display.badgeStyle, showIcon: false)
+                        statusBadge
                     }
 
                     VStack(alignment: .leading, spacing: 4) {
                         metaRow(icon: "barcode", text: "Lotto \(display.lot)")
-                        metaRow(icon: "building.2", text: display.supplier)
+                        if display.supplier != "—" {
+                            metaRow(icon: "building.2", text: display.supplier)
+                        }
                         if let category = display.category {
                             metaRow(icon: "tag", text: category)
                         }
                         metaRow(
                             icon: "calendar",
-                            text: expiryText,
-                            tint: display.expiryWarning ? theme.colorWarning : theme.colorTextSecondary
+                            text: "Registrato \(display.receivedAt.formatted(date: .abbreviated, time: .omitted))"
                         )
                     }
 
-                    HStack(spacing: 8) {
-                        if display.productionCount > 0 {
-                            pill(icon: "fork.knife", text: "\(display.productionCount) produzioni", color: theme.colorSuccess)
-                        }
-                        if display.defrostCount > 0 {
-                            pill(icon: "snowflake", text: "Decongelato", color: theme.colorInfo)
-                        }
-                        if !display.isActionable {
-                            pill(icon: "exclamationmark.triangle", text: "Non associabile", color: theme.colorWarning)
-                        }
-                    }
+                    footerRow
                 }
                 Image(systemName: "chevron.right")
                     .font(.caption.weight(.semibold))
@@ -76,7 +81,7 @@ struct TraceabilityRecordCard: View {
             .clipShape(RoundedRectangle(cornerRadius: theme.spacing.cornerMedium, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: theme.spacing.cornerMedium, style: .continuous)
-                    .stroke(theme.colorDivider.opacity(0.8), lineWidth: 1)
+                    .stroke(borderColor, lineWidth: display.needsProductionLink ? 1.5 : 1)
             )
         }
         .buttonStyle(PremiumPressButtonStyle())
@@ -84,32 +89,67 @@ struct TraceabilityRecordCard: View {
         .accessibilityHint("Apri dettaglio prodotto")
     }
 
+    private var statusBadge: some View {
+        HACCPBadge(title: display.statusLabel, style: display.badgeStyle, showIcon: false)
+    }
+
+    private var borderColor: Color {
+        if display.needsProductionLink {
+            return theme.colorPrimary.opacity(0.45)
+        }
+        return theme.colorDivider.opacity(0.8)
+    }
+
     @ViewBuilder
-    private var photo: some View {
-        if let image {
-            HACCPZoomablePhotoThumbnail(
-                image: image,
-                size: 72,
-                zoomTitle: display.productName
-            )
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-        } else {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(theme.colorSurfaceElevated)
-                .frame(width: 72, height: 72)
-                .overlay {
-                    Image(systemName: "photo")
-                        .font(.title3)
-                        .foregroundStyle(theme.colorTextSecondary)
+    private var footerRow: some View {
+        HStack(spacing: 8) {
+            if display.productionCount > 0 {
+                pill(
+                    icon: "fork.knife",
+                    text: TraceabilityCountLabel.piattiEAlimenti(
+                        productionCount: display.productionCount,
+                        ingredientCount: display.linkedIngredientCount
+                    ),
+                    color: theme.colorSuccess
+                )
+            } else if display.needsProductionLink, let onQuickAssociate {
+                Button {
+                    onQuickAssociate()
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "link.badge.plus")
+                            .font(.caption2.weight(.bold))
+                        Text("Associa piatto")
+                            .font(theme.typography.caption2.weight(.semibold))
+                    }
+                    .foregroundStyle(theme.colorPrimary)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(theme.colorPrimary.opacity(0.12))
+                    .clipShape(Capsule())
                 }
+                .buttonStyle(.plain)
+            }
+            if display.defrostCount > 0 {
+                pill(icon: "snowflake", text: "Decongelato", color: theme.colorInfo)
+            }
+            if !display.isActionable {
+                pill(icon: "lock.fill", text: "Chiuso", color: theme.colorTextSecondary)
+            }
+            Spacer(minLength: 0)
         }
     }
 
-    private var expiryText: String {
-        if let expiry = display.expiryDate {
-            return "Scadenza \(expiry.formatted(date: .abbreviated, time: .omitted))"
-        }
-        return "Scadenza non indicata"
+    @ViewBuilder
+    private var photo: some View {
+        RoundedRectangle(cornerRadius: 12, style: .continuous)
+            .fill(theme.colorPrimary.opacity(0.1))
+            .frame(width: 72, height: 72)
+            .overlay {
+                Image(systemName: "shippingbox.fill")
+                    .font(.title3)
+                    .foregroundStyle(theme.colorPrimary)
+            }
     }
 
     private func metaRow(icon: String, text: String, tint: Color? = nil) -> some View {

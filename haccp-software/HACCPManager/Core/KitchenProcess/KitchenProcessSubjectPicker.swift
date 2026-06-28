@@ -165,7 +165,9 @@ struct KitchenProcessSubjectPicker: View {
             } else {
                 BlastChillingProductionGridView(
                     productions: filteredProductions,
+                    categories: productionCategories,
                     selectedProductionId: subject.productionId,
+                    groupsByCategory: selectedProductionCategoryId == nil,
                     onSelect: { subject = .from(production: $0) }
                 )
             }

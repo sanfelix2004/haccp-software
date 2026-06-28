@@ -9,7 +9,12 @@ struct CleaningControlView: View {
     @Query private var tasks: [CleaningTask]
     @Query private var records: [CleaningRecord]
     @Query private var criticalities: [CleaningCriticality]
+    @Query private var checklistTemplates: [ChecklistTemplate]
+    @Query private var checklistRuns: [ChecklistRun]
+    @Query private var checklistItemResults: [ChecklistItemResult]
     @StateObject private var vm = CleaningControlViewModel()
+    private let cleaningBFF = CleaningTaskBFF()
+    private let checklistService = ChecklistService()
     @State private var pendingCriticalityRecord: CleaningRecord?
     @State private var showCriticalitySheet = false
     @State private var pendingCriticalityOriginalOutcome: CleaningTaskOutcome?
@@ -51,27 +56,107 @@ struct CleaningControlView: View {
         return records.filter { $0.restaurantId == rid }
     }
 
+    private var completedCleaningRuns: [ChecklistRun] {
+        guard let rid = appState.activeRestaurantId else { return [] }
+        let templateIds = Set(cleaningTemplates.map(\.id))
+        return checklistRuns
+            .filter { $0.restaurantId == rid && templateIds.contains($0.templateId) }
+            .filter { $0.status == .completed || $0.status == .failed || $0.status == .missed || $0.status == .archived }
+            .sorted { ($0.completedAt ?? $0.startedAt) > ($1.completedAt ?? $1.startedAt) }
+    }
+
+    private var templateById: [UUID: ChecklistTemplate] {
+        Dictionary(uniqueKeysWithValues: cleaningTemplates.map { ($0.id, $0) })
+    }
+
+    private func areaTag(for run: ChecklistRun) -> String {
+        templateById[run.templateId]?.areaTag?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+            ? (templateById[run.templateId]?.areaTag ?? "Senza area")
+            : "Senza area"
+    }
+
+    private func areaNames(for runs: [ChecklistRun]) -> [String] {
+        Array(Set(runs.map { areaTag(for: $0) })).sorted()
+    }
+
+    private func taskTitle(for run: ChecklistRun) -> String {
+        if let template = templateById[run.templateId], template.isCleaningBridge {
+            let parts = template.title.split(separator: "·", maxSplits: 1).map { $0.trimmingCharacters(in: .whitespaces) }
+            if parts.count == 2 { return String(parts[1]) }
+        }
+        return templateById[run.templateId]?.title ?? run.templateTitleSnapshot
+    }
+
+    private func badgeStyle(for status: ChecklistRunStatus) -> HACCPBadgeStyle {
+        switch status {
+        case .completed: return .conforme
+        case .failed: return .nonConforme
+        case .missed: return .warning
+        case .archived: return .neutral
+        default: return .info
+        }
+    }
+
+    private func periodDescription(for run: ChecklistRun) -> String {
+        let start = run.startedAt.formatted(date: .abbreviated, time: .shortened)
+        let end = run.dueAt?.formatted(date: .abbreviated, time: .shortened) ?? "—"
+        return "Ciclo: \(start) → \(end)"
+    }
+
+    private func automaticTimestampDescription(for run: ChecklistRun) -> String {
+        if let completedAt = run.completedAt {
+            return "Registrato il: \(completedAt.formatted(date: .abbreviated, time: .shortened))"
+        }
+        return "Scaduto il: \(run.dueAt?.formatted(date: .abbreviated, time: .shortened) ?? "—")"
+    }
+
+    private func runDetails(for run: ChecklistRun) -> (notes: String, action: String) {
+        let results = checklistItemResults.filter { $0.checklistRunId == run.id }
+        let notesParts = results.compactMap { $0.note }.filter { !$0.isEmpty }
+        let notes = notesParts.joined(separator: " · ")
+        let fails = results.filter { $0.result == .fail }.map(\.titleSnapshot).joined(separator: " · ")
+        return (notes: (run.notes ?? "").isEmpty ? notes : (run.notes ?? ""), action: fails)
+    }
+
     private var scopedCriticalities: [CleaningCriticality] {
         guard let rid = appState.activeRestaurantId else { return [] }
         return criticalities.filter { $0.restaurantId == rid }
     }
 
-    private var grouped: (todo: [CleaningTaskCard], overdue: [CleaningTaskCard], completed: [CleaningTaskCard], history: [CleaningRecord]) {
-        guard let rid = appState.activeRestaurantId else { return ([], [], [], []) }
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.locale = Locale(identifier: "it_IT")
-        calendar.timeZone = .current
-        return vm.service.buildTaskCards(
-            restaurantId: rid,
-            tasks: scopedTasks,
-            records: scopedRecords,
-            criticalities: scopedCriticalities,
-            calendar: calendar
-        )
+    private var cleaningTemplates: [ChecklistTemplate] {
+        guard let rid = appState.activeRestaurantId else { return [] }
+        return checklistTemplates.filter {
+            $0.restaurantId == rid && $0.isActive && $0.isCleaningModule
+        }
     }
 
-    private var summary: CleaningSummary {
-        vm.service.summary(for: grouped.todo + grouped.overdue + grouped.completed)
+    private var cleaningRuns: [ChecklistRun] {
+        guard let rid = appState.activeRestaurantId else { return [] }
+        let templateIds = Set(cleaningTemplates.map(\.id))
+        return checklistRuns.filter {
+            $0.restaurantId == rid && !$0.isArchived && templateIds.contains($0.templateId)
+        }
+    }
+
+    private var runBasedSummary: CleaningSummary {
+        let engine = PeriodicTaskEngine()
+        let templateById = Dictionary(uniqueKeysWithValues: cleaningTemplates.map { ($0.id, $0) })
+        let relevant = cleaningRuns.filter { run in
+            guard let template = templateById[run.templateId] else { return false }
+            let adapter = ChecklistRunPeriodicAdapter(
+                run: run,
+                frequency: template.frequency,
+                category: .cleaning,
+                areaTag: template.areaTag
+            )
+            if run.status == .completed {
+                return engine.isInCurrentCycle(task: adapter, now: Date())
+            }
+            if run.status.isTerminal { return false }
+            return engine.isVisibleOnDashboard(adapter) || run.status == .inProgress
+        }
+        let completed = relevant.filter { $0.status == .completed }.count
+        return CleaningSummary(completed: completed, total: relevant.count)
     }
 
     var body: some View {
@@ -122,12 +207,15 @@ struct CleaningControlView: View {
                         .pickerStyle(.segmented)
 
                         switch vm.selectedTab {
-                        case .oggi:
-                            cardList(grouped.todo, emptyText: "Nessun task da fare oggi.")
-                        case .ritardo:
-                            cardList(grouped.overdue, emptyText: "Nessun task in ritardo.")
-                        case .completate:
-                            cardList(grouped.completed, emptyText: "Nessun task completato.")
+                        case .attivita:
+                            CleaningDashboardView(
+                                runs: cleaningRuns,
+                                templates: cleaningTemplates,
+                                service: checklistService,
+                                user: currentUser,
+                                canExecute: canExecute,
+                                onSync: syncCleaningSchedule
+                            )
                         case .storico:
                             historyList
                         }
@@ -156,10 +244,10 @@ struct CleaningControlView: View {
             Text("Completamento periodo corrente")
                 .font(.subheadline.bold())
                 .foregroundStyle(ThemeManager.shared.colorTextPrimary)
-            Text("\(summary.completed) / \(summary.total) task · \(Int(summary.percentage * 100))%")
+            Text("\(runBasedSummary.completed) / \(runBasedSummary.total) task · \(Int(runBasedSummary.percentage * 100))%")
                 .font(.caption)
                 .foregroundStyle(ThemeManager.shared.colorTextSecondary)
-            ProgressView(value: summary.percentage)
+            ProgressView(value: runBasedSummary.percentage)
                 .tint(ThemeManager.shared.colorSuccess)
         }
         .padding(10)
@@ -209,7 +297,48 @@ struct CleaningControlView: View {
             }
             ProgressView(value: total == 0 ? 0.0 : Double(completed) / Double(total))
                 .tint(ThemeManager.shared.colorSuccess)
+
+            if !areaChecklistHints(for: areaName).isEmpty {
+                areaChecklistHintsView(areaName: areaName)
+            }
         }
+    }
+
+    private func areaChecklistHints(for areaName: String) -> [ChecklistTemplate] {
+        guard let rid = appState.activeRestaurantId else { return [] }
+        let engine = PeriodicTaskEngine()
+        return checklistTemplates.filter { template in
+            guard template.restaurantId == rid, template.isActive, !template.isCleaningBridge else { return false }
+            guard template.areaTag?.localizedCaseInsensitiveCompare(areaName) == .orderedSame else { return false }
+            guard let run = checklistRuns.first(where: { $0.templateId == template.id && !$0.isArchived }) else {
+                return true
+            }
+            let adapter = ChecklistRunPeriodicAdapter(
+                run: run,
+                frequency: template.frequency,
+                category: template.category,
+                areaTag: template.areaTag
+            )
+            return engine.isVisibleOnDashboard(adapter) && adapter.isOpen
+        }
+    }
+
+    @ViewBuilder
+    private func areaChecklistHintsView(areaName: String) -> some View {
+        let hints = areaChecklistHints(for: areaName)
+        VStack(alignment: .leading, spacing: 4) {
+            Label("Anche in checklist per quest'area", systemImage: "checklist")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(ThemeManager.shared.colorInfo)
+            ForEach(hints) { template in
+                Text("· \(template.title)")
+                    .font(.caption2)
+                    .foregroundStyle(ThemeManager.shared.colorTextSecondary)
+            }
+        }
+        .padding(8)
+        .background(ThemeManager.shared.colorInfo.opacity(0.08))
+        .cornerRadius(8)
     }
 
     private func completedCount(in cards: [CleaningTaskCard]) -> Int {
@@ -295,60 +424,68 @@ struct CleaningControlView: View {
     }
 
     private var historyList: some View {
-        let history = Array(grouped.history.prefix(200))
+        let history = completedCleaningRuns
         return VStack(spacing: 14) {
-            ForEach(areaNames(in: history), id: \.self) { areaName in
-                let areaRecords = history.filter { $0.areaName == areaName }
-                VStack(alignment: .leading, spacing: 10) {
-                    areaSectionHeader(areaName: areaName, completed: completedCount(in: areaRecords), total: areaRecords.count)
-                    ForEach(areaRecords) { record in
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(record.taskName)
-                                .foregroundStyle(ThemeManager.shared.colorTextPrimary)
-                            Text("\(record.outcome.label) · \(record.updatedByNameSnapshot)")
-                                .font(.caption)
-                                .foregroundStyle(ThemeManager.shared.colorTextSecondary)
-                            Text(periodDescription(for: record))
-                                .font(.caption2)
-                                .foregroundStyle(ThemeManager.shared.colorTextSecondary)
-                            Text(automaticTimestampDescription(for: record))
-                                .font(.caption2)
-                                .foregroundStyle(ThemeManager.shared.colorInfo)
-                            if let note = record.notes, !note.isEmpty {
-                                Text("Note: \(note)")
+            if history.isEmpty {
+                DashboardEmptyStateView(state: .init(title: "Nessun elemento", message: "Nessun task di pulizia completato o scaduto nello storico.", actionTitle: nil))
+            } else {
+                ForEach(areaNames(for: history), id: \.self) { areaName in
+                    let areaRuns = history.filter { areaTag(for: $0) == areaName }
+                    VStack(alignment: .leading, spacing: 10) {
+                        let completed = areaRuns.filter { $0.status == .completed }.count
+                        areaSectionHeader(areaName: areaName, completed: completed, total: areaRuns.count)
+                        ForEach(areaRuns) { run in
+                            VStack(alignment: .leading, spacing: 4) {
+                                HStack {
+                                    Text(taskTitle(for: run))
+                                        .font(.subheadline.bold())
+                                        .foregroundStyle(ThemeManager.shared.colorTextPrimary)
+                                    Spacer()
+                                    HACCPBadge(
+                                        title: run.status.label,
+                                        style: badgeStyle(for: run.status),
+                                        showIcon: false
+                                    )
+                                }
+                                Text("Esito: \(run.status.label) · \(run.completedByNameSnapshot ?? "—")")
+                                    .font(.caption)
+                                    .foregroundStyle(ThemeManager.shared.colorTextSecondary)
+                                Text(periodDescription(for: run))
                                     .font(.caption2)
                                     .foregroundStyle(ThemeManager.shared.colorTextSecondary)
-                            }
-                            if let action = record.correctiveAction, !action.isEmpty {
-                                Text("Azione correttiva: \(action)")
+                                Text(automaticTimestampDescription(for: run))
                                     .font(.caption2)
-                                    .foregroundStyle(ThemeManager.shared.colorWarning)
+                                    .foregroundStyle(ThemeManager.shared.colorInfo)
+                                
+                                let details = runDetails(for: run)
+                                if !details.notes.isEmpty {
+                                    Text("Note: \(details.notes)")
+                                        .font(.caption2)
+                                        .foregroundStyle(ThemeManager.shared.colorTextSecondary)
+                                }
+                                if !details.action.isEmpty {
+                                    Text("Criticità: \(details.action)")
+                                        .font(.caption2)
+                                        .foregroundStyle(ThemeManager.shared.colorWarning)
+                                }
                             }
+                            .padding(10)
+                            .background(ThemeManager.shared.colorSurface)
+                            .cornerRadius(10)
                         }
-                        .padding(10)
-                        .background(ThemeManager.shared.colorSurface)
-                        .cornerRadius(10)
                     }
+                    .padding(12)
+                    .background(
+                        RoundedRectangle(cornerRadius: 16)
+                            .fill(ThemeManager.shared.colorSurface)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 16)
+                                    .stroke(ThemeManager.shared.colorDivider, lineWidth: 1)
+                            )
+                    )
                 }
-                .padding(12)
-                .background(
-                    RoundedRectangle(cornerRadius: 16)
-                        .fill(ThemeManager.shared.colorSurface)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 16)
-                                .stroke(ThemeManager.shared.colorDivider, lineWidth: 1)
-                        )
-                )
             }
         }
-    }
-
-    private func completedCount(in records: [CleaningRecord]) -> Int {
-        records.filter { $0.outcome != .daFare }.count
-    }
-
-    private func areaNames(in records: [CleaningRecord]) -> [String] {
-        Array(Set(records.map(\.areaName))).sorted()
     }
 
     private func updateOutcome(for card: CleaningTaskCard, outcome: CleaningTaskOutcome) {
@@ -377,6 +514,19 @@ struct CleaningControlView: View {
             resolveCriticalityIfNeeded(for: card.record, by: user)
         }
         try? modelContext.save()
+        syncCleaningToChecklistEngine(taskId: card.id, record: card.record, outcome: card.record.outcome)
+    }
+
+    private func syncCleaningToChecklistEngine(taskId: UUID, record: CleaningRecord, outcome: CleaningTaskOutcome) {
+        guard let user = currentUser,
+              let task = scopedTasks.first(where: { $0.id == taskId }) else { return }
+        try? cleaningBFF.syncOutcome(
+            task: task,
+            record: record,
+            outcome: outcome,
+            user: user,
+            modelContext: modelContext
+        )
     }
 
     private func createOrUpdateCriticality(for record: CleaningRecord, by user: LocalUser, note: String, action: String) {
@@ -435,6 +585,9 @@ struct CleaningControlView: View {
                     record.updatedByNameSnapshot = user.name
                     createOrUpdateCriticality(for: record, by: user, note: note, action: action)
                     try? modelContext.save()
+                    if let task = scopedTasks.first(where: { $0.id == record.taskId }) {
+                        syncCleaningToChecklistEngine(taskId: task.id, record: record, outcome: .nonPulito)
+                    }
                     showCriticalitySheet = false
                     pendingCriticalityRecord = nil
                     pendingCriticalityOriginalOutcome = nil
@@ -637,6 +790,24 @@ struct CleaningControlView: View {
         var cal = Calendar(identifier: .gregorian)
         cal.locale = Locale(identifier: "it_IT")
         cal.timeZone = .current
+        vm.service.closeStaleCleaningRecords(
+            restaurantId: rid,
+            tasks: scopedTasks,
+            records: scopedRecords,
+            calendar: cal,
+            modelContext: modelContext
+        )
+        cleaningBFF.ensureBridgeTemplates(
+            restaurantId: rid,
+            tasks: scopedTasks,
+            user: user,
+            modelContext: modelContext
+        )
+        checklistService.syncScheduledRuns(
+            restaurantId: rid,
+            user: user,
+            modelContext: modelContext
+        )
         for task in scopedTasks where task.restaurantId == rid && task.isActive {
             _ = vm.service.ensureRecordForCurrentPeriod(
                 task: task,
@@ -647,6 +818,22 @@ struct CleaningControlView: View {
                 modelContext: modelContext
             )
         }
+        try? modelContext.save()
+    }
+
+    private func syncCleaningSchedule() {
+        guard let rid = appState.activeRestaurantId, let user = currentUser else { return }
+        cleaningBFF.ensureBridgeTemplates(
+            restaurantId: rid,
+            tasks: scopedTasks,
+            user: user,
+            modelContext: modelContext
+        )
+        checklistService.syncScheduledRuns(
+            restaurantId: rid,
+            user: user,
+            modelContext: modelContext
+        )
         try? modelContext.save()
     }
 }

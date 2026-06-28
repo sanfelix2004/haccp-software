@@ -11,6 +11,9 @@ struct AlertsView: View {
     @Query private var cleaningCriticalities: [CleaningCriticality]
     @Query private var oilAlerts: [OilControlAlert]
     @Query private var defrostCriticalities: [DefrostCriticality]
+    @Query private var traceabilityRecords: [TraceabilityRecord]
+    @Query private var goodsReceipts: [GoodsReceivingRecord]
+    @Query private var productionLabels: [ProductionLabelRecord]
     @Query private var users: [LocalUser]
 
     @State private var alertToResolve: UnifiedAlert?
@@ -20,103 +23,49 @@ struct AlertsView: View {
 
     private let checklistService = ChecklistService()
 
-    private var activeChecklistAlerts: [ChecklistAlert] {
-        guard let rid = appState.activeRestaurantId else { return [] }
-        return checklistAlerts.filter { $0.restaurantId == rid && $0.isActive }
-    }
-    private var activeTemperatureAlerts: [TemperatureAlert] {
-        guard let rid = appState.activeRestaurantId else { return [] }
-        return temperatureAlerts.filter { $0.restaurantId == rid && $0.isActive }
-    }
-    private var activeCleaningCriticalities: [CleaningCriticality] {
-        guard let rid = appState.activeRestaurantId else { return [] }
-        return cleaningCriticalities.filter { $0.restaurantId == rid && !$0.isResolved }
-    }
-    private var activeOilAlerts: [OilControlAlert] {
-        guard let rid = appState.activeRestaurantId else { return [] }
-        return oilAlerts.filter { $0.restaurantId == rid && $0.isActive }
-    }
-    private var activeDefrostCriticalities: [DefrostCriticality] {
-        guard let rid = appState.activeRestaurantId else { return [] }
-        return defrostCriticalities.filter { $0.restaurantId == rid && !$0.isResolved }
-    }
-
     private var currentUser: LocalUser? {
         users.first(where: { $0.id == appState.currentUserId })
+    }
+
+    private var soonThresholdDays: Int {
+        SettingsStorageService.shared.haccp.productExpiryThreshold
     }
 
     // MARK: - Unified model
 
     private var allAlerts: [UnifiedAlert] {
-        var result: [UnifiedAlert] = []
-
-        result += activeTemperatureAlerts.map { alert in
+        guard let rid = appState.activeRestaurantId else { return [] }
+        return HACCPUnifiedAlertsBuilder.build(
+            restaurantId: rid,
+            temperatureAlerts: temperatureAlerts,
+            cleaningCriticalities: cleaningCriticalities,
+            defrostCriticalities: defrostCriticalities,
+            oilAlerts: oilAlerts,
+            checklistAlerts: checklistAlerts,
+            traceabilityRecords: traceabilityRecords,
+            goodsReceipts: goodsReceipts,
+            productionLabels: productionLabels,
+            soonThresholdDays: soonThresholdDays,
+            resolveTemperature: resolveTemperatureAlert,
+            resolveCleaning: resolveCriticality,
+            resolveDefrost: resolveDefrostCriticality,
+            resolveOil: resolveOilAlert,
+            resolveTraceabilityNC: resolveTraceabilityNC,
+            resolveGoodsNC: resolveGoodsNC
+        ).map { candidate in
             UnifiedAlert(
-                id: alert.id,
-                module: "Temperature",
-                icon: "thermometer.medium",
-                title: "Temperatura fuori range · \(alert.deviceName)",
-                detail: alert.message,
-                date: alert.createdAt,
-                severity: badgeStyle(for: alert.severity),
-                navigationTarget: .fridges,
-                resolve: { resolveTemperatureAlert(alert) }
+                id: candidate.id,
+                module: candidate.module,
+                icon: candidate.icon,
+                title: candidate.title,
+                detail: candidate.detail,
+                date: candidate.date,
+                severity: candidate.severity,
+                navigationTarget: candidate.navigationTarget,
+                checklistAlert: candidate.checklistAlert,
+                resolve: candidate.resolve
             )
         }
-        result += activeCleaningCriticalities.map { c in
-            UnifiedAlert(
-                id: c.id,
-                module: "Pulizia",
-                icon: "sparkles",
-                title: "Pulizia non conforme · \(c.areaName)",
-                detail: "\(c.taskName) — Azione: \(c.correctiveAction)",
-                date: c.createdAt,
-                severity: .nonConforme,
-                navigationTarget: .cleaningControl,
-                resolve: { resolveCriticality(c) }
-            )
-        }
-        result += activeDefrostCriticalities.map { c in
-            UnifiedAlert(
-                id: c.id,
-                module: "Decongelamento",
-                icon: "snowflake",
-                title: "Decongelamento · \(c.productName)",
-                detail: "\(c.reason) — Azione: \(c.correctiveAction)",
-                date: c.createdAt,
-                severity: .warning,
-                navigationTarget: .defrost,
-                resolve: { resolveDefrostCriticality(c) }
-            )
-        }
-        result += activeOilAlerts.map { alert in
-            UnifiedAlert(
-                id: alert.id,
-                module: "Olio",
-                icon: "drop.fill",
-                title: "Olio critico · \(alert.oilPointName)",
-                detail: alert.message,
-                date: alert.createdAt,
-                severity: .warning,
-                navigationTarget: .oilControl,
-                resolve: { resolveOilAlert(alert) }
-            )
-        }
-        result += activeChecklistAlerts.map { alert in
-            UnifiedAlert(
-                id: alert.id,
-                module: "Checklist",
-                icon: "checklist",
-                title: alert.message,
-                detail: nil,
-                date: alert.createdAt,
-                severity: badgeStyle(for: alert.severity),
-                navigationTarget: .checklist,
-                checklistAlert: alert
-            )
-        }
-
-        return result.sorted { $0.date > $1.date }
     }
 
     private var criticalCount: Int { allAlerts.filter { $0.severity == .nonConforme }.count }
@@ -196,7 +145,7 @@ struct AlertsView: View {
             LazyVStack(spacing: theme.spacing.sectionSpacing) {
                 ModuleScreenHeader(
                     title: "Avvisi",
-                    subtitle: "Criticità aperte da temperature, pulizie, olio, decongelamento e checklist",
+                    subtitle: "Criticità da temperature, pulizie, scadenze, tracciabilità, ricezione, etichette e checklist",
                     systemImage: "bell.badge.fill",
                     help: ModuleHelpLibrary.sidebar(.alerts)
                 )
@@ -207,7 +156,7 @@ struct AlertsView: View {
                     DashboardCardView(title: "Avvisi") {
                         DashboardEmptyStateView(state: .init(
                             title: "Tutto sotto controllo",
-                            message: "Nessun avviso attivo. Gli alert di temperatura, pulizia, olio, decongelamento e checklist appariranno qui.",
+                            message: "Nessun avviso attivo. Compariranno qui scadenze, NC, temperature, pulizie, etichette e checklist.",
                             actionTitle: nil
                         ))
                     }
@@ -272,19 +221,27 @@ struct AlertsView: View {
         appState.pendingSidebarNavigation = target
     }
 
-    private func badgeStyle(for severity: TemperatureSeverity) -> HACCPBadgeStyle {
-        switch severity {
-        case .critical, .high: return .nonConforme
-        case .warning: return .warning
-        case .info: return .info
+    private func resolveGoodsNC(_ receipt: GoodsReceivingRecord) {
+        guard let user = currentUser else { return }
+        receipt.nonComplianceResolvedAt = Date()
+        receipt.nonComplianceResolvedByNameSnapshot = user.name
+        if let record = traceabilityRecords.first(where: { $0.goodsReceiptId == receipt.id }) {
+            record.nonComplianceResolvedAt = receipt.nonComplianceResolvedAt
+            record.nonComplianceResolvedByNameSnapshot = user.name
         }
+        try? modelContext.save()
     }
 
-    private func badgeStyle(for severity: ChecklistAlertSeverity) -> HACCPBadgeStyle {
-        switch severity {
-        case .critical: return .nonConforme
-        case .high, .warning: return .warning
+    private func resolveTraceabilityNC(_ record: TraceabilityRecord) {
+        guard let user = currentUser else { return }
+        record.nonComplianceResolvedAt = Date()
+        record.nonComplianceResolvedByNameSnapshot = user.name
+        if let receiptId = record.goodsReceiptId,
+           let receipt = goodsReceipts.first(where: { $0.id == receiptId }) {
+            receipt.nonComplianceResolvedAt = record.nonComplianceResolvedAt
+            receipt.nonComplianceResolvedByNameSnapshot = user.name
         }
+        try? modelContext.save()
     }
 
     private func resolveDefrostCriticality(_ criticality: DefrostCriticality) {

@@ -153,7 +153,8 @@ struct BlastChillingService {
         category: ProductionCategory,
         restaurantId: UUID,
         existingProductions: [Production],
-        modelContext: ModelContext
+        modelContext: ModelContext,
+        shelfLifeDays: Int? = nil
     ) throws {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
@@ -171,7 +172,8 @@ struct BlastChillingService {
                 name: trimmed,
                 categoryId: category.id,
                 categoryNameSnapshot: category.name,
-                isCustom: true
+                isCustom: true,
+                shelfLifeDays: shelfLifeDays
             )
         )
         try modelContext.save()
@@ -182,7 +184,8 @@ struct BlastChillingService {
         name: String,
         category: ProductionCategory,
         existingProductions: [Production],
-        modelContext: ModelContext
+        modelContext: ModelContext,
+        shelfLifeDays: Int? = nil
     ) throws {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
@@ -198,6 +201,7 @@ struct BlastChillingService {
         production.name = trimmed
         production.categoryId = category.id
         production.categoryNameSnapshot = category.name
+        production.shelfLifeDays = shelfLifeDays
         try modelContext.save()
     }
 

@@ -38,24 +38,96 @@ enum CleaningRegister {
         let outcome: String
         let operatorName: String
         let notes: String
+        let source: String
     }
 
     static func rows(in interval: DateInterval, records: [CleaningRecord], df: DateFormatter) -> [Row] {
-        records
-            .filter { interval.contains($0.updatedAt) || interval.contains($0.periodStart) }
-            .sorted { $0.updatedAt > $1.updatedAt }
-            .map { r in
-                let period = "\(df.string(from: r.periodStart)) → \(df.string(from: r.periodEnd))"
-                return Row(
-                    area: r.areaName,
-                    task: r.taskName,
-                    frequency: r.frequency.label,
+        unifiedRows(
+            in: interval,
+            records: records,
+            runs: [],
+            itemResults: [],
+            templates: [],
+            df: df
+        )
+    }
+
+    /// Registro sanificazione unificato: task pulizie + checklist procedurali (esclude bridge già coperti dai record pulizia).
+    static func unifiedRows(
+        in interval: DateInterval,
+        records: [CleaningRecord],
+        runs: [ChecklistRun],
+        itemResults: [ChecklistItemResult],
+        templates: [ChecklistTemplate],
+        df: DateFormatter
+    ) -> [Row] {
+        var dated: [(Date, Row)] = []
+
+        for record in records where interval.contains(record.updatedAt) || interval.contains(record.periodStart) {
+            let period = "\(df.string(from: record.periodStart)) → \(df.string(from: record.periodEnd))"
+            dated.append((
+                record.updatedAt,
+                Row(
+                    area: record.areaName,
+                    task: record.taskName,
+                    frequency: record.frequency.label,
                     period: period,
-                    outcome: r.outcome.label,
-                    operatorName: r.updatedByNameSnapshot,
-                    notes: (r.notes ?? "").isEmpty ? "—" : (r.notes ?? "")
+                    outcome: record.outcome.label,
+                    operatorName: record.updatedByNameSnapshot,
+                    notes: combinedNotes(record.notes, record.correctiveAction),
+                    source: "Pulizie"
                 )
-            }
+            ))
+        }
+
+        let templateById = Dictionary(uniqueKeysWithValues: templates.map { ($0.id, $0) })
+        let resultsByRun = Dictionary(grouping: itemResults, by: \.checklistRunId)
+        let bridgeTemplateIds = Set(templates.filter(\.isCleaningBridge).map(\.id))
+
+        for run in runs {
+            guard let template = templateById[run.templateId] else { continue }
+            guard !bridgeTemplateIds.contains(template.id) else { continue }
+            guard template.category == .cleaning else { continue }
+            let anchor = run.completedAt ?? run.startedAt
+            guard interval.contains(anchor) || interval.contains(run.startedAt) else { continue }
+
+            let scoped = resultsByRun[run.id] ?? []
+            let fails = scoped.filter { $0.result == .fail }.map(\.titleSnapshot).joined(separator: "; ")
+            let itemNotes = scoped.compactMap(\.note).filter { !$0.isEmpty }.joined(separator: "; ")
+            let periodEnd = run.completedAt.map { df.string(from: $0) } ?? "—"
+            let period = "\(df.string(from: run.startedAt)) → \(periodEnd)"
+
+            dated.append((
+                anchor,
+                Row(
+                    area: template.areaTag ?? "—",
+                    task: run.templateTitleSnapshot,
+                    frequency: template.frequency.label,
+                    period: period,
+                    outcome: checklistOutcomeLabel(run: run, items: scoped),
+                    operatorName: run.completedByNameSnapshot ?? "—",
+                    notes: combinedNotes(run.notes, fails.isEmpty ? itemNotes : fails),
+                    source: "Checklist"
+                )
+            ))
+        }
+
+        return dated.sorted { $0.0 > $1.0 }.map(\.1)
+    }
+
+    private static func checklistOutcomeLabel(run: ChecklistRun, items: [ChecklistItemResult]) -> String {
+        if items.contains(where: { $0.result == .fail }) { return "Non conforme" }
+        if run.status == .completed, items.allSatisfy({ $0.result == .pass || $0.result == .notApplicable }) {
+            return "Conforme"
+        }
+        return run.status.label
+    }
+
+    private static func combinedNotes(_ notes: String?, _ extra: String?) -> String {
+        let parts = [notes, extra]
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        return parts.isEmpty ? "—" : parts.joined(separator: " · ")
     }
 }
 

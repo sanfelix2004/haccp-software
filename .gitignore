@@ -31,4 +31,7 @@ DerivedData/
 #
 .pantry/
 
+# API keys (non committare)
+**/GeminiSecrets.plist
+
 # End of Swift.gitignore

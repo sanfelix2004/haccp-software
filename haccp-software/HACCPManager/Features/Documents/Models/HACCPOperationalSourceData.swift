@@ -9,5 +9,11 @@ struct HACCPOperationalSourceData {
     var oilControlRecords: [OilControlRecord] = []
     var checklistRuns: [ChecklistRun] = []
     var checklistItemResults: [ChecklistItemResult] = []
+    var checklistTemplates: [ChecklistTemplate] = []
     var productionLabels: [ProductionLabelRecord] = []
+    var productionIncomingIngredients: [ProductionIncomingIngredient] = []
+    var produzioneBatches: [ProduzioneBatch] = []
+    var ingredientiTracciati: [IngredienteTracciato] = []
+    var lottoProductionLinks: [LottoFotoProductionLink] = []
+    var lottoFotos: [LottoFoto] = []
 }

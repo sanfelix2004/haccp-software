@@ -11,7 +11,6 @@ enum TraceabilityRegister {
         let productions: String
         let nonCompliance: String
         let operatorName: String
-        let imageData: Data?
     }
 
     static func rows(
@@ -25,7 +24,6 @@ enum TraceabilityRegister {
     ) -> [Row] {
         let prodById = Dictionary(uniqueKeysWithValues: productions.map { ($0.id, $0) })
         let linksByReceived = Dictionary(grouping: links, by: \.receivedItemId)
-        let imageMap = Dictionary(grouping: images, by: \.receivedItemId)
 
         let filtered = records
             .filter { interval.contains($0.receivedAt) }
@@ -50,19 +48,6 @@ enum TraceabilityRegister {
                 ncParts.append("Ricezione: \(st.label)")
             }
 
-            let imgs = imageMap[t.id] ?? []
-            let photo: Data? = {
-                if let nc = imgs.first(where: { $0.type == .nonComplianceRequired }) {
-                    if let d = nc.imageData { return d }
-                    if let p = nc.localPath { return try? Data(contentsOf: URL(fileURLWithPath: p)) }
-                }
-                if let d = imgs.compactMap(\.imageData).first { return d }
-                if let path = imgs.compactMap(\.localPath).first {
-                    return try? Data(contentsOf: URL(fileURLWithPath: path))
-                }
-                return t.photoData
-            }()
-
             return Row(
                 product: t.productName,
                 lot: t.lotCode.isEmpty ? "—" : t.lotCode,
@@ -71,8 +56,7 @@ enum TraceabilityRegister {
                 status: t.productStatus.label,
                 productions: productionsLabel,
                 nonCompliance: ncParts.isEmpty ? "—" : ncParts.joined(separator: "; "),
-                operatorName: t.createdByNameSnapshot,
-                imageData: photo
+                operatorName: t.createdByNameSnapshot
             )
         }
     }

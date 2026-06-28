@@ -375,7 +375,9 @@ enum ProductionLabelSourceItem: Identifiable {
     ) -> [ProductionLabelSourceItem] {
         switch source {
         case .traceability:
-            return dataStore.traceabilityRecords.map { .traceability($0) }
+            return dataStore.traceabilityRecords
+                .filter(TraceabilityRecordSupport.isLabelTraceabilitySource)
+                .map { .traceability($0) }
         case .blastChilling:
             return dataStore.blastRecords.map { .blast($0) }
         case .defrost:
@@ -406,7 +408,8 @@ enum ProductionLabelSourceItem: Identifiable {
     var subtitle: String {
         switch self {
         case .traceability(let r):
-            return "Lotto \(r.lotCode) · \(r.supplier) · \(r.productStatus.label)"
+            let source = TraceabilityRecordSupport.expirySourceLabel(for: r) ?? "Produzione finita"
+            return "Batch \(r.lotCode) · \(source)"
         case .blast(let r): return r.productionCategorySnapshot
         case .defrost(let r): return r.method
         }
@@ -415,7 +418,7 @@ enum ProductionLabelSourceItem: Identifiable {
     var originBadgeTitle: String? {
         switch self {
         case .traceability(let r):
-            return r.source == .receipt ? "Da ricezione" : "Manuale"
+            return "Produzione finita"
         default:
             return nil
         }

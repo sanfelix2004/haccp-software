@@ -23,6 +23,7 @@ struct ProductionCatalogManagementView: View {
     @State private var productionToEdit: Production?
     @State private var newProductionName = ""
     @State private var newProductionCategoryId: UUID?
+    @State private var shelfLifeDays = 3
     @State private var errorMessage: String?
     @State private var masterAuth = MasterAuthCoordinator()
 
@@ -103,7 +104,7 @@ struct ProductionCatalogManagementView: View {
                 if !embeddedInSettings {
                     ModuleScreenHeader(
                         title: "Catalogo piatti",
-                        subtitle: "Gestisci il menu usato in Abbattimento e Tracciabilità",
+                        subtitle: "Menu per Abbattimento e Tracciabilità · durata indicativa in frigo su ogni piatto",
                         systemImage: "fork.knife",
                         help: ModuleHelpLibrary.sidebar(.productionCatalog)
                     )
@@ -121,7 +122,7 @@ struct ProductionCatalogManagementView: View {
                             selectedBanner(selected)
                         }
 
-                        Text("\(filteredProductions.count) piatti · \(scopedCategories.count) categorie")
+                        Text("\(filteredProductions.count) piatti")
                             .font(theme.typography.caption)
                             .foregroundStyle(theme.colorTextSecondary)
 
@@ -134,9 +135,12 @@ struct ProductionCatalogManagementView: View {
                                 requestAdd()
                             }
                         } else {
-                            BlastChillingProductionGridView(
+                            ProductionSelectionGridView(
                                 productions: filteredProductions,
+                                categories: scopedCategories,
+                                recentProductionIds: [],
                                 selectedProductionId: selectedProduction?.id,
+                                groupsByCategory: selectedCategoryId == nil,
                                 onSelect: { selectedProduction = $0 }
                             )
                         }
@@ -179,6 +183,9 @@ struct ProductionCatalogManagementView: View {
                     .font(theme.typography.subheadline.bold())
                     .foregroundStyle(theme.colorTextPrimary)
                 Text(production.categoryNameSnapshot)
+                    .font(theme.typography.caption)
+                    .foregroundStyle(theme.colorTextSecondary)
+                Text("Durata indicativa: \(production.catalogShelfLifeLabel)")
                     .font(theme.typography.caption)
                     .foregroundStyle(theme.colorTextSecondary)
             }
@@ -232,8 +239,29 @@ struct ProductionCatalogManagementView: View {
                         }
                     }
                 }
+                Section("Durata conservazione (indicativa)") {
+                    let categoryName = scopedCategories.first(where: { $0.id == newProductionCategoryId })?.name ?? ""
+                    let suggested = ProductionShelfLifeDefaults.days(
+                        forName: newProductionName.isEmpty ? " " : newProductionName,
+                        categoryName: categoryName
+                    )
+                    Text("Suggerita HACCP: \(suggested) gg in frigo (+2/+4 °C). Valida con il tuo manuale.")
+                        .font(theme.typography.caption)
+                        .foregroundStyle(theme.colorTextSecondary)
+                    ShelfLifeDaysNumberField(days: $shelfLifeDays, label: "Durata")
+                }
             }
             .navigationTitle(title)
+            .onChange(of: newProductionName) { _, _ in
+                guard production == nil else { return }
+                let categoryName = scopedCategories.first(where: { $0.id == newProductionCategoryId })?.name ?? ""
+                shelfLifeDays = ProductionShelfLifeDefaults.days(forName: newProductionName, categoryName: categoryName)
+            }
+            .onChange(of: newProductionCategoryId) { _, _ in
+                guard production == nil else { return }
+                let categoryName = scopedCategories.first(where: { $0.id == newProductionCategoryId })?.name ?? ""
+                shelfLifeDays = ProductionShelfLifeDefaults.days(forName: newProductionName, categoryName: categoryName)
+            }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Annulla") {
@@ -253,6 +281,8 @@ struct ProductionCatalogManagementView: View {
         masterAuth.request(permission: .manageProductionLibrary, permissions: permissions) {
             newProductionName = ""
             newProductionCategoryId = selectedCategoryId ?? scopedCategories.first?.id
+            let categoryName = scopedCategories.first(where: { $0.id == newProductionCategoryId })?.name ?? ""
+            shelfLifeDays = ProductionShelfLifeDefaults.days(forName: "", categoryName: categoryName)
             showAddSheet = true
         }
     }
@@ -262,6 +292,7 @@ struct ProductionCatalogManagementView: View {
             productionToEdit = production
             newProductionName = production.name
             newProductionCategoryId = production.categoryId
+            shelfLifeDays = production.shelfLifeDays ?? production.defaultShelfLifeDays
             showEditSheet = true
         }
     }
@@ -297,7 +328,8 @@ struct ProductionCatalogManagementView: View {
                     name: newProductionName,
                     category: category,
                     existingProductions: scopedProductions,
-                    modelContext: modelContext
+                    modelContext: modelContext,
+                    shelfLifeDays: shelfLifeDays
                 )
                 selectedProduction = production
             } else {
@@ -306,7 +338,8 @@ struct ProductionCatalogManagementView: View {
                     category: category,
                     restaurantId: rid,
                     existingProductions: scopedProductions,
-                    modelContext: modelContext
+                    modelContext: modelContext,
+                    shelfLifeDays: shelfLifeDays
                 )
             }
             showAddSheet = false

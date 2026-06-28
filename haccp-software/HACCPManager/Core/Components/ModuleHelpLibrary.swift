@@ -85,19 +85,17 @@ enum ModuleHelpLibrary {
     static let traceability = ModuleHelp(
         id: "traceability",
         title: "Tracciabilità",
-        purpose: "Archivio HACCP di ogni prodotto ricevuto: lotto, fornitore, scadenza e collegamenti ai piatti del menu.",
+        purpose: "Hub lotti in cucina: archivio, associazione ai piatti e registrazione rapida via fotocamera.",
         steps: [
-            "Registra prima le merci da Ricezione merci: qui compaiono automaticamente.",
-            "Apri una scheda prodotto per vedere dettagli, decongelamenti e piatti associati.",
-            "Associa un lotto ai piatti del catalogo quando la materia prima entra in produzione.",
-            "Segna non conformità, ritiro o scarto; crea etichette dalla scheda o da Etichette → Tracciabilità."
+            "Dall'archivio consulta i lotti attivi e usa i filtri (da associare, non conformi, oggi).",
+            "Tocca «Inizia sessione lotti» per registrare etichette: lettura AI lotto/scadenza, alimento in ingresso e fornitore.",
+            "Associa i lotti ai piatti dall'archivio (azione rapida) o a fine sessione camera.",
+            "Apri il dettaglio per etichette HACCP o segnalazione non conformità."
         ],
         notes: [
-            "Scaduto = data di scadenza superata (aggiornamento automatico). Il lotto resta visibile.",
-            "Respinto = non conformità in ricezione: è diverso da scaduto.",
-            "I piatti associati a un lotto restano nella scheda digitale, non sull'etichetta fisica.",
-            "L'eliminazione di una scheda richiede il PIN MASTER.",
-            "I prodotti scaduti o respinti non sono associabili a nuove produzioni."
+            "Indipendente da Ricezione merci.",
+            "Le scadenze si gestiscono nel modulo Controllo scadenze.",
+            "Una sessione camera interrotta può essere ripresa dal banner in archivio."
         ]
     )
 
@@ -182,17 +180,18 @@ enum ModuleHelpLibrary {
     static let expiryControl = ModuleHelp(
         id: "expiry",
         title: "Controllo scadenze",
-        purpose: "Vista dedicata alle scadenze dei prodotti tracciati, con alert per lotti in scadenza o scaduti.",
+        purpose: "Due binari operativi: Dispensa & Frighi (materie prime) e Produzioni Interne (piatti preparati), con ordine FEFO e codici colore.",
         steps: [
-            "Controlla le card riepilogative in alto (scaduti, oggi, in scadenza).",
-            "Usa filtri e ricerca per trovare un lotto specifico.",
-            "Intervieni sui prodotti critici: tocca un lotto scaduto per registrare ritiro o scarto.",
-            "In Tracciabilità puoi segnare non conformità, ritiro o eliminare la scheda (PIN MASTER)."
+            "Tab Dispensa: monitora ingredienti fotografati in Tracciabilità (scadenza fornitore).",
+            "Tab Produzioni: monitora batch preparati (scadenza = min durata catalogo e ingrediente più vicino).",
+            "Rosso = scaduto o oggi; giallo = entro 48 ore; verde = conforme.",
+            "Scorri a sinistra e «Cancella» quando il prodotto è finito (resta nello storico HACCP).",
+            "Tocca un lotto scaduto per registrare ritiro o scarto."
         ],
         notes: [
-            "I dati provengono da Tracciabilità e Ricezione merci.",
-            "Un lotto diventa Scaduto automaticamente alla data di scadenza.",
-            "Respinto indica non conformità in ingresso, non la scadenza."
+            "La scadenza del piatto non può superare quella dell'ingrediente più vicino, salvo forzatura in Tracciabilità (cottura).",
+            "Cancellare un ingrediente non rimuove le produzioni già preparate.",
+            "La soglia «in scadenza» nei filtri si imposta in Impostazioni → HACCP."
         ]
     )
 
@@ -231,18 +230,18 @@ enum ModuleHelpLibrary {
     static let productionLabels = ModuleHelp(
         id: "labels",
         title: "Etichette di produzione",
-        purpose: "Crea, stampa e archivia etichette HACCP collegate ai moduli operativi, con anteprima completa e codice QR.",
+        purpose: "Crea, stampa e archivia etichette HACCP per prodotti preparati in cucina (non per ri-etichettare le materie prime in ingresso).",
         steps: [
-            "Scegli il tipo di etichetta: Tracciabilità, Abbattimento o Decongelamento.",
-            "Seleziona il lotto o l'elemento da cui generare l'etichetta (abbattimento, decongelamento, …).",
+            "Scegli il tipo: Produzione finita, Abbattimento o Decongelamento.",
+            "Seleziona il piatto preparato o il processo completato da cui generare l'etichetta.",
             "Controlla l'anteprima con dati, allergeni e QR, poi Salva e stampa.",
             "Ritrova le etichette create nella stessa sezione; scansiona il QR per riaprirle.",
             "Da ogni etichetta puoi ristampare o archiviare."
         ],
         notes: [
-            "Ricezione merci e tracciabilità condividono lo stesso lotto: etichetta sempre da Tracciabilità.",
-            "I piatti del menu si etichettano dopo l'abbattimento (Etichette → Abbattimento), non dal catalogo.",
-            "Puoi creare etichette anche da Tracciabilità, Abbattimento e Decongelamento al termine del processo.",
+            "Le materie prime in ingresso hanno già l'etichetta del fornitore: non serve ristamparle.",
+            "Dopo aver associato i lotti a un piatto in Tracciabilità, etichetta da Produzione finita.",
+            "I piatti surgelati si etichettano anche da Abbattimento al termine del ciclo.",
             "Ogni elemento HACCP può avere una sola etichetta: per ristampare usa l'etichetta esistente.",
             "Se la stampante non è pronta, l'etichetta resta in coda e si stampa appena connessa.",
             "Configura la stampante CLABEL da Impostazioni → Stampanti."
@@ -252,17 +251,15 @@ enum ModuleHelpLibrary {
     static let goodsReceiving = ModuleHelp(
         id: "receiving",
         title: "Ricezione merci",
-        purpose: "Registrazione in ingresso di materie prime: fornitore, temperatura, lotti e conformità alla consegna.",
+        purpose: "Registro ingresso merce: fornitore, alimento in ingresso e conformità. Foto solo in caso di anomalia.",
         steps: [
             "Seleziona il fornitore (il MASTER gestisce l'anagrafica).",
-            "Scegli il prodotto e compila checklist e temperatura di arrivo.",
-            "Al termine la scheda viene creata in Tracciabilità.",
-            "Per etichettare la merce usa Etichette → Tracciabilità oppure la scheda del lotto in Tracciabilità.",
-            "Allega foto se richiesta per non conformità."
+            "Scegli l'alimento in ingresso dal catalogo e conferma la ricezione.",
+            "Se la merce è conforme, salva senza altri dati.",
+            "Se c'è un problema: descrivi, scatta foto del danneggiato e indica se scartata o restituita al fornitore."
         ],
         notes: [
-            "È il punto di partenza corretto per la tracciabilità HACCP.",
-            "Non conformità in ricezione porta lo stato Respinto in tracciabilità.",
+            "Modulo indipendente dalla Tracciabilità lotti in produzione.",
             "Nuovi fornitori richiedono PIN MASTER per l'operatore."
         ]
     )
@@ -270,14 +267,17 @@ enum ModuleHelpLibrary {
     static let checklist = ModuleHelp(
         id: "checklist",
         title: "Checklist",
-        purpose: "Controlli periodici personalizzati (apertura, chiusura, audit) con esecuzione guidata e storico.",
+        purpose: "Controlli HACCP per frequenza: giornalieri sempre visibili, settimanali/mensili/annuali solo nel giorno previsto.",
         steps: [
-            "Dalla dashboard avvia una checklist programmata o in scadenza.",
-            "Compila ogni voce con esito conforme / non conforme e note.",
-            "Il MASTER crea e modifica i modelli checklist.",
-            "Consulta storico e avvisi per criticità aperte."
+            "Nel tab Oggi compaiono solo le checklist del giorno (apertura, chiusura…) e i controlli periodici in scadenza.",
+            "Per controlli con molte voci (es. guarnizioni frigo) usa il pulsante «tutto conforme» e correggi solo le eccezioni.",
+            "Il MASTER crea e modifica i modelli nel tab Modelli (frequenza, giorno, voci).",
+            "Consulta storico e criticità per le NON conformità."
         ],
-        notes: ["Le attività rapide servono per controlli una tantum."]
+        notes: [
+            "Settimanali: ideali il lunedì mattina. Mensili: 1° del mese. Annuali: scadenze documentali.",
+            "Le attività rapide servono per controlli una tantum."
+        ]
     )
 
     static let history = ModuleHelp(
@@ -302,7 +302,7 @@ enum ModuleHelpLibrary {
         title: "Documenti",
         purpose: "Archivio PDF mensili HACCP con backup su iCloud Drive.",
         steps: [
-            "Naviga nelle cartelle Mensili → Singoli o Combinati.",
+            "Naviga nelle cartelle Mensili e apri il modulo che ti serve.",
             "Apri o condividi i PDF generati a fine mese.",
             "Usa la card Backup iCloud per sincronizzare l'archivio.",
             "Il MASTER può rigenerare o eliminare documenti."
@@ -430,7 +430,7 @@ enum ModuleHelpLibrary {
             "Usa «Sincronizza ora» per forzare la copia manuale.",
             "Il reset cancella tutti i dati: usare solo se necessario."
         ],
-        notes: ["Operazioni critiche: solo MASTER.", "La struttura su iCloud replica Mensili → Singoli / Combinati."]
+        notes: ["Operazioni critiche: solo MASTER.", "La struttura su iCloud replica Mensili → {Modulo}."]
     )
 
     static let settingsPrinter = ModuleHelp(

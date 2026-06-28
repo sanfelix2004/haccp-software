@@ -26,7 +26,7 @@ final class ChecklistNotificationService {
             let dueId = notificationId(for: run.id, type: "scadenza")
             let overdueId = notificationId(for: run.id, type: "ritardo")
 
-            if run.status == .completed || run.status == .failed || run.status == .archived {
+            if run.status == .completed || run.status == .failed || run.status == .archived || run.status == .missed {
                 center.removePendingNotificationRequests(withIdentifiers: [dueId, overdueId])
                 continue
             }

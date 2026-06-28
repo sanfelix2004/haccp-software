@@ -158,7 +158,7 @@ struct ProductionLabelsService {
         d.lotCode = trace.lotCode
         d.supplier = trace.supplier
         d.productionDate = trace.receivedAt
-        d.expiryDate = trace.expiryDate ?? Calendar.current.date(byAdding: .day, value: 3, to: trace.receivedAt) ?? trace.receivedAt
+        d.expiryDate = trace.expiryDate ?? trace.receivedAt
         d.sourceModule = .traceability
         d.traceabilityRecordId = trace.id
         d.goodsReceiptId = trace.goodsReceiptId

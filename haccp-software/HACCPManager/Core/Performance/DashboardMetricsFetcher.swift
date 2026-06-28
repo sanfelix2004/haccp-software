@@ -114,33 +114,63 @@ enum DashboardMetricsFetcher {
             predicate: #Predicate { $0.restaurantId == rid && $0.isActive }
         )
         tempDesc.fetchLimit = limit
-        let temp = (try? context.fetch(tempDesc))?.count ?? 0
+        let temp = (try? context.fetch(tempDesc)) ?? []
 
         var oilDesc = FetchDescriptor<OilControlAlert>(
             predicate: #Predicate { $0.restaurantId == rid && $0.isActive }
         )
         oilDesc.fetchLimit = limit
-        let oil = (try? context.fetch(oilDesc))?.count ?? 0
+        let oil = (try? context.fetch(oilDesc)) ?? []
 
         var cleaningDesc = FetchDescriptor<CleaningCriticality>(
             predicate: #Predicate { $0.restaurantId == rid && !$0.isResolved }
         )
         cleaningDesc.fetchLimit = limit
-        let cleaning = (try? context.fetch(cleaningDesc))?.count ?? 0
+        let cleaning = (try? context.fetch(cleaningDesc)) ?? []
 
         var defrostDesc = FetchDescriptor<DefrostCriticality>(
             predicate: #Predicate { $0.restaurantId == rid && !$0.isResolved }
         )
         defrostDesc.fetchLimit = limit
-        let defrost = (try? context.fetch(defrostDesc))?.count ?? 0
+        let defrost = (try? context.fetch(defrostDesc)) ?? []
 
         var checklistDesc = FetchDescriptor<ChecklistAlert>(
             predicate: #Predicate { $0.restaurantId == rid && $0.isActive }
         )
         checklistDesc.fetchLimit = limit
-        let checklist = (try? context.fetch(checklistDesc))?.count ?? 0
+        let checklist = (try? context.fetch(checklistDesc)) ?? []
 
-        return temp + oil + cleaning + defrost + checklist
+        var traceDesc = FetchDescriptor<TraceabilityRecord>(
+            predicate: #Predicate { $0.restaurantId == rid && !$0.isArchived }
+        )
+        traceDesc.fetchLimit = limit * 4
+        let trace = (try? context.fetch(traceDesc)) ?? []
+
+        var goodsDesc = FetchDescriptor<GoodsReceivingRecord>(
+            predicate: #Predicate { $0.restaurantId == rid && !$0.isArchived }
+        )
+        goodsDesc.fetchLimit = limit * 2
+        let goods = (try? context.fetch(goodsDesc)) ?? []
+
+        var labelDesc = FetchDescriptor<ProductionLabelRecord>(
+            predicate: #Predicate { $0.restaurantId == rid && !$0.isArchived }
+        )
+        labelDesc.fetchLimit = limit * 2
+        let labels = (try? context.fetch(labelDesc)) ?? []
+
+        let soonThreshold = SettingsStorageService.shared.haccp.productExpiryThreshold
+        return HACCPUnifiedAlertsBuilder.count(
+            restaurantId: restaurantId,
+            temperatureAlerts: temp,
+            cleaningCriticalities: cleaning,
+            defrostCriticalities: defrost,
+            oilAlerts: oil,
+            checklistAlerts: checklist,
+            traceabilityRecords: trace,
+            goodsReceipts: goods,
+            productionLabels: labels,
+            soonThresholdDays: soonThreshold
+        )
     }
 
     private static func countTemperatureAlerts(

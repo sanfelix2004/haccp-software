@@ -161,6 +161,7 @@ struct ProductionLabelEditorSheet: View {
 
         DashboardCardView(title: "Anteprima etichetta", subtitle: "Come apparirà l'adesivo HACCP") {
             ProductionLabelStickerView(label: previewLabel, compact: false)
+                .frame(maxWidth: .infinity)
         }
     }
 

@@ -177,12 +177,7 @@ struct DefrostService {
 
     func isTemperatureNonConforme(method: DefrostMethod, temperature: Double?) -> Bool {
         guard let temperature else { return false }
-        switch method {
-        case .frigorifero, .temperaturaControllata:
-            return temperature > Self.maxSafeTemperatureCelsius
-        default:
-            return false
-        }
+        return temperature > Self.maxSafeTemperatureCelsius
     }
 
     private func createCriticality(

@@ -32,7 +32,7 @@ struct TraceabilityService {
             receivedAt: receivedAt,
             expiryDate: expiryDate,
             productionReference: productionReference?.trimmingCharacters(in: .whitespacesAndNewlines),
-            photoData: StoredImageCompression.preparedForStorage(photoData),
+            photoData: nil,
             createdByUserId: user.id,
             createdByNameSnapshot: user.name,
             notes: notes?.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -59,7 +59,6 @@ struct TraceabilityService {
         record: TraceabilityRecord,
         note: String,
         correctiveAction: String,
-        imageData: Data,
         user: LocalUser,
         modelContext: ModelContext
     ) throws {
@@ -71,9 +70,6 @@ struct TraceabilityService {
         guard !trimmedAction.isEmpty else {
             throw NSError(domain: "TraceabilityService", code: 4003, userInfo: [NSLocalizedDescriptionKey: "Inserisci l'azione correttiva obbligatoria."])
         }
-        guard imageData.isEmpty == false else {
-            throw NSError(domain: "TraceabilityService", code: 4004, userInfo: [NSLocalizedDescriptionKey: "Per una non conformità è obbligatorio allegare una foto."])
-        }
 
         record.isNonCompliant = true
         record.nonComplianceNote = trimmedNote
@@ -84,16 +80,6 @@ struct TraceabilityService {
                 receivedItemId: record.id,
                 actionType: .nonCompliance,
                 operatorName: user.name
-            )
-        )
-        modelContext.insert(
-            ProductImage(
-                receivedItemId: record.id,
-                imageData: StoredImageCompression.preparedForStorage(imageData),
-                localPath: nil,
-                type: .nonComplianceRequired,
-                createdByUserId: user.id,
-                createdByNameSnapshot: user.name
             )
         )
         try modelContext.save()
@@ -171,22 +157,29 @@ struct TraceabilityService {
         try modelContext.save()
     }
 
-    /// Elimina la voce di tracciabilità e, se presente, la ricezione merci collegata (`goodsReceiptId`). Nessun record orfano.
+    /// Elimina la voce di tracciabilità e i relativi collegamenti (indipendente da Ricezione merci).
     func deleteTraceabilityEntry(
         record: TraceabilityRecord,
-        goodsReceipts: [GoodsReceipt],
         links: [TraceabilityLink],
         logs: [TraceabilityLog],
         images: [ProductImage],
         modelContext: ModelContext
     ) throws {
+        if let lottoFotoId = record.lottoFotoId {
+            let lottoDescriptor = FetchDescriptor<LottoFoto>()
+            if let lotto = ((try? modelContext.fetch(lottoDescriptor)) ?? []).first(where: { $0.id == lottoFotoId }) {
+                let lottoLinks = (try? modelContext.fetch(FetchDescriptor<LottoFotoProductionLink>())) ?? []
+                lottoLinks.filter { $0.lottoFotoId == lotto.id }.forEach { modelContext.delete($0) }
+                LottoFotoImageStorage.deleteFiles(
+                    originalPath: lotto.localPath,
+                    thumbnailPath: lotto.thumbnailPath
+                )
+                modelContext.delete(lotto)
+            }
+        }
         links.filter { $0.receivedItemId == record.id }.forEach { modelContext.delete($0) }
         logs.filter { $0.receivedItemId == record.id }.forEach { modelContext.delete($0) }
         images.filter { $0.receivedItemId == record.id }.forEach { modelContext.delete($0) }
-        if let gid = record.goodsReceiptId,
-           let receipt = goodsReceipts.first(where: { $0.id == gid }) {
-            modelContext.delete(receipt)
-        }
         modelContext.delete(record)
         try modelContext.save()
     }

@@ -8,7 +8,6 @@ enum TraceabilitySource: String, Codable {
 
 enum ProductStatus: String, Codable, CaseIterable {
     case available = "AVAILABLE"
-    case partiallyUsed = "PARTIALLY_USED"
     case used = "USED"
     case expired = "EXPIRED"
     case rejected = "REJECTED"
@@ -16,7 +15,6 @@ enum ProductStatus: String, Codable, CaseIterable {
     var label: String {
         switch self {
         case .available: return "Disponibile"
-        case .partiallyUsed: return "Usato parzialmente"
         case .used: return "Usato"
         case .expired: return "Scaduto"
         case .rejected: return "Respinto"
@@ -29,6 +27,8 @@ enum ProductImageType: String, Codable {
     case receiptOptional = "RECEIPT_OPTIONAL"
     /// Prova fotografica obbligatoria per non conformità (ricezione o tracciabilità).
     case nonComplianceRequired = "NON_COMPLIANCE_REQUIRED"
+    /// Foto etichetta lotto per OCR in produzione/tracciabilità.
+    case lotLabelOCR = "LOT_LABEL_OCR"
     @available(*, deprecated, message: "Usare receiptOptional")
     case generic = "GENERIC"
     @available(*, deprecated, message: "Usare nonComplianceRequired")
@@ -55,6 +55,10 @@ final class TraceabilityRecord {
     var nonComplianceCorrectiveAction: String?
     var receivedAt: Date
     var expiryDate: Date?
+    /// Provenienza scadenza (OCA, shelf-life, manuale, produzione).
+    var expirySourceRaw: String?
+    /// Batch produzione collegato (scadenza piatto finito).
+    var produzioneBatchId: UUID?
     var productionReference: String?
     var photoData: Data?
     var createdAt: Date
@@ -66,6 +70,8 @@ final class TraceabilityRecord {
     var nonComplianceResolvedByNameSnapshot: String?
     var isArchived: Bool = false
     var archivedAt: Date?
+    /// Collegamento al lotto fotografato (flusso camera).
+    var lottoFotoId: UUID?
 
     init(
         id: UUID = UUID(),
@@ -77,6 +83,8 @@ final class TraceabilityRecord {
         goodsReceiptId: UUID? = nil,
         receivedAt: Date,
         expiryDate: Date? = nil,
+        expirySource: ExpirySource? = nil,
+        produzioneBatchId: UUID? = nil,
         productionReference: String? = nil,
         photoData: Data? = nil,
         createdAt: Date = Date(),
@@ -85,7 +93,8 @@ final class TraceabilityRecord {
         notes: String? = nil,
         operatorSignature: String? = nil,
         nonComplianceResolvedAt: Date? = nil,
-        nonComplianceResolvedByNameSnapshot: String? = nil
+        nonComplianceResolvedByNameSnapshot: String? = nil,
+        lottoFotoId: UUID? = nil
     ) {
         self.id = id
         self.restaurantId = restaurantId
@@ -96,6 +105,8 @@ final class TraceabilityRecord {
         self.goodsReceiptId = goodsReceiptId
         self.receivedAt = receivedAt
         self.expiryDate = expiryDate
+        self.expirySourceRaw = expirySource?.rawValue
+        self.produzioneBatchId = produzioneBatchId
         self.productionReference = productionReference
         self.photoData = photoData
         self.createdAt = createdAt
@@ -105,6 +116,7 @@ final class TraceabilityRecord {
         self.operatorSignature = operatorSignature
         self.nonComplianceResolvedAt = nonComplianceResolvedAt
         self.nonComplianceResolvedByNameSnapshot = nonComplianceResolvedByNameSnapshot
+        self.lottoFotoId = lottoFotoId
     }
 
     var source: TraceabilitySource {
@@ -113,13 +125,31 @@ final class TraceabilityRecord {
     }
 
     var productStatus: ProductStatus {
-        get { ProductStatus(rawValue: productStatusRaw) ?? .available }
+        get {
+            if productStatusRaw == "PARTIALLY_USED" { return .available }
+            return ProductStatus(rawValue: productStatusRaw) ?? .available
+        }
         set { productStatusRaw = newValue.rawValue }
+    }
+
+    var expirySource: ExpirySource? {
+        get { expirySourceRaw.flatMap { ExpirySource(rawValue: $0) } }
+        set { expirySourceRaw = newValue?.rawValue }
     }
 
     /// Lotto scaduto ancora da chiudere con ritiro/scarto operatore.
     var canBeWithdrawn: Bool {
         ProductExpiryEvaluator.canWithdraw(self)
+    }
+
+    /// Piatto finito da batch produzione (controllo scadenze) — non è un alimento in ingresso.
+    var isProductionBatchOutput: Bool {
+        produzioneBatchId != nil
+    }
+
+    /// Alimento in ingresso tracciato (foto lotto o registrazione manuale).
+    var isIncomingIngredientLot: Bool {
+        !isProductionBatchOutput
     }
 }
 
@@ -137,6 +167,8 @@ final class ProductImage {
     var createdByNameSnapshot: String = ""
     var isArchived: Bool = false
     var archivedAt: Date?
+    /// Se valorizzato, l'immagine appartiene alla ricezione merci (NC o documentazione).
+    var goodsReceiptId: UUID?
 
     init(
         id: UUID = UUID(),
@@ -146,7 +178,8 @@ final class ProductImage {
         type: ProductImageType,
         createdAt: Date = Date(),
         createdByUserId: UUID,
-        createdByNameSnapshot: String
+        createdByNameSnapshot: String,
+        goodsReceiptId: UUID? = nil
     ) {
         self.id = id
         self.receivedItemId = receivedItemId
@@ -156,6 +189,7 @@ final class ProductImage {
         self.createdAt = createdAt
         self.createdByUserId = createdByUserId
         self.createdByNameSnapshot = createdByNameSnapshot
+        self.goodsReceiptId = goodsReceiptId
     }
 
     var type: ProductImageType {
@@ -170,6 +204,7 @@ extension ProductImageType {
         switch self {
         case .receiptOptional: return ProductImageType.receiptOptional.rawValue
         case .nonComplianceRequired: return ProductImageType.nonComplianceRequired.rawValue
+        case .lotLabelOCR: return ProductImageType.lotLabelOCR.rawValue
         case .generic: return "RECEIPT_OPTIONAL"
         case .nonCompliance: return "NON_COMPLIANCE_REQUIRED"
         }
@@ -181,6 +216,8 @@ extension ProductImageType {
             return .receiptOptional
         case ProductImageType.nonComplianceRequired.rawValue, "NON_COMPLIANCE":
             return .nonComplianceRequired
+        case ProductImageType.lotLabelOCR.rawValue:
+            return .lotLabelOCR
         default:
             return .receiptOptional
         }

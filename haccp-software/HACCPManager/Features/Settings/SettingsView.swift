@@ -42,7 +42,7 @@ struct SettingsView: View {
                                     .font(.system(size: 44, weight: .black, design: .rounded))
                                     .foregroundColor(ThemeManager.shared.colorTextPrimary)
                                 
-                                Text("Le sezioni con lucchetto richiedono il PIN del responsabile MASTER.")
+                                Text("Profilo e preferenze per tutti. Sicurezza, ristorante e backup solo per responsabile.")
                                     .font(.title3)
                                     .foregroundColor(ThemeManager.shared.colorTextSecondary)
                             }
@@ -55,7 +55,7 @@ struct SettingsView: View {
                     
                     // Grid of Sections
                     LazyVGrid(columns: columns, spacing: 24) {
-                        ForEach(SettingsSection.allCases) { section in
+                        ForEach(SettingsSection.allCases.filter { permissions.isSettingsSectionVisible($0) }) { section in
                             SettingsCardView(
                                 section: section,
                                 locked: section.needsMasterAuth(for: permissions)

@@ -22,6 +22,7 @@ enum CleaningTaskOutcome: String, Codable, CaseIterable {
     case pulito
     case nonPulito
     case nonApplicabile
+    case nonFatto
 
     var label: String {
         switch self {
@@ -29,6 +30,7 @@ enum CleaningTaskOutcome: String, Codable, CaseIterable {
         case .pulito: return "Pulito"
         case .nonPulito: return "Non pulito"
         case .nonApplicabile: return "Non applicabile"
+        case .nonFatto: return "Non fatta"
         }
     }
 }
@@ -69,6 +71,8 @@ final class CleaningTask {
     var frequencyRaw: String
     /// Solo per frequenza personalizzata.
     var customIntervalDays: Int?
+    /// Modello checklist collegato (motore unificato pulizie).
+    var linkedChecklistTemplateId: UUID?
     var isActive: Bool
     var createdAt: Date
     var createdByUserId: UUID
@@ -82,6 +86,7 @@ final class CleaningTask {
         title: String,
         frequency: CleaningTaskFrequency,
         customIntervalDays: Int? = nil,
+        linkedChecklistTemplateId: UUID? = nil,
         isActive: Bool = true,
         createdAt: Date = Date(),
         createdByUserId: UUID,
@@ -94,6 +99,7 @@ final class CleaningTask {
         self.title = title
         self.frequencyRaw = frequency.rawValue
         self.customIntervalDays = customIntervalDays
+        self.linkedChecklistTemplateId = linkedChecklistTemplateId
         self.isActive = isActive
         self.createdAt = createdAt
         self.createdByUserId = createdByUserId

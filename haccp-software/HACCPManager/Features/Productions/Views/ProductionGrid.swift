@@ -4,6 +4,7 @@ struct ProductionGrid: View {
     let productions: [Production]
     let selectedProductionIds: Set<UUID>
     let isEditMode: Bool
+    var showsShelfLife: Bool = false
     let onSelect: (Production) -> Void
     let onDelete: (Production) -> Void
 
@@ -21,6 +22,11 @@ struct ProductionGrid: View {
                         Text(production.categoryNameSnapshot)
                             .font(.caption2)
                             .foregroundStyle(ThemeManager.shared.colorTextSecondary)
+                        if showsShelfLife {
+                            Text("Durata \(production.catalogShelfLifeLabel)")
+                                .font(.caption2.weight(.semibold))
+                                .foregroundStyle(ThemeManager.shared.colorPrimary)
+                        }
                     }
                     .frame(maxWidth: .infinity, minHeight: 88, alignment: .topLeading)
                     .padding(10)

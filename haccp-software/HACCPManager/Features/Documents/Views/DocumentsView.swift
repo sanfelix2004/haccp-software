@@ -9,17 +9,9 @@ struct DocumentsView: View {
     @EnvironmentObject var appState: AppState
     @Query private var users: [LocalUser]
     @Query private var restaurants: [Restaurant]
-    @Query private var folders: [DocumentFolder]
-    @Query private var items: [DocumentItem]
-    @Query private var receipts: [GoodsReceipt]
-    @Query private var traceabilityRecords: [TraceabilityRecord]
-    @Query private var traceabilityImages: [ProductImage]
-    @Query private var productions: [Production]
-    @Query private var traceabilityLinks: [TraceabilityLink]
-    @Query private var traceabilityLogs: [TraceabilityLog]
-    @Query private var checklistAuditLogs: [ChecklistAuditLog]
-    @Query private var temperatureAuditLogs: [TemperatureAuditLog]
+
     @StateObject private var vm = DocumentsViewModel()
+    @StateObject private var dataStore = DocumentsDataStore()
     @ObservedObject private var iCloudSync = ICloudDocumentSyncService.shared
     @State private var isSyncingICloud = false
     @State private var documentPreviewItem: DocumentPreviewSheetItem?
@@ -43,28 +35,15 @@ struct DocumentsView: View {
     }
 
     private var scopedFolders: [DocumentFolder] {
-        guard let rid = appState.activeRestaurantId else { return [] }
-        return folders
-            .filter { $0.restaurantId == rid }
-            .sorted { lhs, rhs in
-                if lhs.orderIndex == rhs.orderIndex { return lhs.name < rhs.name }
-                return lhs.orderIndex < rhs.orderIndex
-            }
+        guard appState.activeRestaurantId != nil else { return [] }
+        return dataStore.folders.sorted { lhs, rhs in
+            if lhs.orderIndex == rhs.orderIndex { return lhs.name < rhs.name }
+            return lhs.orderIndex < rhs.orderIndex
+        }
     }
 
     private var scopedItems: [DocumentItem] {
-        guard let rid = appState.activeRestaurantId else { return [] }
-        return items.filter { $0.restaurantId == rid }
-    }
-
-    private var scopedReceipts: [GoodsReceipt] {
-        guard let rid = appState.activeRestaurantId else { return [] }
-        return receipts.filter { $0.restaurantId == rid }
-    }
-
-    private var scopedTraceability: [TraceabilityRecord] {
-        guard let rid = appState.activeRestaurantId else { return [] }
-        return traceabilityRecords.filter { $0.restaurantId == rid }
+        dataStore.items
     }
 
     private var currentFolder: DocumentFolder? {
@@ -140,7 +119,7 @@ struct DocumentsView: View {
                 ModuleScreenHeader(
                     title: "Documenti",
                     subtitle: activeRestaurant.map {
-                        "Archivio HACCP di \($0.name) — Singoli e Combinati mensili."
+                        "Archivio HACCP di \($0.name) — report mensili per modulo."
                     } ?? "Archivio PDF mensili HACCP.",
                     systemImage: "doc.text.fill",
                     help: ModuleHelpLibrary.sidebar(.documents)
@@ -232,10 +211,17 @@ struct DocumentsView: View {
                 refreshArchiveLight()
             }
         }
+        .task(id: appState.activeRestaurantId) {
+            reloadDocumentsData()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .kitchenProcessRecordsDidChange)) { _ in
+            reloadDocumentsData()
+        }
         .onChange(of: appState.activeRestaurantId) { _, _ in
+            vm.selectedFolderId = nil
             refreshArchiveLight()
         }
-        .onChange(of: scopedItems.count) { _, _ in
+        .onChange(of: dataStore.items.count) { _, _ in
             rebuildFolderMetrics()
         }
         .sheet(item: $documentPreviewItem) { item in
@@ -375,6 +361,10 @@ struct DocumentsView: View {
         }
     }
 
+    private func reloadDocumentsData() {
+        dataStore.reload(context: modelContext, restaurantId: appState.activeRestaurantId)
+    }
+
     /// All'apertura: cartelle, statistiche e aggiornamento incrementale dei PDF del mese corrente.
     private func refreshArchiveLight() {
         guard let restaurant = activeRestaurant, let currentUser else { return }
@@ -382,14 +372,19 @@ struct DocumentsView: View {
         isRefreshingArchive = true
         Task { @MainActor in
             await Task.yield()
+            let snapshot = DocumentsDataFetcher.fetchArchive(
+                context: modelContext,
+                restaurantId: restaurant.id
+            )
             vm.service.ensureDefaultFolders(
                 restaurantId: restaurant.id,
                 restaurantDisplayName: restaurant.name,
                 user: currentUser,
-                existingFolders: scopedFolders,
-                existingItems: scopedItems,
+                existingFolders: snapshot.folders,
+                existingItems: snapshot.items,
                 modelContext: modelContext
             )
+            dataStore.reloadSynchronously(context: modelContext, restaurantId: restaurant.id)
             rebuildFolderMetrics()
             if let selected = vm.selectedFolderId, !scopedFolders.contains(where: { $0.id == selected }) {
                 vm.selectedFolderId = nil
@@ -406,6 +401,7 @@ struct DocumentsView: View {
                 in: modelContext,
                 force: true
             )
+            dataStore.reloadSynchronously(context: modelContext, restaurantId: restaurant.id)
             rebuildFolderMetrics()
             isRefreshingArchive = false
         }
@@ -477,14 +473,20 @@ struct DocumentsView: View {
         var calendar = Calendar(identifier: .gregorian)
         calendar.locale = Locale(identifier: "it_IT")
         calendar.timeZone = .current
+        let sources = DocumentsDataFetcher.fetchCSVExportSources(
+            context: modelContext,
+            restaurantId: rid,
+            document: doc,
+            calendar: calendar
+        )
         guard let csv = HACCPRegisterCSVExporter.csvString(
             for: doc,
-            receipts: scopedReceipts,
-            traceability: scopedTraceability,
-            images: traceabilityImages,
-            productions: productions.filter { $0.restaurantId == rid },
-            links: traceabilityLinks,
-            logs: traceabilityLogs,
+            receipts: sources.receipts,
+            traceability: sources.traceability,
+            images: sources.images,
+            productions: sources.productions,
+            links: sources.links,
+            logs: sources.logs,
             calendar: calendar
         ),
         let data = csv.data(using: .utf8)
@@ -506,7 +508,7 @@ struct DocumentsView: View {
             doc.isExported = true
             doc.exportedAt = Date()
             doc.status = .esportato
-            try? modelContext.save()
+            if !modelContext.saveSafely(operation: "document-export") { return }
             shareURLs = [url]
             showShareSheet = true
         } catch { }
@@ -519,7 +521,9 @@ struct DocumentsView: View {
         doc.localFilePresent = false
         doc.checksumSHA256 = ""
         doc.isSyncedToICloud = false
-        try? modelContext.save()
+        if modelContext.saveSafely(operation: "document-delete") {
+            reloadDocumentsData()
+        }
     }
 
     private func performRegenerate(_ doc: DocumentItem) {
@@ -532,6 +536,7 @@ struct DocumentsView: View {
                 reason: "Rigenerazione manuale autorizzata dal MASTER",
                 in: modelContext
             )
+            reloadDocumentsData()
         } catch {
             regenerateError = error.localizedDescription
         }

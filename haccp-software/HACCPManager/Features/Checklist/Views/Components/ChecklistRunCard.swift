@@ -13,6 +13,13 @@ struct ChecklistRunCard: View {
 
     @Environment(\.theme) private var theme
 
+    private let scheduleService = ChecklistScheduleService()
+
+    private var isOverdueToday: Bool {
+        guard let frequency else { return run.status == .overdue }
+        return scheduleService.isOverdueForDashboard(run: run, frequency: frequency)
+    }
+
     var body: some View {
         Button(action: onTap) {
             VStack(alignment: .leading, spacing: 12) {
@@ -38,10 +45,10 @@ struct ChecklistRunCard: View {
                         if let dueAt = run.dueAt {
                             Label(
                                 dueLabel(dueAt),
-                                systemImage: run.status == .overdue ? "clock.badge.exclamationmark" : "clock"
+                                systemImage: isOverdueToday ? "clock.badge.exclamationmark" : "clock"
                             )
                             .font(theme.typography.caption)
-                            .foregroundStyle(run.status == .overdue ? theme.colorWarning : theme.colorTextSecondary)
+                            .foregroundStyle(isOverdueToday ? theme.colorWarning : theme.colorTextSecondary)
                         }
                     }
 
@@ -94,12 +101,16 @@ struct ChecklistRunCard: View {
     }
 
     private var borderColor: Color {
-        if run.status == .overdue || summary.hasFailures { return theme.colorWarning }
+        if isOverdueToday || summary.hasFailures { return theme.colorWarning }
         return theme.colorDivider
     }
 
     private func dueLabel(_ date: Date) -> String {
-        if Calendar.current.isDateInToday(date) {
+        let calendar = Calendar.current
+        if isOverdueToday {
+            return "In ritardo · \(date.formatted(date: .omitted, time: .shortened))"
+        }
+        if calendar.isDateInToday(date) {
             return "Scadenza oggi \(date.formatted(date: .omitted, time: .shortened))"
         }
         return "Scadenza \(date.formatted(date: .abbreviated, time: .shortened))"

@@ -30,27 +30,35 @@ struct CreateChecklistTemplateView: View {
                         }
                     }
                     Picker("Frequenza", selection: $vm.frequency) {
-                        ForEach(ChecklistFrequency.allCases, id: \.self) { f in
+                        ForEach(ChecklistFrequency.allCases.filter { $0 != .custom }, id: \.self) { f in
                             Text(f.label).tag(f)
                         }
                     }
+                    TextField("Area / zona (opzionale)", text: $vm.areaTag)
                 }
 
-                Section("Programmazione") {
-                    Stepper("Ora: \(vm.scheduledHour)", value: $vm.scheduledHour, in: 0...23)
-                    Stepper("Minuti: \(vm.scheduledMinute)", value: $vm.scheduledMinute, in: 0...59)
+                if vm.frequency.isScheduledCycle {
+                    ChecklistScheduleFormSection(
+                        frequency: $vm.frequency,
+                        scheduledHour: $vm.scheduledHour,
+                        scheduledMinute: $vm.scheduledMinute,
+                        scheduleWeekday: $vm.scheduleWeekday,
+                        scheduleDayOfMonth: $vm.scheduleDayOfMonth,
+                        scheduleMonth: $vm.scheduleMonth
+                    )
                 }
+
+                ChecklistBulkPassFormSection(
+                    allowsBulkPass: $vm.allowsBulkPass,
+                    bulkPassTitle: $vm.bulkPassTitle,
+                    itemCount: vm.items.count
+                )
 
                 Section("Item checklist") {
                     ForEach($vm.items) { $item in
                         VStack(alignment: .leading, spacing: 6) {
                             TextField("Titolo item", text: $item.title)
                             TextField("Descrizione item", text: $item.description)
-                            Picker("Tipo", selection: $item.type) {
-                                ForEach(ChecklistItemType.allCases, id: \.self) { type in
-                                    Text(type.rawValue.replacingOccurrences(of: "_", with: " ")).tag(type)
-                                }
-                            }
                             Toggle("Obbligatorio", isOn: $item.isRequired)
                             Toggle("Nota obbligatoria se fallisce", isOn: $item.requiresNoteIfFailed)
                         }
@@ -93,8 +101,14 @@ struct CreateChecklistTemplateView: View {
                 description: vm.description,
                 category: vm.category,
                 frequency: vm.frequency,
-                scheduledHour: vm.scheduledHour,
-                scheduledMinute: vm.scheduledMinute,
+                scheduledHour: vm.frequency.isScheduledCycle ? vm.scheduledHour : nil,
+                scheduledMinute: vm.frequency.isScheduledCycle ? vm.scheduledMinute : nil,
+                scheduleWeekday: vm.frequency == .weekly ? vm.scheduleWeekday : nil,
+                scheduleDayOfMonth: (vm.frequency == .monthly || vm.frequency == .annual) ? vm.scheduleDayOfMonth : nil,
+                scheduleMonth: vm.frequency == .annual ? vm.scheduleMonth : nil,
+                allowsBulkPass: vm.allowsBulkPass && vm.items.count >= 2,
+                bulkPassTitle: vm.bulkPassTitle.isEmpty ? nil : vm.bulkPassTitle,
+                areaTag: vm.areaTag.isEmpty ? nil : vm.areaTag,
                 createdBy: currentUser,
                 items: vm.items,
                 modelContext: modelContext

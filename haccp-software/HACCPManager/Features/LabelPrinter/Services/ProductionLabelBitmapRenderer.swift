@@ -37,14 +37,17 @@ enum ProductionLabelBitmapRenderer {
 
             func draw(_ text: String, font: UIFont, bold: Bool = false) {
                 guard !text.isEmpty else { return }
+                guard y < CGFloat(height) - 6 else { return }
                 let f = bold ? UIFont.boldSystemFont(ofSize: font.pointSize) : font
                 let attrs: [NSAttributedString.Key: Any] = [
                     .font: f,
                     .foregroundColor: UIColor.black
                 ]
-                let rect = CGRect(x: left, y: y, width: maxTextWidth, height: 200)
+                let remainingHeight = CGFloat(height) - y - 4
+                guard remainingHeight > 4 else { return }
+                let rect = CGRect(x: left, y: y, width: maxTextWidth, height: remainingHeight)
                 let bounding = (text as NSString).boundingRect(
-                    with: CGSize(width: maxTextWidth, height: 200),
+                    with: CGSize(width: maxTextWidth, height: remainingHeight),
                     options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine],
                     attributes: attrs,
                     context: nil
@@ -55,7 +58,7 @@ enum ProductionLabelBitmapRenderer {
                     attributes: attrs,
                     context: nil
                 )
-                y += max(bounding.height, f.lineHeight) + 2
+                y += min(max(bounding.height, f.lineHeight), remainingHeight) + 2
             }
 
             draw("HACCP", font: .boldSystemFont(ofSize: 9))

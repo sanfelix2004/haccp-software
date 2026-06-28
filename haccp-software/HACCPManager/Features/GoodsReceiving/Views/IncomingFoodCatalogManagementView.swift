@@ -126,6 +126,7 @@ struct IncomingFoodCatalogManagementView: View {
                                 products: filteredTemplates,
                                 recentProductIds: [],
                                 selectedProductId: selectedTemplate?.id,
+                                groupsByCategory: selectedCategory == .all,
                                 onSelect: { selectedTemplate = $0 }
                             )
                         }
@@ -161,6 +162,9 @@ struct IncomingFoodCatalogManagementView: View {
                 Text("Selezionato: \(template.name)")
                     .font(theme.typography.subheadline.bold())
                 Text(template.category.rawValue)
+                    .font(theme.typography.caption)
+                    .foregroundStyle(theme.colorTextSecondary)
+                Text("Scadenza in tracciabilità")
                     .font(theme.typography.caption)
                     .foregroundStyle(theme.colorTextSecondary)
             }
@@ -205,6 +209,11 @@ struct IncomingFoodCatalogManagementView: View {
                             Text(cat.rawValue).tag(cat)
                         }
                     }
+                }
+                Section {
+                    Text("La scadenza non si imposta qui: viene registrata in tracciabilità (etichetta o data manuale).")
+                        .font(theme.typography.caption)
+                        .foregroundStyle(theme.colorTextSecondary)
                 }
             }
             .navigationTitle(title)
@@ -264,7 +273,8 @@ struct IncomingFoodCatalogManagementView: View {
                     name: newName,
                     category: newCategory,
                     existing: scopedTemplates,
-                    modelContext: modelContext
+                    modelContext: modelContext,
+                    shelfLifeDays: nil
                 )
                 selectedTemplate = template
             } else {
@@ -273,7 +283,8 @@ struct IncomingFoodCatalogManagementView: View {
                     category: newCategory,
                     restaurantId: rid,
                     existing: scopedTemplates,
-                    modelContext: modelContext
+                    modelContext: modelContext,
+                    shelfLifeDays: nil
                 )
             }
             showAddSheet = false

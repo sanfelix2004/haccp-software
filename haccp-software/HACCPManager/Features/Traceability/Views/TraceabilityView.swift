@@ -1,91 +1,96 @@
 import SwiftUI
 import SwiftData
-import AVFoundation
-import Combine
 
 struct TraceabilityView: View {
-    enum DateFilter: String, CaseIterable, Identifiable {
-        case all = "Tutte le date"
-        case today = "Oggi"
-        case month = "Ultimo mese"
-        var id: String { rawValue }
-    }
-
     @Environment(\.modelContext) private var modelContext
     @Environment(\.theme) private var theme
     @EnvironmentObject var appState: AppState
+
     @Query private var users: [LocalUser]
     @Query private var restaurants: [Restaurant]
     @Query private var productionLabels: [ProductionLabelRecord]
+    @Query private var categories: [ProductionCategory]
+
     @StateObject private var dataStore = TraceabilityDataStore()
 
-    @State private var selectedTraceabilityForProduction: TraceabilityRecord?
-    @State private var showProductionSelection = false
-    @State private var pendingProductionIds: Set<UUID> = []
     @State private var searchText = ""
-    @State private var selectedStatus: ProductStatus?
-    @State private var selectedDateFilter: DateFilter = .all
+    @State private var selectedFilter: TraceabilityHubFilter = .all
+    @State private var displayLimit = 40
+
+    @State private var showLotCapture = false
+    @State private var resumeSessionId: UUID?
+    @State private var dismissedSessionIds: Set<UUID> = []
+
     @State private var detailRecord: TraceabilityRecord?
+    @State private var quickAssociateRecord: TraceabilityRecord?
+    @State private var multiAssociateRecord: TraceabilityRecord?
+    @State private var pendingProductionIds: Set<UUID> = []
+    @State private var showProductionSelection = false
+
     @State private var nonComplianceRecord: TraceabilityRecord?
-    @State private var nonComplianceNote = ""
-    @State private var nonComplianceCorrectiveAction = ""
-    @State private var nonCompliancePhotoData: Data?
-    @State private var ncAwaitingCapture = false
-    @StateObject private var ncCamera = FinalizeReceiptCameraViewModel()
-    @State private var showMasterAuthDelete = false
-    @State private var recordPendingDelete: TraceabilityRecord?
-    @State private var withdrawRecord: TraceabilityRecord?
-    @State private var errorMessage: String?
     @State private var labelDraft: ProductionLabelDraft?
 
+    @State private var recordPendingDelete: TraceabilityRecord?
+    @State private var errorMessage: String?
+    @State private var openSessions: [TraceabilityOpenSession] = []
+    @State private var masterAuth = MasterAuthCoordinator()
+
     private let productionLibraryService = ProductionLibraryService()
-    private let expiryService = TraceabilityExpiryService()
     private let service = TraceabilityService()
     private let labelService = ProductionLabelsService()
+    private let lottoService = LottoFotoService()
 
-    private func makeContext() -> TraceabilityContext {
-        TraceabilityContext(store: dataStore)
+    private var hubContext: TraceabilityHubContext {
+        TraceabilityHubContext(store: dataStore)
     }
 
-    private func filteredRecords(using context: TraceabilityContext) -> [TraceabilityRecord] {
-        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        return dataStore.records.filter { record in
-            let searchOk = query.isEmpty || context.matchesSearch(record, query: query)
-            let statusOk = selectedStatus == nil || record.productStatus == selectedStatus
-            let dateOk: Bool = {
-                switch selectedDateFilter {
-                case .all: return true
-                case .today: return Calendar.current.isDateInToday(record.createdAt)
-                case .month:
-                    return record.createdAt >= Calendar.current.date(byAdding: .day, value: -30, to: Date()) ?? .distantPast
-                }
-            }()
-            return searchOk && statusOk && dateOk
-        }
+    private var metrics: TraceabilityHubMetrics {
+        hubContext.metrics(for: dataStore.records)
     }
 
-    private func stats(using context: TraceabilityContext) -> (total: Int, available: Int, expiring: Int, issues: Int) {
-        let thresholdDays = SettingsStorageService.shared.haccp.productExpiryThreshold
-        let soon = Calendar.current.date(byAdding: .day, value: thresholdDays, to: Date()) ?? Date()
-        var available = 0
-        var expiring = 0
-        var issues = 0
-        for record in dataStore.records {
-            if record.isNonCompliant || record.productStatus == .rejected || record.productStatus == .expired {
-                issues += 1
+    private var filteredRecords: [TraceabilityRecord] {
+        hubContext.filteredRecords(dataStore.records, filter: selectedFilter, searchText: searchText)
+    }
+
+    private var productionArchiveGroups: [TraceabilityProductionArchiveGroup] {
+        hubContext.productionArchiveGroups(
+            records: dataStore.records,
+            filter: selectedFilter,
+            searchText: searchText
+        )
+    }
+
+    private var unlinkedRecords: [TraceabilityRecord] {
+        hubContext.unlinkedRecords(
+            records: dataStore.records,
+            filter: selectedFilter,
+            searchText: searchText
+        )
+    }
+
+    private var productionSearchSuggestions: [String] {
+        var seen = Set<String>()
+        return hubContext
+            .productionArchiveGroups(records: dataStore.records, filter: .all, searchText: "")
+            .compactMap { group -> String? in
+                let name = group.productionName.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !name.isEmpty, seen.insert(name.lowercased()).inserted else { return nil }
+                return name
             }
-            if record.productStatus == .available || record.productStatus == .partiallyUsed {
-                available += 1
-                if let expiry = context.expiryDate(for: record), expiry <= soon, expiry >= Date() {
-                    expiring += 1
-                }
-            }
-        }
-        return (dataStore.records.count, available, expiring, issues)
+            .prefix(12)
+            .map { $0 }
+    }
+
+    private var visibleProductionGroups: [TraceabilityProductionArchiveGroup] {
+        Array(productionArchiveGroups.prefix(displayLimit))
+    }
+
+    private var visibleUnlinkedRecords: [TraceabilityRecord] {
+        Array(unlinkedRecords.prefix(displayLimit))
     }
 
     private var currentUser: LocalUser? {
-        users.first(where: { $0.id == appState.currentUserId })
+        users.first { $0.id == appState.currentUserId }
     }
 
     private var activeRestaurant: Restaurant? {
@@ -98,67 +103,68 @@ struct TraceabilityView: View {
         return productionLabels.filter { $0.restaurantId == rid }
     }
 
-    private var permissions: UserPermissions { currentUser.permissions }
+    private var scopedCategories: [ProductionCategory] {
+        guard let rid = appState.activeRestaurantId else { return [] }
+        return categories.filter { $0.restaurantId == rid }.sorted { $0.orderIndex < $1.orderIndex }
+    }
+
+    private var permissions: UserPermissions { currentUser?.permissions ?? UserPermissions(role: .viewer) }
     private var canDeleteRecords: Bool { permissions.can(.deleteTraceabilityRecords) }
+
+    private var activeOpenSession: TraceabilityOpenSession? {
+        openSessions.first { !dismissedSessionIds.contains($0.id) }
+    }
 
     var body: some View {
         Group {
             if appState.activeRestaurantId == nil {
                 emptyRestaurant
-            } else if dataStore.isLoading && dataStore.records.isEmpty {
+            } else if dataStore.isLoading && dataStore.records.isEmpty && dataStore.productions.isEmpty {
                 ProgressView("Caricamento tracciabilità…")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                mainScroll
+                hubScroll
+                    .opacity(dataStore.isLoading ? 0.7 : 1)
             }
         }
         .background(theme.colorBackground.ignoresSafeArea())
         .navigationTitle("Tracciabilità")
         .haccpControlTint()
         .task(id: appState.activeRestaurantId) {
-            dataStore.reload(context: modelContext, restaurantId: appState.activeRestaurantId)
-        }
-        .onAppear(perform: refreshExpiredStatuses)
-        .task(id: appState.activeRestaurantId) {
-            refreshExpiredStatuses()
+            reloadAll()
         }
         .alert("Tracciabilità", isPresented: Binding(get: { errorMessage != nil }, set: { _ in errorMessage = nil })) {
             Button("OK", role: .cancel) {}
         } message: {
             Text(errorMessage ?? "")
         }
-        .sheet(isPresented: $showProductionSelection) { productionSelectionSheet }
+        .fullScreenCover(isPresented: $showLotCapture) { lotCaptureOverlay }
         .sheet(item: $detailRecord) { record in detailSheet(for: record) }
-        .sheet(isPresented: Binding(get: { nonComplianceRecord != nil }, set: { if !$0 { nonComplianceRecord = nil } })) {
-            nonComplianceSheet
-        }
-        .sheet(isPresented: Binding(
-            get: { labelDraft != nil },
-            set: { if !$0 { labelDraft = nil } }
-        )) {
-            labelEditorSheet
-        }
-        .sheet(item: $withdrawRecord) { record in
+        .sheet(item: $quickAssociateRecord) { record in quickAssociateSheet(for: record) }
+        .sheet(isPresented: $showProductionSelection) { productionSelectionSheet }
+        .sheet(item: $nonComplianceRecord) { record in
             if let user = currentUser {
-                TraceabilityWithdrawSheet(
+                TraceabilityNonComplianceSheet(
                     record: record,
                     user: user,
                     onSaved: {
-                        withdrawRecord = nil
-                        dataStore.reload(context: modelContext, restaurantId: appState.activeRestaurantId)
+                        nonComplianceRecord = nil
+                        reloadAll()
                     },
-                    onCancel: { withdrawRecord = nil }
+                    onCancel: { nonComplianceRecord = nil }
                 )
             }
         }
-        .onReceive(ncCamera.$capturedPhotoData) { data in
-            guard ncAwaitingCapture, let data, !data.isEmpty else { return }
-            ncAwaitingCapture = false
-            nonCompliancePhotoData = data
-            ncCamera.stop()
+        .sheet(isPresented: Binding(get: { labelDraft != nil }, set: { if !$0 { labelDraft = nil } })) {
+            labelEditorSheet
         }
-        .fullScreenCover(isPresented: $showMasterAuthDelete) { masterDeleteOverlay }
+        .masterAuthCover(
+            coordinator: masterAuth,
+            master: users.first(where: { $0.role == .master })
+        )
     }
+
+    // MARK: - Hub
 
     private var emptyRestaurant: some View {
         DashboardEmptyStateView(state: .init(
@@ -169,113 +175,297 @@ struct TraceabilityView: View {
         .padding(theme.spacing.screenPadding)
     }
 
-    private var mainScroll: some View {
-        let context = makeContext()
-        let metrics = stats(using: context)
-        let records = filteredRecords(using: context)
-
-        return ScrollView {
+    private var hubScroll: some View {
+        ScrollView {
             LazyVStack(spacing: theme.spacing.sectionSpacing) {
                 ModuleScreenHeader(
                     title: "Tracciabilità",
-                    subtitle: "Lotti, fornitori, scadenze e collegamento ai piatti del catalogo",
+                    subtitle: "Scatta etichette, collega alimenti e piatti",
                     systemImage: "archivebox.fill",
                     help: ModuleHelpLibrary.sidebar(.traceability)
                 )
 
-                statsRow(metrics)
+                TraceabilityWorkflowGuideCard()
 
-                DashboardCardView(title: "Azioni rapide", subtitle: "Aggiungi prodotti dalla ricezione") {
-                    PrimaryButton(title: "Ricezione merci", icon: "shippingbox.fill") {
-                        appState.navigateToGoodsReceiving = true
-                    }
+                metricsGrid
+
+                actionRow
+
+                if let session = activeOpenSession {
+                    TraceabilityOpenSessionCard(
+                        session: session,
+                        onResume: {
+                            resumeSessionId = session.id
+                            showLotCapture = true
+                        },
+                        onDismiss: {
+                            dismissedSessionIds.insert(session.id)
+                        }
+                    )
                 }
 
                 TraceabilityFilterBar(
                     searchText: $searchText,
-                    selectedStatus: $selectedStatus,
-                    selectedDateFilter: $selectedDateFilter
+                    selectedFilter: $selectedFilter,
+                    productionSuggestions: productionSearchSuggestions
                 )
+                .onChange(of: searchText) { _, _ in displayLimit = 40 }
+                .onChange(of: selectedFilter) { _, _ in displayLimit = 40 }
 
+                recordsSection
+            }
+            .padding(theme.spacing.screenPadding)
+        }
+        .scrollDismissesKeyboard(.interactively)
+    }
+
+    private var metricsGrid: some View {
+        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
+            TraceabilityMetricTile(
+                title: "Totale lotti",
+                value: "\(metrics.total)",
+                subtitle: "In archivio",
+                icon: "archivebox.fill",
+                accent: theme.colorPrimary,
+                isActive: selectedFilter == .all
+            ) { selectedFilter = .all }
+
+            TraceabilityMetricTile(
+                title: "Da associare",
+                value: "\(metrics.unlinked)",
+                subtitle: "Senza piatto",
+                icon: "link.badge.plus",
+                accent: theme.colorInfo,
+                isActive: selectedFilter == .unlinked
+            ) { selectedFilter = .unlinked }
+
+            TraceabilityMetricTile(
+                title: "Oggi",
+                value: "\(metrics.todayCount)",
+                subtitle: "Registrati oggi",
+                icon: "calendar",
+                accent: theme.colorWarning,
+                isActive: selectedFilter == .today
+            ) { selectedFilter = .today }
+
+            TraceabilityMetricTile(
+                title: "Non conformi",
+                value: "\(metrics.critical)",
+                subtitle: "Da verificare",
+                icon: "exclamationmark.triangle.fill",
+                accent: theme.colorError,
+                isActive: selectedFilter == .critical
+            ) { selectedFilter = .critical }
+        }
+    }
+
+    private var actionRow: some View {
+        VStack(spacing: 10) {
+            PrimaryButton(title: "Inizia sessione lotti", icon: "camera.fill") {
+                resumeSessionId = nil
+                showLotCapture = true
+            }
+
+            if metrics.todayCount > 0 {
+                Button {
+                    selectedFilter = .today
+                } label: {
+                    Label("\(metrics.todayCount) lotti registrati oggi", systemImage: "calendar")
+                        .font(theme.typography.caption.weight(.semibold))
+                        .foregroundStyle(theme.colorTextSecondary)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    private var recordsSection: some View {
+        VStack(spacing: theme.spacing.sectionSpacing) {
+            if !productionArchiveGroups.isEmpty {
                 DashboardCardView(
-                    title: "Prodotti tracciati",
-                    subtitle: "\(records.count) risultati"
+                    title: recordsSectionTitle,
+                    subtitle: "\(productionArchiveGroups.count) piatti · \(filteredRecords.count) lotti"
                 ) {
-                    if records.isEmpty {
-                        DashboardEmptyStateView(state: .init(
-                            title: "Nessun prodotto",
-                            message: searchText.isEmpty
-                                ? "Ricevi merci per popolare la tracciabilità HACCP."
-                                : "Nessun risultato per i filtri attivi. Prova a cambiare ricerca o periodo.",
-                            actionTitle: searchText.isEmpty ? "Vai a Ricezione merci" : nil
-                        )) {
-                            if searchText.isEmpty {
-                                appState.navigateToGoodsReceiving = true
+                    LazyVStack(spacing: 12) {
+                        ForEach(visibleProductionGroups) { group in
+                            SwipeToDeleteRow(
+                                enabled: canDeleteRecords,
+                                deleteTitle: "Rimuovi piatto",
+                                onDelete: { requestDeleteProductionGroup(group) }
+                            ) {
+                                TraceabilityProductionArchiveCard(
+                                    group: group,
+                                    searchText: searchText,
+                                    onOpenIngredient: { recordId in
+                                        openRecord(id: recordId)
+                                    }
+                                )
                             }
                         }
-                    } else {
-                        LazyVStack(spacing: 10) {
-                            ForEach(records.prefix(100)) { record in
-                                TraceabilityRecordCard(
-                                    display: context.display(for: record),
-                                    image: context.image(for: record)
-                                ) {
-                                    detailRecord = record
-                                }
-                            }
-                            if records.count > 100 {
-                                Text("Mostrati i primi 100 risultati. Affina la ricerca per trovare altro.")
-                                    .font(theme.typography.caption)
-                                    .foregroundStyle(theme.colorTextSecondary)
-                                    .frame(maxWidth: .infinity, alignment: .center)
-                                    .padding(.top, 8)
+
+                        if productionArchiveGroups.count > displayLimit {
+                            SecondaryButton(
+                                title: "Carica altri (\(productionArchiveGroups.count - displayLimit))",
+                                icon: "arrow.down.circle"
+                            ) {
+                                displayLimit += 40
                             }
                         }
                     }
                 }
             }
-            .padding(theme.spacing.screenPadding)
+
+            if !unlinkedRecords.isEmpty {
+                DashboardCardView(
+                    title: selectedFilter == .unlinked ? recordsSectionTitle : "Lotti da associare",
+                    subtitle: "\(unlinkedRecords.count) senza piatto"
+                ) {
+                    LazyVStack(spacing: 10) {
+                        ForEach(visibleUnlinkedRecords) { record in
+                            let display = hubContext.display(for: record)
+                            TraceabilityRecordCard(
+                                display: display,
+                                onTap: { detailRecord = record },
+                                onQuickAssociate: display.needsProductionLink ? {
+                                    quickAssociateRecord = record
+                                } : nil
+                            )
+                        }
+
+                        if unlinkedRecords.count > visibleUnlinkedRecords.count {
+                            SecondaryButton(
+                                title: "Carica altri (\(unlinkedRecords.count - visibleUnlinkedRecords.count))",
+                                icon: "arrow.down.circle"
+                            ) {
+                                displayLimit += 40
+                            }
+                        }
+                    }
+                }
+            }
+
+            if productionArchiveGroups.isEmpty && unlinkedRecords.isEmpty {
+                DashboardCardView(
+                    title: recordsSectionTitle,
+                    subtitle: recordsSectionSubtitle
+                ) {
+                    emptyRecordsState
+                }
+            }
         }
     }
 
-    private func statsRow(_ metrics: (total: Int, available: Int, expiring: Int, issues: Int)) -> some View {
-        LazyVGrid(columns: [
-            GridItem(.flexible()),
-            GridItem(.flexible()),
-            GridItem(.flexible()),
-            GridItem(.flexible())
-        ], spacing: 12) {
-            StatCard(title: "Totale", value: "\(metrics.total)", subtitle: "Prodotti", icon: "archivebox.fill", accent: theme.colorPrimary)
-            StatCard(title: "Disponibili", value: "\(metrics.available)", subtitle: "In uso", icon: "checkmark.circle.fill", accent: theme.colorSuccess)
-            StatCard(title: "In scadenza", value: "\(metrics.expiring)", subtitle: "Entro \(SettingsStorageService.shared.haccp.productExpiryThreshold) gg", icon: "clock.badge.exclamationmark", accent: metrics.expiring > 0 ? theme.colorWarning : theme.colorTextSecondary)
-            StatCard(title: "Criticità", value: "\(metrics.issues)", subtitle: "Da verificare", icon: "exclamationmark.triangle.fill", accent: metrics.issues > 0 ? theme.colorError : theme.colorTextSecondary)
+    private var recordsSectionTitle: String {
+        switch selectedFilter {
+        case .all: return "Archivio per piatto"
+        case .unlinked: return "Lotti da associare"
+        case .critical: return "Non conformi"
+        case .today: return "Registrati oggi"
         }
+    }
+
+    private var recordsSectionSubtitle: String {
+        "\(filteredRecords.count) risultati"
     }
 
     @ViewBuilder
+    private var emptyRecordsState: some View {
+        DashboardEmptyStateView(state: .init(
+            title: emptyTitle,
+            message: emptyMessage,
+            actionTitle: emptyActionTitle
+        )) {
+            if searchText.isEmpty && selectedFilter == .all {
+                showLotCapture = true
+            } else if selectedFilter == .unlinked {
+                selectedFilter = .all
+            } else {
+                selectedFilter = .all
+                searchText = ""
+            }
+        }
+    }
+
+    private var emptyTitle: String {
+        if !searchText.isEmpty { return "Nessun risultato" }
+        switch selectedFilter {
+        case .unlinked: return "Tutto associato"
+        case .critical: return "Nessuna non conformità"
+        case .today: return "Niente registrato oggi"
+        case .all: return "Archivio vuoto"
+        }
+    }
+
+    private var emptyMessage: String {
+        if !searchText.isEmpty {
+            return "Prova a cambiare ricerca o filtro."
+        }
+        switch selectedFilter {
+        case .unlinked:
+            return "Ogni lotto attivo è collegato a un piatto."
+        case .critical:
+            return "Non ci sono lotti segnalati come non conformi."
+        case .today:
+            return "Usa la fotocamera per registrare i lotti di oggi."
+        case .all:
+            return "Scatta le etichette con la fotocamera per iniziare."
+        }
+    }
+
+    private var emptyActionTitle: String? {
+        if !searchText.isEmpty { return "Reimposta filtri" }
+        switch selectedFilter {
+        case .all, .today: return "Scatta lotti"
+        case .unlinked, .critical: return "Vedi tutti"
+        }
+    }
+
+    // MARK: - Sheets
+
+    @ViewBuilder
     private func detailSheet(for record: TraceabilityRecord) -> some View {
-        let context = makeContext()
         TraceabilityRecordDetailSheet(
             record: record,
-            display: context.display(for: record),
-            image: context.image(for: record),
-            associatedProductions: context.associatedProductions(for: record),
-            defrostRecords: context.defrostRecords(for: record),
-            receiptStatus: context.receiptStatusLabel(for: record),
+            display: hubContext.display(for: record),
+            associatedProductions: hubContext.associatedProductions(for: record),
+            ingredientCountByProductionId: Dictionary(
+                uniqueKeysWithValues: hubContext.associatedProductions(for: record).map {
+                    ($0.id, hubContext.ingredientCount(forProduction: $0.id))
+                }
+            ),
+            linkedIngredientCount: hubContext.ingredientCount(for: record),
+            defrostRecords: hubContext.defrostRecords(for: record),
+            auditLogs: hubContext.auditLogs(for: record),
+            productionsById: Dictionary(dataStore.productions.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first }),
             canDeleteRecords: canDeleteRecords,
             hasExistingLabel: {
                 let draft = labelService.draft(from: record)
                 return ProductionLabelLinkMatcher.existingLabel(for: draft, in: scopedLabels) != nil
             }(),
-            onAssociate: { beginProductionAssociation(record) },
+            masterUser: users.first(where: { $0.role == .master }),
+            onAssociate: { beginMultiProductionAssociation(record) },
             onLabel: { beginLabel(for: record) },
-            onNonCompliant: { beginNonCompliance(record) },
-            onWithdraw: { withdrawRecord = record },
+            onNonCompliant: { nonComplianceRecord = record },
             onDelete: {
                 recordPendingDelete = record
-                showMasterAuthDelete = true
+                performPendingDelete()
+                detailRecord = nil
             },
             onDismiss: { detailRecord = nil }
+        )
+    }
+
+    @ViewBuilder
+    private func quickAssociateSheet(for record: TraceabilityRecord) -> some View {
+        TraceabilityQuickAssociateSheet(
+            record: record,
+            productions: dataStore.productions,
+            categories: scopedCategories,
+            onConfirm: { production in
+                associate(record: record, to: production)
+                quickAssociateRecord = nil
+            },
+            onCancel: { quickAssociateRecord = nil }
         )
     }
 
@@ -284,7 +474,7 @@ struct TraceabilityView: View {
             initialSelectedIds: pendingProductionIds,
             onCancel: { showProductionSelection = false },
             onConfirm: { selectedProductions in
-                guard let record = selectedTraceabilityForProduction else { return }
+                guard let record = multiAssociateRecord else { return }
                 do {
                     try productionLibraryService.syncAssociations(
                         record: record,
@@ -293,10 +483,10 @@ struct TraceabilityView: View {
                         links: dataStore.links,
                         modelContext: modelContext
                     )
-                    dataStore.reload(context: modelContext, restaurantId: appState.activeRestaurantId)
+                    reloadAll()
                     showProductionSelection = false
                 } catch {
-                    errorMessage = "Associazione produzione non riuscita."
+                    errorMessage = "Associazione non riuscita."
                 }
             }
         )
@@ -321,35 +511,117 @@ struct TraceabilityView: View {
     }
 
     @ViewBuilder
-    private var masterDeleteOverlay: some View {
-        if let master = users.first(where: { $0.role == .master }) {
-            MasterAuthOverlay(
-                master: master,
-                operation: .deleteTraceabilityEntry,
-                onAuthorized: {
-                    showMasterAuthDelete = false
-                    if let record = recordPendingDelete {
-                        do {
-                            try service.deleteTraceabilityEntry(
-                                record: record,
-                                goodsReceipts: dataStore.goodsReceipts,
-                                links: dataStore.links,
-                                logs: dataStore.logs,
-                                images: dataStore.images,
-                                modelContext: modelContext
-                            )
-                            dataStore.reload(context: modelContext, restaurantId: appState.activeRestaurantId)
-                        } catch {
-                            errorMessage = "Eliminazione non riuscita."
-                        }
-                        recordPendingDelete = nil
-                    }
+    private var lotCaptureOverlay: some View {
+        if let rid = appState.activeRestaurantId, let user = currentUser {
+            TraceabilityLotCaptureFlowView(
+                restaurantId: rid,
+                user: user,
+                resumeSessionId: resumeSessionId,
+                onDismiss: {
+                    showLotCapture = false
+                    resumeSessionId = nil
+                    reloadAll()
                 },
-                onCancel: {
-                    showMasterAuthDelete = false
-                    recordPendingDelete = nil
+                onUpdated: { reloadAll() }
+            )
+        } else {
+            ZStack {
+                Color.black.ignoresSafeArea()
+                ProgressView("Preparazione fotocamera…")
+                    .tint(.white)
+                    .foregroundStyle(.white)
+            }
+            .onAppear {
+                if appState.activeRestaurantId == nil {
+                    showLotCapture = false
                 }
-            ) { EmptyView() }
+            }
+        }
+    }
+
+    // MARK: - Actions
+
+    private func openRecord(id: UUID) {
+        if let record = dataStore.records.first(where: { $0.id == id }) {
+            detailRecord = record
+        }
+    }
+
+    private func performPendingDelete() {
+        guard let record = recordPendingDelete else { return }
+        do {
+            try service.deleteTraceabilityEntry(
+                record: record,
+                links: dataStore.links,
+                logs: dataStore.logs,
+                images: dataStore.images,
+                modelContext: modelContext
+            )
+            recordPendingDelete = nil
+            reloadAll()
+        } catch {
+            errorMessage = "Eliminazione non riuscita."
+            recordPendingDelete = nil
+        }
+    }
+
+    private func requestDeleteProductionGroup(_ group: TraceabilityProductionArchiveGroup) {
+        masterAuth.request(
+            permission: .deleteTraceabilityRecords,
+            permissions: permissions,
+            action: { performDeleteProductionGroup(group) }
+        )
+    }
+
+    private func performDeleteProductionGroup(_ group: TraceabilityProductionArchiveGroup) {
+        do {
+            try productionLibraryService.removeProductionGroup(
+                group: group,
+                records: dataStore.records,
+                links: dataStore.links,
+                lottoProductionLinks: dataStore.lottoProductionLinks,
+                productionsById: Dictionary(dataStore.productions.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first }),
+                modelContext: modelContext
+            )
+            reloadAll()
+            HapticManager.shared.notification(.success)
+        } catch {
+            errorMessage = "Rimozione piatto non riuscita."
+        }
+    }
+
+    private func reloadAll() {
+        if let rid = appState.activeRestaurantId {
+            lottoService.ensureArchiveRecords(restaurantId: rid, modelContext: modelContext)
+        }
+        dataStore.reload(context: modelContext, restaurantId: appState.activeRestaurantId)
+        if let rid = appState.activeRestaurantId {
+            openSessions = lottoService.openSessions(restaurantId: rid, modelContext: modelContext)
+        } else {
+            openSessions = []
+        }
+    }
+
+    private func beginMultiProductionAssociation(_ record: TraceabilityRecord) {
+        multiAssociateRecord = record
+        pendingProductionIds = Set(dataStore.links.filter { $0.receivedItemId == record.id }.map(\.productionId))
+        showProductionSelection = true
+    }
+
+    private func associate(record: TraceabilityRecord, to production: Production) {
+        do {
+            try productionLibraryService.associate(
+                record: record,
+                production: production,
+                quantityUsed: nil,
+                operatorName: currentUser?.name ?? "Operatore",
+                links: dataStore.links,
+                modelContext: modelContext
+            )
+            reloadAll()
+            HapticManager.shared.notification(.success)
+        } catch {
+            errorMessage = (error as NSError).localizedDescription
         }
     }
 
@@ -357,16 +629,10 @@ struct TraceabilityView: View {
         let draft = labelService.draft(from: record)
         if let existing = ProductionLabelLinkMatcher.existingLabel(for: draft, in: scopedLabels) {
             appState.pendingSidebarNavigation = .productionLabels
-            errorMessage = "Etichetta già presente per «\(existing.productName)». Vai in Etichette → Tracciabilità per ristampare."
+            errorMessage = "Etichetta già presente per «\(existing.productName)». Vai in Etichette per ristampare."
             return
         }
         labelDraft = draft
-    }
-
-    private func beginProductionAssociation(_ record: TraceabilityRecord) {
-        selectedTraceabilityForProduction = record
-        pendingProductionIds = Set(dataStore.links.filter { $0.receivedItemId == record.id }.map(\.productionId))
-        showProductionSelection = true
     }
 
     private func handleLabelSaved(_ record: ProductionLabelRecord, shouldPrint: Bool) {
@@ -379,277 +645,6 @@ struct TraceabilityView: View {
                 modelContext: modelContext,
                 countAsReprint: false
             )
-        }
-    }
-
-    private func beginNonCompliance(_ record: TraceabilityRecord) {
-        nonComplianceRecord = record
-        nonComplianceNote = ""
-        nonComplianceCorrectiveAction = ""
-        nonCompliancePhotoData = nil
-        ncCamera.resetCaptureBuffer()
-    }
-
-    private func refreshExpiredStatuses() {
-        let expired = expiryService.refreshStatuses(records: dataStore.records, modelContext: modelContext)
-        if expired > 0 {
-            errorMessage = "Sono stati marcati \(expired) prodotti come scaduti."
-            dataStore.reload(context: modelContext, restaurantId: appState.activeRestaurantId)
-        }
-    }
-
-    @ViewBuilder
-    private var nonComplianceSheet: some View {
-        NavigationStack {
-            Form {
-                Section {
-                    Text("Motivo, azione correttiva e foto sono obbligatori per registrare una criticità.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                Section("Motivo (non conformità)") {
-                    TextField("Es. confezione danneggiata, temperatura errata…", text: $nonComplianceNote, axis: .vertical)
-                        .lineLimit(2...5)
-                }
-                Section("Azione correttiva") {
-                    TextField("Cosa fate per gestire la criticità", text: $nonComplianceCorrectiveAction, axis: .vertical)
-                        .lineLimit(2...5)
-                }
-                Section("Foto obbligatoria") {
-                    if let data = nonCompliancePhotoData,
-                       let preview = HACCPZoomablePhotoPreview(data: data, height: 220, zoomTitle: "Foto non conformità") {
-                        preview
-                        Button("Riscatta foto") {
-                            nonCompliancePhotoData = nil
-                            ncCamera.resetCaptureBuffer()
-                            ncCamera.start()
-                        }
-                        .buttonStyle(.bordered)
-                    } else {
-                        RoundedRectangle(cornerRadius: 10)
-                            .fill(theme.colorCameraPreviewBackground)
-                            .frame(height: 160)
-                            .overlay(
-                                Group {
-                                    if ncCamera.authorizationDenied {
-                                        Text("Accesso fotocamera negato")
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
-                                    } else {
-                                        FinalizeCameraSessionPreview(session: ncCamera.session)
-                                            .clipShape(RoundedRectangle(cornerRadius: 10))
-                                    }
-                                }
-                            )
-                        Button("Scatta foto") {
-                            ncAwaitingCapture = true
-                            ncCamera.capturePhoto()
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .disabled(ncCamera.authorizationDenied)
-                    }
-                }
-            }
-            .navigationTitle("Non conformità")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Annulla") {
-                        ncAwaitingCapture = false
-                        ncCamera.stop()
-                        nonComplianceRecord = nil
-                    }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Conferma") { confirmNonCompliance() }
-                }
-            }
-            .onAppear {
-                ncCamera.resetCaptureBuffer()
-                ncCamera.start()
-            }
-            .onDisappear {
-                ncAwaitingCapture = false
-                ncCamera.stop()
-            }
-        }
-    }
-
-    private func confirmNonCompliance() {
-        guard let record = nonComplianceRecord else { return }
-        guard let user = currentUser else {
-            errorMessage = "Effettua l'accesso per registrare la non conformità."
-            return
-        }
-        let note = nonComplianceNote.trimmingCharacters(in: .whitespacesAndNewlines)
-        let action = nonComplianceCorrectiveAction.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !note.isEmpty, !action.isEmpty, let photo = nonCompliancePhotoData, !photo.isEmpty else {
-            errorMessage = "Per una non conformità è obbligatorio allegare una foto."
-            return
-        }
-        do {
-            try service.markNonCompliant(
-                record: record,
-                note: note,
-                correctiveAction: action,
-                imageData: photo,
-                user: user,
-                modelContext: modelContext
-            )
-            ncAwaitingCapture = false
-            ncCamera.stop()
-            nonComplianceRecord = nil
-            nonCompliancePhotoData = nil
-            dataStore.reload(context: modelContext, restaurantId: appState.activeRestaurantId)
-            HapticManager.shared.notification(.success)
-        } catch {
-            errorMessage = (error as NSError).localizedDescription
-        }
-    }
-}
-
-// MARK: - Lookup contesto (indici pre-calcolati per lista veloce)
-
-private struct TraceabilityContext {
-    let receiptsById: [UUID: GoodsReceipt]
-    let productionIdsByRecord: [UUID: Set<UUID>]
-    let productionsById: [UUID: Production]
-    let defrostByTrace: [UUID: [DefrostRecord]]
-    let imagesByRecord: [UUID: [ProductImage]]
-
-    init(store: TraceabilityDataStore) {
-        receiptsById = Dictionary(uniqueKeysWithValues: store.goodsReceipts.map { ($0.id, $0) })
-        productionsById = Dictionary(uniqueKeysWithValues: store.productions.map { ($0.id, $0) })
-        var prodMap: [UUID: Set<UUID>] = [:]
-        for link in store.links {
-            prodMap[link.receivedItemId, default: []].insert(link.productionId)
-        }
-        productionIdsByRecord = prodMap
-        var defrostMap: [UUID: [DefrostRecord]] = [:]
-        for defrost in store.defrostRecords {
-            if let traceId = defrost.traceabilityItemId {
-                defrostMap[traceId, default: []].append(defrost)
-            }
-        }
-        defrostByTrace = defrostMap
-        var imageMap: [UUID: [ProductImage]] = [:]
-        for image in store.images {
-            imageMap[image.receivedItemId, default: []].append(image)
-        }
-        imagesByRecord = imageMap
-    }
-
-    func receipt(for record: TraceabilityRecord) -> GoodsReceipt? {
-        guard let gid = record.goodsReceiptId else { return nil }
-        return receiptsById[gid]
-    }
-
-    func productName(for record: TraceabilityRecord) -> String {
-        receipt(for: record)?.productNameSnapshot ?? record.productName
-    }
-
-    func supplier(for record: TraceabilityRecord) -> String {
-        let s = receipt(for: record)?.supplierNameSnapshot ?? record.supplier
-        return s.isEmpty ? "-" : s
-    }
-
-    func lot(for record: TraceabilityRecord) -> String {
-        let lot = receipt(for: record)?.lotNumber ?? (record.lotCode.isEmpty ? nil : record.lotCode)
-        guard let lot, !lot.isEmpty else { return "-" }
-        return lot
-    }
-
-    func receivedAt(for record: TraceabilityRecord) -> Date {
-        receipt(for: record)?.receivedAt ?? record.receivedAt
-    }
-
-    func expiryDate(for record: TraceabilityRecord) -> Date? {
-        receipt(for: record)?.expiryDate ?? record.expiryDate
-    }
-
-    func category(for record: TraceabilityRecord) -> String? {
-        if let r = receipt(for: record) {
-            return r.category.rawValue
-        }
-        if let raw = record.categoryRaw {
-            return GoodsCategory(rawValue: raw)?.rawValue ?? raw
-        }
-        return nil
-    }
-
-    func receiptStatusLabel(for record: TraceabilityRecord) -> String? {
-        receipt(for: record)?.status.label
-    }
-
-    func matchesSearch(_ record: TraceabilityRecord, query: String) -> Bool {
-        let q = query.lowercased()
-        return productName(for: record).lowercased().contains(q)
-            || lot(for: record).lowercased().contains(q)
-            || supplier(for: record).lowercased().contains(q)
-    }
-
-    func associatedProductions(for record: TraceabilityRecord) -> [Production] {
-        let ids = productionIdsByRecord[record.id] ?? []
-        return ids.compactMap { productionsById[$0] }.sorted { $0.name < $1.name }
-    }
-
-    func defrostRecords(for record: TraceabilityRecord) -> [DefrostRecord] {
-        defrostByTrace[record.id] ?? []
-    }
-
-    func display(for record: TraceabilityRecord) -> TraceabilityRecordDisplay {
-        let expiry = expiryDate(for: record)
-        let thresholdDays = SettingsStorageService.shared.haccp.productExpiryThreshold
-        let soon = Calendar.current.date(byAdding: .day, value: thresholdDays, to: Date()) ?? Date()
-        let expiryWarning = expiry.map { $0 <= soon && $0 >= Date() } ?? false
-        let status = ProductExpiryEvaluator.effectiveDisplayStatus(record, expiryDate: expiry)
-        let actionable = status != .expired && status != .rejected && record.productStatus != .used
-        return TraceabilityRecordDisplay(
-            recordId: record.id,
-            productName: productName(for: record),
-            lot: lot(for: record),
-            supplier: supplier(for: record),
-            receivedAt: receivedAt(for: record),
-            expiryDate: expiry,
-            category: category(for: record),
-            statusLabel: record.isNonCompliant ? "Non conforme" : status.label,
-            badgeStyle: badgeStyle(for: status, isNonCompliant: record.isNonCompliant),
-            productionCount: productionIdsByRecord[record.id]?.count ?? 0,
-            defrostCount: defrostByTrace[record.id]?.count ?? 0,
-            isActionable: actionable,
-            expiryWarning: expiryWarning
-        )
-    }
-
-    func image(for record: TraceabilityRecord) -> UIImage? {
-        let recordImages = (imagesByRecord[record.id] ?? []).sorted { $0.createdAt > $1.createdAt }
-        let preferred = recordImages.first { $0.type == .nonComplianceRequired }
-            ?? recordImages.first { $0.type == .receiptOptional }
-            ?? recordImages.first
-        if let imgModel = preferred,
-           let bytes = imgModel.imageData, !bytes.isEmpty,
-           let image = UIImage(data: bytes) {
-            return image
-        }
-        if let path = preferred?.localPath, let image = UIImage(contentsOfFile: path) {
-            return image
-        }
-        if let data = receipt(for: record)?.photoData, let image = UIImage(data: data) {
-            return image
-        }
-        if let data = record.photoData, let image = UIImage(data: data) {
-            return image
-        }
-        return nil
-    }
-
-    private func badgeStyle(for status: ProductStatus, isNonCompliant: Bool) -> HACCPBadgeStyle {
-        if isNonCompliant { return .nonConforme }
-        switch status {
-        case .available: return .info
-        case .partiallyUsed: return .warning
-        case .used: return .conforme
-        case .expired, .rejected: return .nonConforme
         }
     }
 }

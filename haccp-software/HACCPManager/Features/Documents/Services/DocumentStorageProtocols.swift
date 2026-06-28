@@ -7,7 +7,7 @@ protocol DocumentStorageServiceProtocol: AnyObject {
     func relativePathForICloud(
         restaurantDisplayName: String,
         periodFolder: String,
-        groupFolder: String,
+        groupFolder: String?,
         moduleFolder: String,
         fileName: String
     ) -> String

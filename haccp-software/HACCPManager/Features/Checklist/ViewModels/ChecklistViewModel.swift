@@ -10,12 +10,30 @@ final class ChecklistViewModel: ObservableObject {
 
     let service = ChecklistService()
 
-    func dashboardCounts(runs: [ChecklistRun], alerts: [ChecklistAlert]) -> (todo: Int, inProgress: Int, completed: Int, critical: Int) {
-        let todo = runs.filter { $0.status == .notStarted || $0.status == .overdue }.count
-        let inProgress = runs.filter { $0.status == .inProgress }.count
+    func dashboardCounts(
+        runs: [ChecklistRun],
+        templates: [ChecklistTemplate]
+    ) -> (todo: Int, inProgress: Int, completed: Int) {
+        let engine = PeriodicTaskEngine()
+        let templateById = Dictionary(uniqueKeysWithValues: templates.map { ($0.id, $0) })
+
+        let active = runs.filter { !$0.status.isTerminal }
+
+        let todo = active.filter { run in
+            if run.status == .inProgress { return false }
+            guard let template = templateById[run.templateId] else { return false }
+            let adapter = ChecklistRunPeriodicAdapter(
+                run: run,
+                frequency: template.frequency,
+                category: template.category,
+                areaTag: template.areaTag
+            )
+            return engine.isVisibleOnDashboard(adapter)
+        }.count
+
+        let inProgress = active.filter { $0.status == .inProgress }.count
         let completed = runs.filter { $0.status == .completed }.count
-        let critical = alerts.filter { $0.isActive && ($0.severity == .high || $0.severity == .critical) }.count
-        return (todo, inProgress, completed, critical)
+        return (todo, inProgress, completed)
     }
 }
 
@@ -26,4 +44,11 @@ enum ChecklistTab: String, CaseIterable, Identifiable {
     case alerts = "Criticità"
 
     var id: String { rawValue }
+
+    var subtitle: String {
+        switch self {
+        case .alerts: return "Checklist e pulizie unite"
+        default: return rawValue
+        }
+    }
 }

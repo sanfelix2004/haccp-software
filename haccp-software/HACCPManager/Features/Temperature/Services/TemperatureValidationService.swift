@@ -33,8 +33,11 @@ struct TemperatureValidationService {
             )
         }
 
-        let lowWarn = range.min + warningThreshold
-        let highWarn = range.max - warningThreshold
+        let maxWarning = (range.max - range.min) * 0.25
+        let actualWarning = min(warningThreshold, maxWarning > 0 ? maxWarning : warningThreshold)
+
+        let lowWarn = range.min + actualWarning
+        let highWarn = range.max - actualWarning
         if value <= lowWarn || value >= highWarn {
             return TemperatureValidationResult(
                 status: .warning,

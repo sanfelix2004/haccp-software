@@ -7,10 +7,15 @@ public struct HACCPSettings: Codable {
     var freezerMaxTemp: Double = -18.0
     var blastChillerTemp: Double = 3.0
     var warningThreshold: Double?
+    var geminiApiKey: String?
+    /// Chiave API Groq per lettura etichette (Llama 4 Maverick vision).
+    var groqApiKey: String?
     
     var tempCheckFrequency: Int = 4 // hours
     var productExpiryThreshold: Int = 3 // days
-    
+    /// Se `true`, il codice lotto è obbligatorio nella tracciabilità via fotocamera.
+    var lotEntryMandatory: Bool = true
+
     var storageDurationYears: Int = 5
     var labelFormat: String = "Standard 50x30"
     var oilPolarAttentionLimit: Double = 20.0
@@ -36,8 +41,11 @@ public struct HACCPSettings: Codable {
         case freezerMaxTemp
         case blastChillerTemp
         case warningThreshold
+        case geminiApiKey
+        case groqApiKey
         case tempCheckFrequency
         case productExpiryThreshold
+        case lotEntryMandatory
         case storageDurationYears
         case labelFormat
         case oilPolarAttentionLimit
@@ -58,8 +66,11 @@ public struct HACCPSettings: Codable {
         freezerMaxTemp = try container.decodeIfPresent(Double.self, forKey: .freezerMaxTemp) ?? freezerMaxTemp
         blastChillerTemp = try container.decodeIfPresent(Double.self, forKey: .blastChillerTemp) ?? blastChillerTemp
         warningThreshold = try container.decodeIfPresent(Double.self, forKey: .warningThreshold)
+        geminiApiKey = try container.decodeIfPresent(String.self, forKey: .geminiApiKey)
+        groqApiKey = try container.decodeIfPresent(String.self, forKey: .groqApiKey)
         tempCheckFrequency = try container.decodeIfPresent(Int.self, forKey: .tempCheckFrequency) ?? tempCheckFrequency
         productExpiryThreshold = try container.decodeIfPresent(Int.self, forKey: .productExpiryThreshold) ?? productExpiryThreshold
+        lotEntryMandatory = try container.decodeIfPresent(Bool.self, forKey: .lotEntryMandatory) ?? lotEntryMandatory
         storageDurationYears = try container.decodeIfPresent(Int.self, forKey: .storageDurationYears) ?? storageDurationYears
         labelFormat = try container.decodeIfPresent(String.self, forKey: .labelFormat) ?? labelFormat
         oilPolarAttentionLimit = try container.decodeIfPresent(Double.self, forKey: .oilPolarAttentionLimit) ?? oilPolarAttentionLimit

@@ -18,7 +18,7 @@ final class ChecklistHistoryViewModel: ObservableObject {
         let end = calendar.date(byAdding: DateComponents(day: 1, second: -1), to: calendar.startOfDay(for: toDate)) ?? toDate
 
         return runs
-            .filter { $0.status == .completed || $0.status == .failed || $0.status == .archived }
+            .filter { $0.status == .completed || $0.status == .failed || $0.status == .archived || $0.status == .missed }
             .filter { $0.startedAt >= start && $0.startedAt <= end }
             .filter { run in
                 guard let statusFilter else { return true }

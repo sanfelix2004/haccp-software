@@ -7,12 +7,10 @@ final class GoodsReceivingViewModel: ObservableObject {
     @Published var selectedCategory: GoodsCategory = .all
     @Published var selectedProduct: ProductTemplate?
     @Published var errorMessage: String?
-    @Published var showControlSheet = false
+    @Published var showIntakeSheet = false
 
     @Published var recentProductIds: [UUID] = []
     @Published var lastSupplierId: UUID?
-
-    let service = GoodsReceivingService()
 
     func loadMemory(restaurantId: UUID) {
         let defaults = UserDefaults.standard
@@ -40,14 +38,14 @@ final class GoodsReceivingViewModel: ObservableObject {
         recentProductIds = Array(recentProductIds.prefix(8))
     }
 
-    /// Apre il foglio controlli per `selectedProduct` (dopo fornitore + «Ho finito»).
-    func presentControlSheet() {
-        guard selectedProduct != nil else { return }
-        showControlSheet = true
+    /// Apre il foglio di conferma (fornitore + alimento già selezionati).
+    func presentIntakeSheet() {
+        guard selectedProduct != nil, selectedSupplier != nil else { return }
+        showIntakeSheet = true
     }
 
     func resetForNext() {
         selectedProduct = nil
-        showControlSheet = false
+        showIntakeSheet = false
     }
 }

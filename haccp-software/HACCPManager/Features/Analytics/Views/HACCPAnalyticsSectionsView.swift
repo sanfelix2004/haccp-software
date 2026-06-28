@@ -20,15 +20,15 @@ struct HACCPAnalyticsSectionsView: View {
     let labelRecords: [ProductionLabelRecord]
 
     private var hasAnyData: Bool {
-        !checklistRuns.filter { $0.restaurantId == restaurantId }.isEmpty
-            || !temperatureRecords.filter { $0.restaurantId == restaurantId }.isEmpty
-            || !cleaningRecords.filter { $0.restaurantId == restaurantId }.isEmpty
-            || !blastRecords.filter { $0.restaurantId == restaurantId }.isEmpty
-            || !defrostRecords.filter { $0.restaurantId == restaurantId }.isEmpty
-            || !oilRecords.filter { $0.restaurantId == restaurantId }.isEmpty
-            || !goodsRecords.filter { $0.restaurantId == restaurantId }.isEmpty
-            || !traceabilityRecords.filter { $0.restaurantId == restaurantId }.isEmpty
-            || !labelRecords.filter { $0.restaurantId == restaurantId }.isEmpty
+        !checklistRuns.isEmpty
+            || !temperatureRecords.isEmpty
+            || !cleaningRecords.isEmpty
+            || !blastRecords.isEmpty
+            || !defrostRecords.isEmpty
+            || !oilRecords.isEmpty
+            || !goodsRecords.isEmpty
+            || !traceabilityRecords.isEmpty
+            || !labelRecords.isEmpty
     }
 
     var body: some View {
@@ -61,7 +61,7 @@ struct HACCPAnalyticsSectionsView: View {
             TemperatureAnalyticsCard(
                 points: temperaturePoints,
                 kpis: vm.temperatureKPIs(points: temperaturePoints),
-                devices: temperatureDevices.filter { $0.restaurantId == restaurantId && $0.isActive }.sorted { $0.name < $1.name },
+                devices: temperatureDevices.filter(\.isActive).sorted { $0.name < $1.name },
                 selectedDeviceId: $vm.selectedDeviceId,
                 selectedPeriod: $vm.selectedPeriod
             )
@@ -144,7 +144,7 @@ struct HACCPAnalyticsSectionsView: View {
                 subtitle: "Stato prodotti e scadenze imminenti",
                 icon: "archivebox.fill",
                 accent: ThemeManager.shared.colorSuccess,
-                isEmpty: traceabilityRecords.filter({ $0.restaurantId == restaurantId }).isEmpty
+                isEmpty: traceabilityRecords.isEmpty
             ) {
                 let slices = vm.traceabilitySlices(restaurantId: restaurantId, records: traceabilityRecords)
                 if !slices.isEmpty {

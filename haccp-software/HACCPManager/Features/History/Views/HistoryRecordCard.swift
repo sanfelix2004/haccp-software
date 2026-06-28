@@ -1,8 +1,12 @@
 import SwiftUI
 
-struct HistoryRecordCard: View {
+struct HistoryRecordCard: View, Equatable {
     let entry: HistoryEntry
     var isLastInSection: Bool = false
+
+    static func == (lhs: HistoryRecordCard, rhs: HistoryRecordCard) -> Bool {
+        lhs.entry == rhs.entry && lhs.isLastInSection == rhs.isLastInSection
+    }
 
     @Environment(\.theme) private var theme
     @State private var isExpanded = false
@@ -16,10 +20,10 @@ struct HistoryRecordCard: View {
             timelineRail
 
             VStack(alignment: .leading, spacing: 10) {
-                header
-                if isExpanded, !entry.details.isEmpty {
-                    detailsGrid
-                        .transition(.opacity.combined(with: .move(edge: .top)))
+                if let ingredients = entry.traceabilityIngredients {
+                    traceabilityProductionCard(ingredients: ingredients)
+                } else {
+                    standardCard
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -33,12 +37,122 @@ struct HistoryRecordCard: View {
                         lineWidth: 1
                     )
             )
-            .onTapGesture {
-                withAnimation(.spring(response: 0.28, dampingFraction: 0.86)) {
-                    isExpanded.toggle()
+        }
+    }
+
+    @ViewBuilder
+    private var standardCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            header(showExpandHint: !entry.details.isEmpty)
+            if isExpanded, !entry.details.isEmpty {
+                detailsGrid
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+        }
+        .contentShape(Rectangle())
+        .onTapGesture {
+            guard !entry.details.isEmpty else { return }
+            withAnimation(.spring(response: 0.28, dampingFraction: 0.86)) {
+                isExpanded.toggle()
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func traceabilityProductionCard(ingredients: [HistoryTraceabilityIngredient]) -> some View {
+        Button {
+            withAnimation(.spring(response: 0.28, dampingFraction: 0.86)) {
+                isExpanded.toggle()
+            }
+        } label: {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(alignment: .center, spacing: 12) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .fill(accent.opacity(0.14))
+                            .frame(width: 44, height: 44)
+                        Image(systemName: "fork.knife")
+                            .font(.body.weight(.semibold))
+                            .foregroundStyle(accent)
+                    }
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(entry.title)
+                            .font(theme.typography.headline)
+                            .foregroundStyle(theme.colorTextPrimary)
+                            .multilineTextAlignment(.leading)
+                        Text(entry.status)
+                            .font(theme.typography.caption)
+                            .foregroundStyle(theme.colorTextSecondary)
+                    }
+
+                    Spacer(minLength: 0)
+
+                    VStack(alignment: .trailing, spacing: 6) {
+                        Text(entry.date.formatted(date: .omitted, time: .shortened))
+                            .font(theme.typography.caption.weight(.semibold))
+                            .foregroundStyle(theme.colorTextSecondary)
+                        Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(theme.colorPrimary)
+                    }
+                }
+
+                if isExpanded {
+                    VStack(spacing: 8) {
+                        ForEach(ingredients) { ingredient in
+                            ingredientRow(ingredient)
+                        }
+                    }
+                    .padding(.top, 4)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
                 }
             }
         }
+        .buttonStyle(.plain)
+    }
+
+    private func ingredientRow(_ ingredient: HistoryTraceabilityIngredient) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "shippingbox.fill")
+                .font(.caption)
+                .foregroundStyle(theme.colorPrimary)
+                .frame(width: 20)
+                .padding(.top, 2)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(ingredient.name)
+                    .font(theme.typography.subheadline.weight(.semibold))
+                    .foregroundStyle(theme.colorTextPrimary)
+                Text("Lotto \(ingredient.lotCode)")
+                    .font(theme.typography.caption.weight(.bold).monospaced())
+                    .foregroundStyle(theme.colorPrimary)
+                if ingredient.supplier != "—" {
+                    Text(ingredient.supplier)
+                        .font(theme.typography.caption2)
+                        .foregroundStyle(theme.colorTextSecondary)
+                }
+                HStack(spacing: 8) {
+                    if ingredient.expiryText != "—" {
+                        Label(ingredient.expiryText, systemImage: "calendar")
+                    }
+                    Text(ingredient.operatorName)
+                }
+                .font(theme.typography.caption2)
+                .foregroundStyle(theme.colorTextSecondary)
+            }
+
+            Spacer(minLength: 0)
+
+            if ingredient.hasCriticality {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.caption)
+                    .foregroundStyle(theme.colorError)
+            }
+        }
+        .padding(10)
+        .background(theme.colorSurface)
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 
     private var timelineRail: some View {
@@ -61,7 +175,7 @@ struct HistoryRecordCard: View {
         .padding(.top, 18)
     }
 
-    private var header: some View {
+    private func header(showExpandHint: Bool) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 4) {
@@ -90,7 +204,7 @@ struct HistoryRecordCard: View {
                         .lineLimit(1)
                 }
                 Spacer()
-                if !entry.details.isEmpty {
+                if showExpandHint {
                     Label(isExpanded ? "Meno dettagli" : "Dettagli", systemImage: isExpanded ? "chevron.up" : "chevron.down")
                         .font(theme.typography.caption2.weight(.semibold))
                         .foregroundStyle(theme.colorPrimary)

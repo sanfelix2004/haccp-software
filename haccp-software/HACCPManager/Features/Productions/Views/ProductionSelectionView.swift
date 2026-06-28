@@ -74,6 +74,7 @@ struct ProductionSelectionView: View {
                         productions: filteredProductions,
                         selectedProductionIds: vm.selectedProductionIds,
                         isEditMode: vm.isEditMode,
+                        showsShelfLife: true,
                         onSelect: { production in
                             if vm.selectedProductionIds.contains(production.id) {
                                 vm.selectedProductionIds.remove(production.id)

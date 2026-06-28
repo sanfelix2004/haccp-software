@@ -10,6 +10,10 @@ enum TraceabilityActionType: String, Codable {
     case nonCompliance = "NON_COMPLIANCE"
     /// Lotto scaduto ritirato o scartato dall'operatore.
     case withdrawn = "WITHDRAWN"
+    /// Scadenza registrata nel modulo Controllo scadenze (provenienza audit).
+    case expiryRegistered = "EXPIRY_REGISTERED"
+    /// Lotto rimosso dalla vista operativa Controllo scadenze (consumato / terminato).
+    case archivedFromExpiryControl = "ARCHIVED_EXPIRY_CONTROL"
 }
 
 @Model

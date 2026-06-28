@@ -21,14 +21,17 @@ final class LocalDocumentStorageService: LocalDocumentStorageProtocol {
     func relativePathForICloud(
         restaurantDisplayName: String,
         periodFolder: String,
-        groupFolder: String,
+        groupFolder: String?,
         moduleFolder: String,
         fileName: String
     ) -> String {
         let safeRestaurant = Self.sanitizeFolderName(restaurantDisplayName)
-        let safeGroup = Self.sanitizeFolderName(groupFolder)
         let safeModule = Self.sanitizeFolderName(moduleFolder)
-        return "HACCP Manager/\(safeRestaurant)/\(periodFolder)/\(safeGroup)/\(safeModule)/\(fileName)"
+        if let groupFolder, !groupFolder.isEmpty {
+            let safeGroup = Self.sanitizeFolderName(groupFolder)
+            return "HACCP Manager/\(safeRestaurant)/\(periodFolder)/\(safeGroup)/\(safeModule)/\(fileName)"
+        }
+        return "HACCP Manager/\(safeRestaurant)/\(periodFolder)/\(safeModule)/\(fileName)"
     }
 
     static func sanitizeFolderName(_ name: String) -> String {
@@ -74,6 +77,9 @@ final class LocalDocumentStorageService: LocalDocumentStorageProtocol {
             if module == .combinatoIngressoTracciabilita {
                 return "\(m)_HACCP_\(slug)_Ingresso_Tracciabilita.pdf"
             }
+            if module == .combinatoTracciabilitaProduzione {
+                return "\(m)_HACCP_\(slug)_Tracciabilita_Produzioni.pdf"
+            }
             if module == .combinatoCatenaFreddo {
                 return "\(m)_HACCP_\(slug)_Catena_Freddo.pdf"
             }
@@ -82,6 +88,9 @@ final class LocalDocumentStorageService: LocalDocumentStorageProtocol {
             }
             if module == .combinatoProduzione {
                 return "\(m)_HACCP_\(slug)_Produzione.pdf"
+            }
+            if module == .controlloScadenze {
+                return "\(m)_HACCP_\(slug)_Scadenze_Abbattimento.pdf"
             }
             if module == .ricezioneMerci {
                 return "\(m)_HACCP_\(slug)_Ricezione.pdf"

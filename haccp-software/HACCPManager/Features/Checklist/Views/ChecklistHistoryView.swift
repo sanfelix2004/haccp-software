@@ -16,7 +16,7 @@ struct ChecklistHistoryView: View {
             LazyVStack(spacing: theme.spacing.sectionSpacing) {
                 ModuleScreenHeader(
                     title: "Storico checklist",
-                    subtitle: "Esecuzioni completate e archiviate",
+                    subtitle: "Completate, non fatte e archiviate",
                     systemImage: "clock.arrow.circlepath"
                 )
 

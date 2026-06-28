@@ -5,6 +5,7 @@
 
 import Foundation
 import SwiftData
+import UIKit
 
 enum ProductionLabelImageResolver {
 
@@ -27,6 +28,13 @@ enum ProductionLabelImageResolver {
 
     private static func traceabilityImageData(traceId: UUID, context: ModelContext) -> Data? {
         guard let record = fetchTraceability(traceId: traceId, context: context) else { return nil }
+
+        if let lottoId = record.lottoFotoId, let lotto = fetchLotto(lottoId, context: context) {
+            if let image = LottoFotoImageStorage.loadImage(for: lotto, modelContext: context),
+               let data = image.jpegData(compressionQuality: 0.9), !data.isEmpty {
+                return data
+            }
+        }
 
         if let images = productImages(for: record.id, context: context) {
             for image in images {
@@ -73,6 +81,14 @@ enum ProductionLabelImageResolver {
     private static func fetchTraceability(traceId: UUID, context: ModelContext) -> TraceabilityRecord? {
         var descriptor = FetchDescriptor<TraceabilityRecord>(
             predicate: #Predicate { $0.id == traceId }
+        )
+        descriptor.fetchLimit = 1
+        return try? context.fetch(descriptor).first
+    }
+
+    private static func fetchLotto(_ lottoId: UUID, context: ModelContext) -> LottoFoto? {
+        var descriptor = FetchDescriptor<LottoFoto>(
+            predicate: #Predicate { $0.id == lottoId }
         )
         descriptor.fetchLimit = 1
         return try? context.fetch(descriptor).first
