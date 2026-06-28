@@ -70,7 +70,16 @@ struct ProductionLabelsView: View {
             }
         }
         .sheet(item: $scannedLabelData) { data in
-            ProductionLabelScannedDetailView(data: data)
+            ProductionLabelScannedDetailView(
+                data: data,
+                showsOfflineBanner: !dataStore.labels.contains(where: { $0.id == data.id }),
+                onOpenInArchive: dataStore.labels.contains(where: { $0.id == data.id })
+                    ? {
+                        scannedLabelData = nil
+                        selectedLabelId = data.id
+                    }
+                    : nil
+            )
         }
         .task(id: appState.activeRestaurantId) {
             reloadData()
@@ -124,7 +133,7 @@ struct ProductionLabelsView: View {
             LazyVStack(spacing: theme.spacing.sectionSpacing) {
                 ModuleScreenHeader(
                     title: "Etichette di produzione",
-                    subtitle: "Scegli il modulo, crea l’etichetta e stampa con QR HACCP",
+                    subtitle: "Etichette per piatti preparati, abbattimenti e decongelamenti",
                     systemImage: "tag.fill",
                     help: ModuleHelpLibrary.sidebar(.productionLabels)
                 )
@@ -352,8 +361,10 @@ struct ProductionLabelsView: View {
                 if !dataStore.labels.contains(where: { $0.id == label.id }) {
                     dataStore.mergeFetchedLabel(label)
                 }
-                pendingWorkspaceSource = ProductionLabelLinkedSource(labelSource: label.sourceModule)
-                selectedLabelId = label.id
+                scannedLabelData = ProductionLabelScanData.from(
+                    label,
+                    restaurantName: activeRestaurant?.name
+                )
                 return
             }
         } catch {

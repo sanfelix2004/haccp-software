@@ -3,106 +3,124 @@ import Foundation
 /// Layout archivio: **solo report mensili**.
 ///
 /// Struttura cartelle:
-/// `{Ristorante} / Mensili / Singoli|Combinati / {Modulo}`
+/// `{Ristorante} / Mensili / {Modulo}`
 ///
 /// Politica di generazione:
 /// - **Durante il mese corrente**: PDF aggiornati in modo incrementale man mano che arrivano i dati.
 /// - **A fine mese** (mese chiuso): PDF finali congelati (non rigenerati se già presenti).
 enum DocumentArchiveLayout {
     static let monthlyPeriodName = "Mensili"
-    static let singoliGroup = "Singoli"
-    static let combinatiGroup = "Combinati"
 
-    /// Cartella nascosta per PDF di moduli ritirati (es. HACCP combinato).
+    /// Gruppi legacy (solo migrazione da layout precedente).
+    static let legacySingoliGroup = "Singoli"
+    static let legacyCombinatiGroup = "Combinati"
+
+    /// Cartella nascosta per PDF di moduli ritirati.
     static let legacyReportsArchiveFolderName = "Archivio report legacy"
 
-    /// Moduli/cartelle non più esposti in archivio (sostituiti da «Ingresso e tracciabilità»).
-    static let retiredSingoliFolderTitles: Set<String> = [
-        moduleFolderTitle(.ricezioneMerci),
-        moduleFolderTitle(.tracciabilita)
+    /// Ordine cartelle in archivio (una cartella per funzione).
+    static let monthlyArchiveModules: [DocumentModule] = [
+        .combinatoTracciabilitaProduzione,
+        .ricezioneMerci,
+        .controlloOlio,
+        .decongelamento,
+        .abbattimento,
+        .controlloScadenze,
+        .checklist,
+        .controlloPulizia,
+        .frigoriferi,
+        .nonConformita
     ]
-    static let retiredCombinatiFolderTitles: Set<String> = [
+
+    /// Moduli con registro PDF singolo.
+    static let singleMonthlyModules: [DocumentModule] = [
+        .ricezioneMerci,
+        .controlloOlio,
+        .decongelamento,
+        .abbattimento,
+        .controlloScadenze,
+        .checklist,
+        .controlloPulizia,
+        .frigoriferi
+    ]
+
+    /// Report mensili combinati per affinità funzionale.
+    static let combinedMonthlyModules: [DocumentModule] = [
+        .combinatoTracciabilitaProduzione,
+        .nonConformita
+    ]
+
+    /// Cartelle sostituite da «Tracciabilità e produzioni».
+    static let retiredTracciabilitaFolderTitles: Set<String> = [
+        moduleFolderTitle(.tracciabilita),
+        moduleFolderTitle(.etichetteProduzione)
+    ]
+
+    /// Cartelle affinità precedenti (sostituite da moduli singoli).
+    static let retiredAffinityFolderTitles: Set<String> = [
+        moduleFolderTitle(.combinatoIngressoTracciabilita),
+        moduleFolderTitle(.combinatoCatenaFreddo),
+        moduleFolderTitle(.combinatoIgieneControlli),
+        moduleFolderTitle(.combinatoProduzione),
         moduleFolderTitle(.haccpCombinato)
     ]
+
     static var retiredModuleFolderTitles: Set<String> {
-        retiredSingoliFolderTitles.union(retiredCombinatiFolderTitles)
+        retiredTracciabilitaFolderTitles.union(retiredAffinityFolderTitles)
     }
 
     static func isRetiredFolderTitle(_ title: String) -> Bool {
         retiredModuleFolderTitles.contains { $0.caseInsensitiveCompare(title) == .orderedSame }
     }
 
-    /// Moduli non più generati come PDF singoli/combinato generale mensile.
+    /// Moduli non più generati come PDF mensili autonomi.
     static let retiredMonthlyGenerationModules: Set<DocumentModule> = [
-        .ricezioneMerci,
         .tracciabilita,
-        .haccpCombinato
+        .etichetteProduzione,
+        .haccpCombinato,
+        .combinatoIngressoTracciabilita,
+        .combinatoCatenaFreddo,
+        .combinatoIgieneControlli,
+        .combinatoProduzione
     ]
 
     static func isRetiredMonthlyModule(_ module: DocumentModule) -> Bool {
         retiredMonthlyGenerationModules.contains(module)
     }
 
-    /// Moduli ammessi nella generazione automatica mensile.
     static var activeMonthlyGenerationModules: [DocumentModule] {
-        monthEndSingleModules + monthEndCombinedModules
+        monthlyArchiveModules
     }
 
     static func isEligibleForMonthlyGeneration(type: DocumentType, module: DocumentModule) -> Bool {
         type == .mensile && activeMonthlyGenerationModules.contains(module)
     }
 
-    /// Un report mensile per ogni modulo operativo (cartella in Singoli).
-    static let singleMonthlyModules: [DocumentModule] = [
-        .frigoriferi,
-        .controlloPulizia,
-        .abbattimento,
-        .decongelamento,
-        .controlloOlio,
-        .checklist,
-        .etichetteProduzione
-    ]
-
-    /// Report combinati mensili (cartella in Combinati) — funzioni affini + registro NC.
-    static let combinedMonthlyModules: [DocumentModule] = [
-        .combinatoIngressoTracciabilita,
-        .combinatoCatenaFreddo,
-        .combinatoIgieneControlli,
-        .combinatoProduzione,
-        .nonConformita
-    ]
-
     static var monthEndSingleModules: [DocumentModule] { singleMonthlyModules }
     static var monthEndCombinedModules: [DocumentModule] { combinedMonthlyModules }
 
-    /// Titoli cartella derivati dai moduli attivi — unica fonte di verità con le liste sopra.
-    static var singleModuleFolderTitles: [String] {
-        singleMonthlyModules.map(moduleFolderTitle)
+    static var allMonthlyModules: [DocumentModule] { monthlyArchiveModules }
+
+    static var allMonthlyModuleFolderTitles: [String] {
+        monthlyArchiveModules.map(moduleFolderTitle)
     }
 
-    static var combinedModuleFolderTitles: [String] {
-        combinedMonthlyModules.map(moduleFolderTitle)
-    }
-
-    static var ingressoTracciabilitaFolderTitle: String {
-        moduleFolderTitle(.combinatoIngressoTracciabilita)
+    static var tracciabilitaProduzioneFolderTitle: String {
+        moduleFolderTitle(.combinatoTracciabilitaProduzione)
     }
 
     static func venueFolderName(for restaurant: Restaurant) -> String {
         LocalDocumentStorageService.sanitizeFolderName(restaurant.name)
     }
 
-    /// Moduli sorgente inclusi in un report combinato per affinità.
+    static func monthlyPathSuffix(for module: DocumentModule) -> String {
+        moduleFolderTitle(module)
+    }
+
     static func sourceModules(for combined: DocumentModule) -> [DocumentModule] {
         switch combined {
-        case .combinatoIngressoTracciabilita:
-            return [.ricezioneMerci, .tracciabilita]
-        case .combinatoCatenaFreddo:
-            return [.frigoriferi, .abbattimento, .decongelamento]
-        case .combinatoIgieneControlli:
-            return [.controlloPulizia, .checklist]
-        case .combinatoProduzione:
-            return [.etichetteProduzione, .controlloOlio]
+        case .combinatoTracciabilitaProduzione:
+            return [.tracciabilita, .etichetteProduzione]
         default:
             return []
         }
@@ -120,11 +138,9 @@ enum DocumentArchiveLayout {
         isSingleModule(module)
     }
 
-    static func groupFolderName(for module: DocumentModule) -> String {
-        if module == .nonConformita || module.isCombinedArchive {
-            return combinatiGroup
-        }
-        return singoliGroup
+    static func groupFolderName(for module: DocumentModule) -> String? {
+        _ = module
+        return nil
     }
 
     static func moduleFolderTitle(_ module: DocumentModule) -> String {
@@ -138,12 +154,14 @@ enum DocumentArchiveLayout {
         case .abbattimento: return "Abbattimento"
         case .decongelamento: return "Decongelamento"
         case .controlloOlio: return "Controllo olio"
+        case .controlloScadenze: return "Controllo scadenze abbattimento"
         case .checklist: return "Checklist"
         case .etichetteProduzione: return "Etichette di produzione"
         case .combinatoIngressoTracciabilita: return "Ingresso e tracciabilità"
         case .combinatoCatenaFreddo: return "Catena del freddo"
         case .combinatoIgieneControlli: return "Igiene e controlli"
         case .combinatoProduzione: return "Produzione ed etichettatura"
+        case .combinatoTracciabilitaProduzione: return "Tracciabilità e produzioni"
         default: return module.label
         }
     }
@@ -151,30 +169,49 @@ enum DocumentArchiveLayout {
     static func modules(for type: DocumentType) -> [DocumentModule] {
         switch type {
         case .mensile, .nonConformita:
-            return singleMonthlyModules + combinedMonthlyModules
+            return allMonthlyModules
         default:
             return []
         }
     }
 
-    /// Ricostruisce il path iCloud dopo migrazione cartella (evita replace string fragile).
+    static func remappedFlatMonthlyICloudPath(
+        _ path: String,
+        restaurantDisplayName: String,
+        legacyGroup: String
+    ) -> String? {
+        let segment = "/\(monthlyPeriodName)/\(legacyGroup)/"
+        guard path.contains(segment),
+              let fileName = path.split(separator: "/").last.map(String.init) else { return nil }
+
+        let parts = path.split(separator: "/").map(String.init)
+        guard let monthlyIndex = parts.firstIndex(where: { $0 == monthlyPeriodName }),
+              monthlyIndex + 2 < parts.count,
+              parts[monthlyIndex + 1] == legacyGroup else { return nil }
+
+        let moduleFolder = parts[monthlyIndex + 2]
+        return LocalDocumentStorageService.shared.relativePathForICloud(
+            restaurantDisplayName: restaurantDisplayName,
+            periodFolder: monthlyPeriodName,
+            groupFolder: nil,
+            moduleFolder: moduleFolder,
+            fileName: fileName
+        )
+    }
+
     static func remappedICloudRelativePath(
         _ path: String,
         restaurantDisplayName: String,
         oldGroup: String,
         oldModuleFolder: String,
-        newGroup: String,
+        newGroup: String?,
         newModuleFolder: String?
     ) -> String? {
         let oldSegment = "/\(oldGroup)/\(oldModuleFolder)/"
         guard path.contains(oldSegment),
               let fileName = path.split(separator: "/").last.map(String.init) else { return nil }
 
-        let prefix = "HACCP Manager/\(venueFolderName(fromDisplayName: restaurantDisplayName))/\(monthlyPeriodName)"
-        let moduleFolder = newModuleFolder ?? ""
-        if moduleFolder.isEmpty {
-            return "\(prefix)/\(newGroup)/\(fileName)"
-        }
+        let moduleFolder = newModuleFolder ?? oldModuleFolder
         return LocalDocumentStorageService.shared.relativePathForICloud(
             restaurantDisplayName: restaurantDisplayName,
             periodFolder: monthlyPeriodName,
@@ -182,9 +219,5 @@ enum DocumentArchiveLayout {
             moduleFolder: moduleFolder,
             fileName: fileName
         )
-    }
-
-    private static func venueFolderName(fromDisplayName name: String) -> String {
-        LocalDocumentStorageService.sanitizeFolderName(name)
     }
 }

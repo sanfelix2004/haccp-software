@@ -31,6 +31,7 @@ extension ChecklistFrequency {
         case .daily: return "sun.max.fill"
         case .weekly: return "calendar"
         case .monthly: return "calendar.badge.clock"
+        case .annual: return "calendar.badge.exclamationmark"
         case .onDemand: return "hand.tap.fill"
         case .custom: return "slider.horizontal.3"
         }
@@ -44,7 +45,14 @@ extension ChecklistRunStatus {
         case .inProgress: return .info
         case .overdue, .failed: return .nonConforme
         case .notStarted: return .neutral
-        case .archived: return .neutral
+        case .missed, .archived: return .neutral
+        }
+    }
+
+    var isTerminal: Bool {
+        switch self {
+        case .completed, .failed, .missed, .archived: return true
+        case .notStarted, .inProgress, .overdue: return false
         }
     }
 }
@@ -74,23 +82,32 @@ struct ChecklistProgressSummary: Equatable {
     let total: Int
     let progressPercentage: Int
     let hasFailures: Bool
+    let failedCount: Int
 
     static func from(run: ChecklistRun, results: [ChecklistItemResult]) -> ChecklistProgressSummary {
         let scoped = results.filter { $0.checklistRunId == run.id }
         let total = scoped.count
         guard total > 0 else {
-            return ChecklistProgressSummary(completed: 0, total: 0, progressPercentage: 0, hasFailures: false)
+            return ChecklistProgressSummary(
+                completed: 0,
+                total: 0,
+                progressPercentage: 0,
+                hasFailures: false,
+                failedCount: 0
+            )
         }
         let completed = scoped.filter {
             $0.result == .pass || $0.result == .fail || $0.result == .notApplicable
         }.count
-        let hasFailures = scoped.contains(where: { $0.result == .fail })
+        let failedCount = scoped.filter { $0.result == .fail }.count
+        let hasFailures = failedCount > 0
         let percentage = Int((Double(completed) / Double(total) * 100).rounded())
         return ChecklistProgressSummary(
             completed: completed,
             total: total,
             progressPercentage: percentage,
-            hasFailures: hasFailures
+            hasFailures: hasFailures,
+            failedCount: failedCount
         )
     }
 }

@@ -305,7 +305,13 @@ struct DashboardRootView: View {
         case .history:
             HistoryView()
         case .documents:
-            DocumentsView()
+            if permissions.canAccessModule(.documents) {
+                DocumentsView()
+            } else {
+                accessDeniedView(
+                    message: "L'archivio documenti PDF è riservato al responsabile MASTER o al titolare."
+                )
+            }
         case .analytics:
             AnalyticsView()
         case .alerts:

@@ -7,21 +7,12 @@ enum NonConformityRegister {
         let lot: String
         let reason: String
         let correctiveAction: String
-        let imageData: Data?
         let date: String
         let operatorName: String
         let source: String
         let stato: String
         let risoltaDa: String
         let risoltaIl: String
-    }
-
-    private static func resolveImage(receivedItemId: UUID, primary: Data?, images: [ProductImage]) -> Data? {
-        if let primary { return primary }
-        guard let img = images.first(where: { $0.receivedItemId == receivedItemId }) else { return nil }
-        if let d = img.imageData { return d }
-        if let path = img.localPath, let d = try? Data(contentsOf: URL(fileURLWithPath: path)) { return d }
-        return nil
     }
 
     private static func receiptIsNonConformityCase(_ status: GoodsReceiptStatus) -> Bool {
@@ -38,6 +29,7 @@ enum NonConformityRegister {
         images: [ProductImage],
         df: DateFormatter
     ) -> [Row] {
+        _ = images
         var rows: [Row] = []
 
         for r in receipts where interval.contains(r.receivedAt) {
@@ -47,7 +39,6 @@ enum NonConformityRegister {
             if let n = r.notes, !n.isEmpty { reasonParts.append(n) }
             let reason = reasonParts.joined(separator: " — ")
 
-            let img = resolveImage(receivedItemId: r.id, primary: r.photoData, images: images)
             let resolvedAt = r.nonComplianceResolvedAt
             let stato = resolvedAt == nil ? "Attiva" : "Risolta"
             let risoltaIl = resolvedAt.map { df.string(from: $0) } ?? "—"
@@ -58,7 +49,6 @@ enum NonConformityRegister {
                 lot: r.lotNumber ?? "—",
                 reason: reason,
                 correctiveAction: (r.correctiveAction ?? "").isEmpty ? "—" : (r.correctiveAction ?? ""),
-                imageData: img,
                 date: df.string(from: r.receivedAt),
                 operatorName: r.createdByNameSnapshot,
                 source: "Ricezione merci",
@@ -86,7 +76,6 @@ enum NonConformityRegister {
                 ? "—"
                 : (t.nonComplianceCorrectiveAction ?? "")
 
-            let img = resolveImage(receivedItemId: t.id, primary: t.photoData, images: images)
             let resolvedAt = t.nonComplianceResolvedAt
             let stato = resolvedAt == nil ? "Attiva" : "Risolta"
             let risoltaIl = resolvedAt.map { df.string(from: $0) } ?? "—"
@@ -97,7 +86,6 @@ enum NonConformityRegister {
                 lot: t.lotCode.isEmpty ? "—" : t.lotCode,
                 reason: reason.isEmpty ? "—" : reason,
                 correctiveAction: corrective,
-                imageData: img,
                 date: df.string(from: t.receivedAt),
                 operatorName: t.createdByNameSnapshot,
                 source: "Tracciabilità",

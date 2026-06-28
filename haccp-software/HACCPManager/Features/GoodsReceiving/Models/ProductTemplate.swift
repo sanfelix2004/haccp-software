@@ -43,6 +43,8 @@ final class ProductTemplate {
     var requiresThawingCheck: Bool = false
     var requiresMoldCheck: Bool = false
     var requiresFreshnessCheck: Bool = false
+    /// Giorni di conservazione (opzionale; se `nil` si usa la mappa `IncomingFoodShelfLifeDefaults`).
+    var shelfLifeDays: Int?
     var createdAt: Date
 
     var category: GoodsCategory {
@@ -65,6 +67,7 @@ final class ProductTemplate {
         requiresThawingCheck: Bool = false,
         requiresMoldCheck: Bool = false,
         requiresFreshnessCheck: Bool = false,
+        shelfLifeDays: Int? = nil,
         createdAt: Date = Date()
     ) {
         self.id = id
@@ -81,6 +84,7 @@ final class ProductTemplate {
         self.requiresThawingCheck = requiresThawingCheck
         self.requiresMoldCheck = requiresMoldCheck
         self.requiresFreshnessCheck = requiresFreshnessCheck
+        self.shelfLifeDays = shelfLifeDays
         self.createdAt = createdAt
     }
 }

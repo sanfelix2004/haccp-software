@@ -10,7 +10,6 @@ import SwiftData
 struct HACCPManagerApp: App {
     @Environment(\.scenePhase) private var scenePhase
     @StateObject private var appState = AppState()
-    private let expiryService = TraceabilityExpiryService()
     
     // Explicitly configure model container to ensure persistence
     private var container: ModelContainer
@@ -24,50 +23,79 @@ struct HACCPManagerApp: App {
         }
 
         do {
-            container = try ModelContainer(
-                for: LocalUser.self,
-                AppDataStore.self,
-                Restaurant.self,
-                TemperatureDevice.self,
-                TemperatureRecord.self,
-                TemperatureAlert.self,
-                TemperatureAuditLog.self,
-                ChecklistTemplate.self,
-                ChecklistItemTemplate.self,
-                ChecklistRun.self,
-                ChecklistItemResult.self,
-                ChecklistAlert.self,
-                ChecklistAuditLog.self,
-                CleaningArea.self,
-                CleaningTask.self,
-                FridgeCheckRecord.self,
-                ScheduledTask.self,
-                TraceabilityRecord.self,
-                CleaningRecord.self,
-                CleaningCriticality.self,
-                BlastChillingRecord.self,
-                DefrostRecord.self,
-                DefrostCriticality.self,
-                OilPoint.self,
-                OilControlRecord.self,
-                OilControlAlert.self,
-                ProductionLabelRecord.self,
-                GoodsReceivingRecord.self,
-                Supplier.self,
-                ProductTemplate.self,
-                ProductionCategory.self,
-                Production.self,
-                TraceabilityLink.self,
-                TraceabilityLog.self,
-                ProductImage.self,
-                DocumentFolder.self,
-                DocumentItem.self,
-                HACCPAuditEvent.self,
-                HACCPReportRevision.self,
-                HACCPReportSnapshot.self
-            )
+            container = try Self.makeModelContainer()
         } catch {
-            fatalError("Failed to initialize SwiftData model container: \(error)")
+            // Store corrotto dopo migrazione fallita (es. nuovo campo obbligatorio): ricrea database locale.
+            Self.removePersistentStoreFiles()
+            do {
+                container = try Self.makeModelContainer()
+            } catch {
+                fatalError("Failed to initialize SwiftData model container: \(error)")
+            }
+        }
+    }
+
+    private static func makeModelContainer() throws -> ModelContainer {
+        try ModelContainer(
+            for: LocalUser.self,
+            AppDataStore.self,
+            Restaurant.self,
+            TemperatureDevice.self,
+            TemperatureRecord.self,
+            TemperatureAlert.self,
+            TemperatureAuditLog.self,
+            ChecklistTemplate.self,
+            ChecklistItemTemplate.self,
+            ChecklistRun.self,
+            ChecklistItemResult.self,
+            ChecklistAlert.self,
+            ChecklistAuditLog.self,
+            CleaningArea.self,
+            CleaningTask.self,
+            FridgeCheckRecord.self,
+            ScheduledTask.self,
+            TraceabilityRecord.self,
+            CleaningRecord.self,
+            CleaningCriticality.self,
+            BlastChillingRecord.self,
+            DefrostRecord.self,
+            DefrostCriticality.self,
+            OilPoint.self,
+            OilControlRecord.self,
+            OilControlAlert.self,
+            ProductionLabelRecord.self,
+            GoodsReceivingRecord.self,
+            Supplier.self,
+            ProductTemplate.self,
+            ProductionCategory.self,
+            Production.self,
+            ProduzioneBatch.self,
+            IngredienteTracciato.self,
+            ProductionIncomingIngredient.self,
+            LottoFoto.self,
+            LottoFotoProductionLink.self,
+            NonConformitaRicezione.self,
+            TraceabilityLink.self,
+            TraceabilityLog.self,
+            ProductImage.self,
+            DocumentFolder.self,
+            DocumentItem.self,
+            HACCPAuditEvent.self,
+            HACCPReportRevision.self,
+            HACCPReportSnapshot.self
+        )
+    }
+
+    private static func removePersistentStoreFiles() {
+        guard let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
+            return
+        }
+        guard let files = try? FileManager.default.contentsOfDirectory(
+            at: appSupport,
+            includingPropertiesForKeys: nil
+        ) else { return }
+        for url in files where url.lastPathComponent.hasPrefix("default.store") {
+            try? FileManager.default.removeItem(at: url)
         }
     }
     
@@ -84,19 +112,19 @@ struct HACCPManagerApp: App {
             guard newPhase == .active || newPhase == .background else { return }
             let context = container.mainContext
             Task { @MainActor in
-                DocumentArchivePurgeService.consumeMarkerAndPurgeIfNeeded(modelContext: context)
                 var descriptor = FetchDescriptor<TraceabilityRecord>(
                     predicate: #Predicate { !$0.isArchived },
                     sortBy: [SortDescriptor(\TraceabilityRecord.expiryDate)]
                 )
                 descriptor.fetchLimit = 2_000
                 if let activeRecords = try? context.fetch(descriptor) {
-                    _ = expiryService.refreshStatuses(records: activeRecords, modelContext: context)
+                    _ = TraceabilityExpiryService().refreshStatuses(records: activeRecords, modelContext: context)
                 }
                 if newPhase == .active {
+                    DocumentArchivePurgeService.consumeMarkerAndPurgeIfNeeded(modelContext: context)
                     SchedulingToChecklistMigrationService.migrateIfNeeded(modelContext: context)
                     if let restaurantId = appState.activeRestaurantId {
-                        await DataArchiveService.runIfNeeded(context: context, restaurantId: restaurantId)
+                        await DataArchiveService.runIfNeeded(modelContainer: container, restaurantId: restaurantId)
                     }
                     ClabelPrinterManager.shared.reconnectIfSaved()
                     await tickMonthlyArchive(modelContext: context)

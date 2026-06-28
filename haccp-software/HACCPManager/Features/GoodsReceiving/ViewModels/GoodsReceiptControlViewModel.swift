@@ -18,11 +18,10 @@ final class GoodsReceiptControlViewModel: ObservableObject {
     @Published var checklistResults: [GoodsReceiptChecklistResult] = []
     @Published var infoMessage: String?
 
-    func bootstrap(requirement: GoodsReceiptRequirement) {
+    func bootstrap(requirement: GoodsReceiptRequirement, product: ProductTemplate? = nil) {
         receivedAt = Date()
         temperatureText = ""
         lotNumber = ""
-        expiryDate = Date()
         productionDate = Date()
         quantityText = ""
         unit = "kg"
@@ -31,6 +30,12 @@ final class GoodsReceiptControlViewModel: ObservableObject {
         photoData = nil
         includeExpiryDate = requirement.requiresExpiryDate
         includeProductionDate = requirement.requiresProductionDate
+        if let product {
+            expiryDate = ScadenzaCalculator.suggestedExpiryDate(for: product, from: receivedAt)
+            includeExpiryDate = true
+        } else {
+            expiryDate = Date()
+        }
         checklistResults = requirement.checklistItems.map { GoodsReceiptChecklistResult(item: $0) }
     }
 

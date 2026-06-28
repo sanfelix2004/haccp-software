@@ -6,6 +6,7 @@ final class ChecklistAlert {
     @Attribute(.unique) var id: UUID
     var restaurantId: UUID
     var checklistRunId: UUID
+    var itemResultId: UUID?
     var severityRaw: String
     var message: String
     var statusRaw: String = ChecklistAlertStatus.active.rawValue
@@ -30,6 +31,7 @@ final class ChecklistAlert {
         id: UUID = UUID(),
         restaurantId: UUID,
         checklistRunId: UUID,
+        itemResultId: UUID? = nil,
         severity: ChecklistAlertSeverity,
         message: String,
         status: ChecklistAlertStatus = .active,
@@ -43,6 +45,7 @@ final class ChecklistAlert {
         self.id = id
         self.restaurantId = restaurantId
         self.checklistRunId = checklistRunId
+        self.itemResultId = itemResultId
         self.severityRaw = severity.rawValue
         self.message = message
         self.statusRaw = status.rawValue

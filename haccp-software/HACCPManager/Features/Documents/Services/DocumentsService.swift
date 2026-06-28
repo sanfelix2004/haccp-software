@@ -1,7 +1,7 @@
 import Foundation
 import SwiftData
 
-/// Creazione cartelle archivio: `{Ristorante} / Mensili / Singoli|Combinati / {Modulo}`.
+/// Creazione cartelle archivio: `{Ristorante} / Mensili / {Modulo}`.
 struct DocumentsService {
     private static let legacyPeriodRootNames: Set<String> = [
         "Giornalieri", "Settimanali", "Annuali", "Non conformità", "Mensili"
@@ -23,46 +23,22 @@ struct DocumentsService {
         order += 1
         list.append(FolderTemplate(name: period, type: .period, order: order, parentPath: venueName))
         order += 1
-        list.append(FolderTemplate(
-            name: DocumentArchiveLayout.singoliGroup,
-            type: .module,
-            order: order,
-            parentPath: "\(venueName)/\(period)"
-        ))
-        order += 1
-        list.append(FolderTemplate(
-            name: DocumentArchiveLayout.combinatiGroup,
-            type: .module,
-            order: order,
-            parentPath: "\(venueName)/\(period)"
-        ))
-        order += 1
 
-        for title in DocumentArchiveLayout.singleModuleFolderTitles {
+        for (index, module) in DocumentArchiveLayout.monthlyArchiveModules.enumerated() {
             list.append(FolderTemplate(
-                name: title,
+                name: DocumentArchiveLayout.moduleFolderTitle(module),
                 type: .module,
-                order: order,
-                parentPath: "\(venueName)/\(period)/\(DocumentArchiveLayout.singoliGroup)"
+                order: order + index,
+                parentPath: "\(venueName)/\(period)"
             ))
-            order += 1
         }
-
-        for title in DocumentArchiveLayout.combinedModuleFolderTitles {
-            list.append(FolderTemplate(
-                name: title,
-                type: .module,
-                order: order,
-                parentPath: "\(venueName)/\(period)/\(DocumentArchiveLayout.combinatiGroup)"
-            ))
-            order += 1
-        }
+        order += DocumentArchiveLayout.monthlyArchiveModules.count
 
         list.append(FolderTemplate(
             name: DocumentArchiveLayout.legacyReportsArchiveFolderName,
             type: .archive,
             order: order,
-            parentPath: "\(venueName)/\(period)/\(DocumentArchiveLayout.combinatiGroup)"
+            parentPath: "\(venueName)/\(period)"
         ))
 
         return list
@@ -84,6 +60,7 @@ struct DocumentsService {
         restaurantFolders = migrateArchiveLayout(
             restaurantId: restaurantId,
             venueFolderName: venueName,
+            restaurantDisplayName: restaurantDisplayName,
             folders: restaurantFolders,
             items: restaurantItems,
             modelContext: modelContext,
@@ -165,6 +142,7 @@ struct DocumentsService {
     private func migrateArchiveLayout(
         restaurantId: UUID,
         venueFolderName: String,
+        restaurantDisplayName: String,
         folders: [DocumentFolder],
         items: [DocumentItem],
         modelContext: ModelContext,
@@ -313,10 +291,97 @@ struct DocumentsService {
             modelContext: modelContext
         )
 
+        flattenMonthlyGroupFolders(
+            venueFolderName: venueFolderName,
+            restaurantDisplayName: restaurantDisplayName,
+            folders: &workingFolders,
+            items: items,
+            modelContext: modelContext
+        )
+
         return workingFolders
     }
 
-    /// Rimuove cartelle legacy (Ricezione merci, Tracciabilità, HACCP combinato) dall'archivio mensile.
+    /// Sposta moduli da `Mensili/Singoli|Combinati/{Modulo}` a `Mensili/{Modulo}`.
+    private func flattenMonthlyGroupFolders(
+        venueFolderName: String,
+        restaurantDisplayName: String,
+        folders: inout [DocumentFolder],
+        items: [DocumentItem],
+        modelContext: ModelContext
+    ) {
+        var pathIndex = DocumentFolderPathIndex(folders: folders)
+        let mensiliPath = "\(venueFolderName)/\(DocumentArchiveLayout.monthlyPeriodName)"
+        guard let mensili = folders.first(where: { pathIndex.path(for: $0) == mensiliPath }) else {
+            return
+        }
+
+        let legacyGroups = [
+            DocumentArchiveLayout.legacySingoliGroup,
+            DocumentArchiveLayout.legacyCombinatiGroup
+        ]
+
+        for groupName in legacyGroups {
+            let groupPath = "\(mensiliPath)/\(groupName)"
+            guard let groupFolder = folders.first(where: { pathIndex.path(for: $0) == groupPath }) else {
+                continue
+            }
+
+            let children = folders.filter { $0.parentId == groupFolder.id }
+            for child in children {
+                if let existing = folders.first(where: {
+                    $0.parentId == mensili.id
+                        && $0.name.caseInsensitiveCompare(child.name) == .orderedSame
+                        && $0.id != child.id
+                }) {
+                    mergeFolderContents(
+                        from: child,
+                        into: existing,
+                        folders: &folders,
+                        items: items,
+                        modelContext: modelContext
+                    )
+                } else {
+                    child.parentId = mensili.id
+                }
+                pathIndex.rebuild(from: folders)
+                reassignFlatICloudPaths(
+                    items: items,
+                    restaurantDisplayName: restaurantDisplayName,
+                    legacyGroup: groupName,
+                    moduleFolder: child.name
+                )
+            }
+
+            pathIndex.rebuild(from: folders)
+            if folders.contains(where: { $0.parentId == groupFolder.id }) {
+                continue
+            }
+            modelContext.delete(groupFolder)
+            folders.removeAll { $0.id == groupFolder.id }
+            pathIndex.rebuild(from: folders)
+        }
+    }
+
+    private func reassignFlatICloudPaths(
+        items: [DocumentItem],
+        restaurantDisplayName: String,
+        legacyGroup: String,
+        moduleFolder: String
+    ) {
+        for item in items {
+            guard let path = item.iCloudRelativePath,
+                  let remapped = DocumentArchiveLayout.remappedFlatMonthlyICloudPath(
+                    path,
+                    restaurantDisplayName: restaurantDisplayName,
+                    legacyGroup: legacyGroup
+                  ) else { continue }
+            item.iCloudRelativePath = remapped
+            item.isSyncedToICloud = false
+        }
+    }
+
+    /// Migra cartelle moduli ritirati verso «Tracciabilità e produzioni» o archivio legacy.
     private func retireDeprecatedModuleFolders(
         venueFolderName: String,
         restaurantDisplayName: String,
@@ -326,25 +391,27 @@ struct DocumentsService {
         user: LocalUser
     ) {
         var pathIndex = DocumentFolderPathIndex(folders: folders)
-        let singoli = DocumentArchiveLayout.singoliGroup
-        let combinati = DocumentArchiveLayout.combinatiGroup
-        let ingressoTitle = DocumentArchiveLayout.ingressoTracciabilitaFolderTitle
+        let traceProdTitle = DocumentArchiveLayout.tracciabilitaProduzioneFolderTitle
 
-        guard let ingressoTarget = pathIndex.folder(
+        guard let traceProdTarget = pathIndex.folder(
             venueFolderName: venueFolderName,
-            monthlyPathSuffix: "\(combinati)/\(ingressoTitle)"
+            monthlyPathSuffix: traceProdTitle
         ) else {
             return
         }
 
-        for title in DocumentArchiveLayout.retiredSingoliFolderTitles {
-            guard let deprecated = pathIndex.folder(
+        for title in DocumentArchiveLayout.retiredTracciabilitaFolderTitles {
+            let deprecated = pathIndex.folder(
                 venueFolderName: venueFolderName,
-                monthlyPathSuffix: "\(singoli)/\(title)"
-            ) else { continue }
+                monthlyPathSuffix: title
+            ) ?? pathIndex.folder(
+                venueFolderName: venueFolderName,
+                monthlyPathSuffix: "\(DocumentArchiveLayout.legacySingoliGroup)/\(title)"
+            )
+            guard let deprecated else { continue }
             mergeFolderContents(
                 from: deprecated,
-                into: ingressoTarget,
+                into: traceProdTarget,
                 folders: &folders,
                 items: items,
                 modelContext: modelContext
@@ -353,10 +420,10 @@ struct DocumentsService {
             reassignRetiredICloudPaths(
                 items: items,
                 restaurantDisplayName: restaurantDisplayName,
-                oldGroup: singoli,
+                oldGroup: DocumentArchiveLayout.legacySingoliGroup,
                 oldModuleFolder: title,
-                newGroup: combinati,
-                newModuleFolder: ingressoTitle
+                newGroup: nil,
+                newModuleFolder: traceProdTitle
             )
         }
 
@@ -364,16 +431,23 @@ struct DocumentsService {
             venueFolderName: venueFolderName,
             folders: &folders,
             pathIndex: &pathIndex,
-            restaurantId: ingressoTarget.restaurantId,
+            restaurantId: traceProdTarget.restaurantId,
             user: user,
             modelContext: modelContext
         ) else { return }
 
-        for title in DocumentArchiveLayout.retiredCombinatiFolderTitles {
-            guard let deprecated = pathIndex.folder(
+        for title in DocumentArchiveLayout.retiredAffinityFolderTitles {
+            let deprecated = pathIndex.folder(
                 venueFolderName: venueFolderName,
-                monthlyPathSuffix: "\(combinati)/\(title)"
-            ) else { continue }
+                monthlyPathSuffix: title
+            ) ?? pathIndex.folder(
+                venueFolderName: venueFolderName,
+                monthlyPathSuffix: "\(DocumentArchiveLayout.legacyCombinatiGroup)/\(title)"
+            ) ?? pathIndex.folder(
+                venueFolderName: venueFolderName,
+                monthlyPathSuffix: "\(DocumentArchiveLayout.legacySingoliGroup)/\(title)"
+            )
+            guard let deprecated else { continue }
             mergeFolderContents(
                 from: deprecated,
                 into: legacyArchiveTarget,
@@ -385,9 +459,9 @@ struct DocumentsService {
             reassignRetiredICloudPaths(
                 items: items,
                 restaurantDisplayName: restaurantDisplayName,
-                oldGroup: combinati,
+                oldGroup: DocumentArchiveLayout.legacyCombinatiGroup,
                 oldModuleFolder: title,
-                newGroup: combinati,
+                newGroup: nil,
                 newModuleFolder: DocumentArchiveLayout.legacyReportsArchiveFolderName
             )
         }
@@ -401,19 +475,16 @@ struct DocumentsService {
         user: LocalUser,
         modelContext: ModelContext
     ) -> DocumentFolder? {
-        let combinati = DocumentArchiveLayout.combinatiGroup
         let archiveName = DocumentArchiveLayout.legacyReportsArchiveFolderName
         if let existing = pathIndex.folder(
             venueFolderName: venueFolderName,
-            monthlyPathSuffix: "\(combinati)/\(archiveName)"
+            monthlyPathSuffix: archiveName
         ) {
             return existing
         }
 
-        guard let combinatiParent = pathIndex.folder(
-            venueFolderName: venueFolderName,
-            monthlyPathSuffix: combinati
-        ) else {
+        let mensiliPath = "\(venueFolderName)/\(DocumentArchiveLayout.monthlyPeriodName)"
+        guard let mensiliParent = folders.first(where: { pathIndex.path(for: $0) == mensiliPath }) else {
             return nil
         }
 
@@ -421,7 +492,7 @@ struct DocumentsService {
             restaurantId: restaurantId,
             name: archiveName,
             type: .archive,
-            parentId: combinatiParent.id,
+            parentId: mensiliParent.id,
             orderIndex: 999,
             createdByUserId: user.id,
             createdByNameSnapshot: user.name
@@ -437,7 +508,7 @@ struct DocumentsService {
         restaurantDisplayName: String,
         oldGroup: String,
         oldModuleFolder: String,
-        newGroup: String,
+        newGroup: String?,
         newModuleFolder: String?
     ) {
         for item in items {
@@ -530,7 +601,7 @@ struct DocumentsService {
         if first == venueFolderName { return path }
 
         if first == "Non conformità" {
-            return "\(venueFolderName)/\(DocumentArchiveLayout.monthlyPeriodName)/\(DocumentArchiveLayout.combinatiGroup)/Non conformità"
+            return "\(venueFolderName)/\(DocumentArchiveLayout.monthlyPeriodName)/Non conformità"
         }
 
         if first == DocumentArchiveLayout.monthlyPeriodName {
@@ -540,9 +611,30 @@ struct DocumentsService {
         if Self.legacyPeriodRootNames.contains(first) {
             var remapped = parts
             remapped[0] = DocumentArchiveLayout.monthlyPeriodName
-            return "\(venueFolderName)/\(remapped.joined(separator: "/"))"
+            let joined = remapped.joined(separator: "/")
+            return flattenLegacyGroupInPath("\(venueFolderName)/\(joined)")
         }
 
         return nil
+    }
+
+    /// Rimuove `Singoli` / `Combinati` da path legacy già sotto Mensili.
+    private func flattenLegacyGroupInPath(_ path: String) -> String {
+        let groups = [
+            DocumentArchiveLayout.legacySingoliGroup,
+            DocumentArchiveLayout.legacyCombinatiGroup
+        ]
+        var parts = path.split(separator: "/").map(String.init)
+        guard let mensiliIndex = parts.firstIndex(where: {
+            $0.caseInsensitiveCompare(DocumentArchiveLayout.monthlyPeriodName) == .orderedSame
+        }) else { return path }
+
+        let nextIndex = mensiliIndex + 1
+        guard nextIndex < parts.count,
+              groups.contains(where: { parts[nextIndex].caseInsensitiveCompare($0) == .orderedSame }) else {
+            return path
+        }
+        parts.remove(at: nextIndex)
+        return parts.joined(separator: "/")
     }
 }

@@ -1,11 +1,26 @@
 import Foundation
 import SwiftData
 
+enum ChecklistServiceError: LocalizedError {
+    case noteRequiredForFailure
+    case missingItemResults
+
+    var errorDescription: String? {
+        switch self {
+        case .noteRequiredForFailure:
+            return "Per segnare NON OK devi descrivere la criticità."
+        case .missingItemResults:
+            return "Impossibile completare il task: voci non trovate nel registro."
+        }
+    }
+}
+
 @MainActor
 final class ChecklistService {
     private let validationService = ChecklistValidationService()
     private let scheduleService = ChecklistScheduleService()
     private let notificationService = ChecklistNotificationService()
+    private let periodicEngine = PeriodicTaskEngine()
 
     func createTemplate(
         restaurantId: UUID,
@@ -15,6 +30,14 @@ final class ChecklistService {
         frequency: ChecklistFrequency,
         scheduledHour: Int?,
         scheduledMinute: Int?,
+        scheduleWeekday: Int? = nil,
+        scheduleDayOfMonth: Int? = nil,
+        scheduleMonth: Int? = nil,
+        allowsBulkPass: Bool = true,
+        bulkPassTitle: String? = nil,
+        areaTag: String? = nil,
+        customScheduleIntervalDays: Int? = nil,
+        sourceCleaningTaskId: UUID? = nil,
         createdBy: LocalUser,
         items: [ChecklistItemTemplateDraft],
         modelContext: ModelContext
@@ -27,6 +50,14 @@ final class ChecklistService {
             frequency: frequency,
             scheduledHour: scheduledHour,
             scheduledMinute: scheduledMinute,
+            scheduleWeekday: scheduleWeekday,
+            scheduleDayOfMonth: scheduleDayOfMonth,
+            scheduleMonth: scheduleMonth,
+            allowsBulkPass: allowsBulkPass,
+            bulkPassTitle: bulkPassTitle,
+            areaTag: areaTag,
+            customScheduleIntervalDays: customScheduleIntervalDays,
+            sourceCleaningTaskId: sourceCleaningTaskId,
             isActive: true,
             isSuggestedLibrary: false,
             createdByUserId: createdBy.id
@@ -56,6 +87,38 @@ final class ChecklistService {
         )
         try modelContext.save()
         return template
+    }
+
+    func createCleaningBridgeTemplate(
+        task: CleaningTask,
+        createdBy: LocalUser,
+        modelContext: ModelContext
+    ) throws -> ChecklistTemplate {
+        let title = "\(task.areaNameSnapshot) · \(task.title)"
+        return try createTemplate(
+            restaurantId: task.restaurantId,
+            title: title,
+            description: "Registro HACCP collegato al task di pulizia",
+            category: .cleaning,
+            frequency: task.frequency.checklistFrequency,
+            scheduledHour: 23,
+            scheduledMinute: 59,
+            allowsBulkPass: false,
+            areaTag: task.areaNameSnapshot,
+            customScheduleIntervalDays: task.frequency == .personalizzato ? task.customIntervalDays : nil,
+            sourceCleaningTaskId: task.id,
+            createdBy: createdBy,
+            items: [
+                ChecklistItemTemplateDraft(
+                    title: task.title,
+                    description: "Esito sanificazione \(task.areaNameSnapshot)",
+                    type: .passFail,
+                    isRequired: true,
+                    requiresNoteIfFailed: true
+                )
+            ],
+            modelContext: modelContext
+        )
     }
 
     func createQuickTaskTemplate(
@@ -106,6 +169,11 @@ final class ChecklistService {
             frequency: suggestedTemplate.frequency,
             scheduledHour: suggestedTemplate.scheduledHour,
             scheduledMinute: suggestedTemplate.scheduledMinute,
+            scheduleWeekday: suggestedTemplate.scheduleWeekday,
+            scheduleDayOfMonth: suggestedTemplate.scheduleDayOfMonth,
+            scheduleMonth: suggestedTemplate.scheduleMonth,
+            allowsBulkPass: suggestedTemplate.allowsBulkPass,
+            bulkPassTitle: suggestedTemplate.bulkPassTitle,
             createdBy: user,
             items: suggestedTemplate.items,
             modelContext: modelContext
@@ -124,7 +192,7 @@ final class ChecklistService {
                 .map { $0.title.lowercased() }
         )
 
-        for def in defaultTemplateDefinitions {
+        for def in ChecklistDefaultTemplates.definitions {
             if existingTitles.contains(def.title.lowercased()) {
                 continue
             }
@@ -136,6 +204,11 @@ final class ChecklistService {
                 frequency: def.frequency,
                 scheduledHour: def.scheduledHour,
                 scheduledMinute: def.scheduledMinute,
+                scheduleWeekday: def.scheduleWeekday,
+                scheduleDayOfMonth: def.scheduleDayOfMonth,
+                scheduleMonth: def.scheduleMonth,
+                allowsBulkPass: def.allowsBulkPass,
+                bulkPassTitle: def.bulkPassTitle,
                 createdBy: createdBy,
                 items: def.items,
                 modelContext: modelContext
@@ -158,6 +231,9 @@ final class ChecklistService {
                 frequency: template.frequency,
                 scheduledHour: template.scheduledHour,
                 scheduledMinute: template.scheduledMinute,
+                scheduleWeekday: template.scheduleWeekday,
+                scheduleDayOfMonth: template.scheduleDayOfMonth,
+                scheduleMonth: template.scheduleMonth,
                 anchorDate: template.createdAt
             ),
             status: .inProgress
@@ -201,8 +277,18 @@ final class ChecklistService {
         restaurantId: UUID,
         modelContext: ModelContext
     ) throws {
+        let trimmedNote = note?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let itemTemplates = (try? modelContext.fetch(FetchDescriptor<ChecklistItemTemplate>())) ?? []
+        let itemTemplate = itemTemplates.first { $0.id == itemResult.itemTemplateId }
+        let requiresNote = itemTemplate?.requiresNoteIfFailed ?? true
+
+        if result == .fail, requiresNote, trimmedNote.isEmpty {
+            throw ChecklistServiceError.noteRequiredForFailure
+        }
+
+        let previousResult = itemResult.result
         itemResult.result = result
-        itemResult.note = note
+        itemResult.note = trimmedNote.isEmpty ? nil : trimmedNote
         itemResult.completedAt = Date()
         itemResult.completedByUserId = user.id
 
@@ -234,30 +320,273 @@ final class ChecklistService {
         }
 
         if result == .fail {
-            let alerts = (try? modelContext.fetch(FetchDescriptor<ChecklistAlert>())) ?? []
-            let message = "Criticita: \(itemResult.titleSnapshot)"
-            let alreadyExists = alerts.contains {
-                $0.checklistRunId == run.id && $0.message == message && $0.isActive
-            }
-            if !alreadyExists {
-                let alert = ChecklistAlert(
-                    restaurantId: restaurantId,
-                    checklistRunId: run.id,
-                    severity: .high,
-                    message: message
-                )
-                modelContext.insert(alert)
-            }
-            log(
+            upsertFailureAlert(
+                itemResult: itemResult,
+                note: trimmedNote,
+                run: run,
                 restaurantId: restaurantId,
                 user: user,
-                action: "CHECKLIST_ITEM_FAILED",
-                entityId: itemResult.id,
-                details: itemResult.titleSnapshot,
+                modelContext: modelContext
+            )
+        } else if previousResult == .fail {
+            autoResolveFailureAlert(
+                itemResult: itemResult,
+                run: run,
+                user: user,
                 modelContext: modelContext
             )
         }
 
+        try modelContext.save()
+    }
+
+    /// Completamento inline pulizie: un tap segna l'unica voce come OK e chiude il run.
+    func inlineCompleteCleaningRun(
+        run: ChecklistRun,
+        user: LocalUser,
+        restaurantId: UUID,
+        modelContext: ModelContext
+    ) throws {
+        var results = itemResults(for: run.id, modelContext: modelContext)
+
+        if results.isEmpty {
+            seedItemResults(for: run, templateId: run.templateId, modelContext: modelContext)
+            try modelContext.save()
+            results = itemResults(for: run.id, modelContext: modelContext)
+        }
+
+        guard let itemResult = results.first else {
+            throw ChecklistServiceError.missingItemResults
+        }
+
+        if run.status == .notStarted || run.status == .overdue {
+            run.status = .inProgress
+        }
+
+        try updateItemResult(
+            itemResult: itemResult,
+            result: .pass,
+            note: nil,
+            user: user,
+            run: run,
+            restaurantId: restaurantId,
+            modelContext: modelContext
+        )
+    }
+
+    private func itemResults(for runId: UUID, modelContext: ModelContext) -> [ChecklistItemResult] {
+        ((try? modelContext.fetch(FetchDescriptor<ChecklistItemResult>())) ?? [])
+            .filter { $0.checklistRunId == runId }
+            .sorted { $0.orderIndex < $1.orderIndex }
+    }
+
+    private func upsertFailureAlert(
+        itemResult: ChecklistItemResult,
+        note: String,
+        run: ChecklistRun,
+        restaurantId: UUID,
+        user: LocalUser,
+        modelContext: ModelContext
+    ) {
+        let alerts = (try? modelContext.fetch(FetchDescriptor<ChecklistAlert>())) ?? []
+        let message = failureAlertMessage(title: itemResult.titleSnapshot, note: note)
+        if let existing = alerts.first(where: {
+            $0.checklistRunId == run.id
+            && $0.isActive
+            && ($0.itemResultId == itemResult.id || matchesLegacyFailureAlert($0, itemResult: itemResult))
+        }) {
+            existing.message = message
+            existing.itemResultId = itemResult.id
+            return
+        }
+
+        let alert = ChecklistAlert(
+            restaurantId: restaurantId,
+            checklistRunId: run.id,
+            itemResultId: itemResult.id,
+            severity: .high,
+            message: message
+        )
+        modelContext.insert(alert)
+        log(
+            restaurantId: restaurantId,
+            user: user,
+            action: "CHECKLIST_ITEM_FAILED",
+            entityId: itemResult.id,
+            details: itemResult.titleSnapshot,
+            modelContext: modelContext
+        )
+    }
+
+    private func autoResolveFailureAlert(
+        itemResult: ChecklistItemResult,
+        run: ChecklistRun,
+        user: LocalUser,
+        modelContext: ModelContext
+    ) {
+        let alerts = (try? modelContext.fetch(FetchDescriptor<ChecklistAlert>())) ?? []
+        for alert in alerts where alert.checklistRunId == run.id && alert.isActive {
+            guard alert.itemResultId == itemResult.id || matchesLegacyFailureAlert(alert, itemResult: itemResult) else {
+                continue
+            }
+            alert.isActive = false
+            alert.status = .resolved
+            alert.resolvedAt = Date()
+            alert.resolvedByUserId = user.id
+            alert.resolvedByName = user.name
+            alert.correctiveAction = "Voce ripristinata durante la compilazione"
+        }
+    }
+
+    private func failureAlertMessage(title: String, note: String) -> String {
+        if note.isEmpty {
+            return "NON OK · \(title)"
+        }
+        return "NON OK · \(title) · \(note)"
+    }
+
+    private func matchesLegacyFailureAlert(_ alert: ChecklistAlert, itemResult: ChecklistItemResult) -> Bool {
+        alert.itemResultId == nil && alert.message.contains(itemResult.titleSnapshot)
+    }
+
+    func markAllItemsPass(
+        run: ChecklistRun,
+        user: LocalUser,
+        restaurantId: UUID,
+        modelContext: ModelContext
+    ) throws {
+        let results = ((try? modelContext.fetch(FetchDescriptor<ChecklistItemResult>())) ?? [])
+            .filter { $0.checklistRunId == run.id }
+            .sorted { $0.orderIndex < $1.orderIndex }
+
+        let now = Date()
+        for itemResult in results where itemResult.result != .pass {
+            itemResult.result = .pass
+            itemResult.note = nil
+            itemResult.completedAt = now
+            itemResult.completedByUserId = user.id
+        }
+
+        let completedCount = results.filter { $0.result != .pending }.count
+        run.progressPercentage = results.isEmpty ? 0 : (Double(completedCount) / Double(results.count)) * 100
+        run.status = .completed
+        run.completedAt = now
+        run.completedByUserId = user.id
+        run.completedByNameSnapshot = user.name
+        deactivateOverdueAlerts(for: run, modelContext: modelContext)
+
+        log(
+            restaurantId: restaurantId,
+            user: user,
+            action: "CHECKLIST_BULK_PASS",
+            entityId: run.id,
+            details: run.templateTitleSnapshot,
+            modelContext: modelContext
+        )
+        try modelContext.save()
+        syncChecklistNotifications(restaurantId: restaurantId, modelContext: modelContext)
+    }
+
+    func updateTemplate(
+        _ template: ChecklistTemplate,
+        title: String,
+        description: String,
+        category: ChecklistCategory,
+        frequency: ChecklistFrequency,
+        scheduledHour: Int?,
+        scheduledMinute: Int?,
+        scheduleWeekday: Int?,
+        scheduleDayOfMonth: Int?,
+        scheduleMonth: Int?,
+        allowsBulkPass: Bool,
+        bulkPassTitle: String?,
+        areaTag: String? = nil,
+        isActive: Bool,
+        items: [ChecklistItemTemplateDraft],
+        user: LocalUser,
+        modelContext: ModelContext
+    ) throws {
+        template.title = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        template.checklistDescription = description.trimmingCharacters(in: .whitespacesAndNewlines)
+        template.category = category
+        template.frequency = frequency
+        template.scheduledHour = scheduledHour
+        template.scheduledMinute = scheduledMinute
+        template.scheduleWeekday = scheduleWeekday
+        template.scheduleDayOfMonth = scheduleDayOfMonth
+        template.scheduleMonth = scheduleMonth
+        template.allowsBulkPass = allowsBulkPass
+        template.bulkPassTitle = bulkPassTitle?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+            ? bulkPassTitle?.trimmingCharacters(in: .whitespacesAndNewlines)
+            : nil
+        template.isActive = isActive
+        template.updatedAt = Date()
+        if !template.isCleaningBridge {
+            let trimmedArea = areaTag?.trimmingCharacters(in: .whitespacesAndNewlines)
+            template.areaTag = trimmedArea?.isEmpty == false ? trimmedArea : nil
+        }
+
+        let existing = ((try? modelContext.fetch(FetchDescriptor<ChecklistItemTemplate>())) ?? [])
+            .filter { $0.checklistTemplateId == template.id }
+        for item in existing { modelContext.delete(item) }
+
+        for (index, draft) in items.enumerated() {
+            modelContext.insert(
+                ChecklistItemTemplate(
+                    checklistTemplateId: template.id,
+                    title: draft.title,
+                    itemDescription: draft.description,
+                    type: draft.type,
+                    isRequired: draft.isRequired,
+                    orderIndex: index,
+                    requiresNoteIfFailed: draft.requiresNoteIfFailed
+                )
+            )
+        }
+
+        log(
+            restaurantId: template.restaurantId,
+            user: user,
+            action: "CHECKLIST_TEMPLATE_UPDATED",
+            entityId: template.id,
+            details: template.title,
+            modelContext: modelContext
+        )
+        try modelContext.save()
+    }
+
+    func deleteTemplate(
+        _ template: ChecklistTemplate,
+        user: LocalUser,
+        modelContext: ModelContext
+    ) throws {
+        let runs = ((try? modelContext.fetch(FetchDescriptor<ChecklistRun>())) ?? [])
+            .filter { $0.templateId == template.id }
+        let results = (try? modelContext.fetch(FetchDescriptor<ChecklistItemResult>())) ?? []
+        let alerts = (try? modelContext.fetch(FetchDescriptor<ChecklistAlert>())) ?? []
+        let items = ((try? modelContext.fetch(FetchDescriptor<ChecklistItemTemplate>())) ?? [])
+            .filter { $0.checklistTemplateId == template.id }
+
+        for run in runs {
+            for result in results where result.checklistRunId == run.id {
+                modelContext.delete(result)
+            }
+            for alert in alerts where alert.checklistRunId == run.id {
+                modelContext.delete(alert)
+            }
+            modelContext.delete(run)
+        }
+        for item in items { modelContext.delete(item) }
+
+        log(
+            restaurantId: template.restaurantId,
+            user: user,
+            action: "CHECKLIST_TEMPLATE_DELETED",
+            entityId: template.id,
+            details: template.title,
+            modelContext: modelContext
+        )
+        modelContext.delete(template)
         try modelContext.save()
     }
 
@@ -368,13 +697,12 @@ final class ChecklistService {
         let allRuns = (try? modelContext.fetch(FetchDescriptor<ChecklistRun>())) ?? []
 
         for template in templates {
-            guard let dueForCycle = scheduleService.dueDateForCurrentCycle(
-                frequency: template.frequency,
-                scheduledHour: template.scheduledHour,
-                scheduledMinute: template.scheduledMinute,
-                anchorDate: template.createdAt,
-                now: now
-            ) else {
+            guard let dueForCycle = dueDateForTemplateCycle(template: template, now: now) else {
+                continue
+            }
+
+            let frequencyKind = template.schedulingFrequencyKind
+            guard shouldMaterializeTemplate(template, dueDate: dueForCycle, now: now) else {
                 continue
             }
 
@@ -382,9 +710,18 @@ final class ChecklistService {
                 .filter { $0.restaurantId == restaurantId && $0.templateId == template.id && !$0.isArchived }
                 .sorted(by: { $0.createdAt > $1.createdAt })
 
+            closeStaleRuns(
+                template: template,
+                templateRuns: templateRuns,
+                dueForCycle: dueForCycle,
+                frequencyKind: frequencyKind,
+                now: now,
+                modelContext: modelContext
+            )
+
             if let currentCycleRun = templateRuns.first(where: { run in
                 guard let dueAt = run.dueAt else { return false }
-                return scheduleService.isSameCycle(dueAt, dueForCycle, frequency: template.frequency)
+                return periodicEngine.isSameCycle(dueAt, dueForCycle, frequency: frequencyKind)
             }) {
                 if currentCycleRun.status != .completed && currentCycleRun.status != .failed && dueForCycle < now {
                     currentCycleRun.status = .overdue
@@ -460,6 +797,30 @@ final class ChecklistService {
         }
     }
 
+    private func closeStaleRuns(
+        template: ChecklistTemplate,
+        templateRuns: [ChecklistRun],
+        dueForCycle: Date,
+        frequencyKind: PeriodicFrequencyKind,
+        now: Date,
+        modelContext: ModelContext
+    ) {
+        for run in templateRuns where isOpenRun(run) {
+            guard let dueAt = run.dueAt else { continue }
+            guard !periodicEngine.isSameCycle(dueAt, dueForCycle, frequency: frequencyKind) else { continue }
+            run.status = .missed
+            run.completedAt = now
+            deactivateOverdueAlerts(for: run, modelContext: modelContext)
+        }
+    }
+
+    private func isOpenRun(_ run: ChecklistRun) -> Bool {
+        switch run.status {
+        case .notStarted, .inProgress, .overdue: return true
+        case .completed, .failed, .missed, .archived: return false
+        }
+    }
+
     private func createOverdueAlertIfNeeded(run: ChecklistRun, restaurantId: UUID, modelContext: ModelContext) {
         let alerts = (try? modelContext.fetch(FetchDescriptor<ChecklistAlert>())) ?? []
         let exists = alerts.contains {
@@ -493,6 +854,43 @@ final class ChecklistService {
             .filter { $0.restaurantId == restaurantId && !$0.isArchived }
         notificationService.syncNotifications(for: runs, now: now)
     }
+
+    private func dueDateForTemplateCycle(template: ChecklistTemplate, now: Date) -> Date? {
+        if template.frequency == .custom {
+            let days = max(template.customScheduleIntervalDays ?? 1, 1)
+            let interval = periodicEngine.periodInterval(
+                for: .personalizzato,
+                customIntervalDays: days,
+                reference: now
+            )
+            return interval.end.addingTimeInterval(-1)
+        }
+        return scheduleService.dueDateForCurrentCycle(
+            frequency: template.frequency,
+            scheduledHour: template.scheduledHour,
+            scheduledMinute: template.scheduledMinute,
+            scheduleWeekday: template.scheduleWeekday,
+            scheduleDayOfMonth: template.scheduleDayOfMonth,
+            scheduleMonth: template.scheduleMonth,
+            anchorDate: template.createdAt,
+            now: now
+        )
+    }
+
+    private func shouldMaterializeTemplate(
+        _ template: ChecklistTemplate,
+        dueDate: Date,
+        now: Date
+    ) -> Bool {
+        if template.frequency == .custom {
+            return true
+        }
+        return scheduleService.shouldMaterializeRun(
+            frequency: template.frequency,
+            dueDate: dueDate,
+            now: now
+        )
+    }
 }
 
 struct ChecklistItemTemplateDraft: Identifiable {
@@ -512,344 +910,38 @@ struct SuggestedChecklistTemplate: Identifiable {
     let frequency: ChecklistFrequency
     let scheduledHour: Int?
     let scheduledMinute: Int?
+    let scheduleWeekday: Int?
+    let scheduleDayOfMonth: Int?
+    let scheduleMonth: Int?
+    let allowsBulkPass: Bool
+    let bulkPassTitle: String?
     let items: [ChecklistItemTemplateDraft]
-}
 
-private extension ChecklistService {
-    var defaultTemplateDefinitions: [SuggestedChecklistTemplate] {
-        [
-            .init(
-                title: "Apertura cucina",
-                description: "Controlli apertura turno cucina.",
-                category: .opening,
-                frequency: .daily,
-                scheduledHour: 9,
-                scheduledMinute: 0,
-                items: [
-                    .init(title: "Sapone e carta mani disponibili", description: "", type: .passFail, isRequired: true, requiresNoteIfFailed: true),
-                    .init(title: "Superfici di lavoro pulite", description: "", type: .passFail, isRequired: true, requiresNoteIfFailed: true),
-                    .init(title: "Frigoriferi in ordine", description: "", type: .passFail, isRequired: true, requiresNoteIfFailed: true),
-                    .init(title: "Attrezzature pulite", description: "", type: .passFail, isRequired: true, requiresNoteIfFailed: true),
-                    .init(title: "Rifiuti vuoti", description: "", type: .passFail, isRequired: true, requiresNoteIfFailed: true),
-                    .init(title: "Area preparazione pronta", description: "", type: .passFail, isRequired: true, requiresNoteIfFailed: true)
-                ]
-            ),
-            .init(
-                title: "Chiusura cucina",
-                description: "Controlli chiusura turno cucina.",
-                category: .closing,
-                frequency: .daily,
-                scheduledHour: 23,
-                scheduledMinute: 0,
-                items: [
-                    .init(title: "Piani sanificati", description: "", type: .passFail, isRequired: true, requiresNoteIfFailed: true),
-                    .init(title: "Pavimenti puliti", description: "", type: .passFail, isRequired: true, requiresNoteIfFailed: true),
-                    .init(title: "Rifiuti smaltiti", description: "", type: .passFail, isRequired: true, requiresNoteIfFailed: true),
-                    .init(title: "Alimenti coperti ed etichettati", description: "", type: .passFail, isRequired: true, requiresNoteIfFailed: true),
-                    .init(title: "Frigoriferi chiusi", description: "", type: .passFail, isRequired: true, requiresNoteIfFailed: true),
-                    .init(title: "Attrezzature spente/pulite", description: "", type: .passFail, isRequired: true, requiresNoteIfFailed: true)
-                ]
-            ),
-            .init(
-                title: "Pulizie giornaliere",
-                description: "Pulizie operative quotidiane.",
-                category: .cleaning,
-                frequency: .daily,
-                scheduledHour: 21,
-                scheduledMinute: 0,
-                items: [
-                    .init(title: "Banco preparazione sanificato", description: "", type: .passFail, isRequired: true, requiresNoteIfFailed: true),
-                    .init(title: "Lavelli puliti", description: "", type: .passFail, isRequired: true, requiresNoteIfFailed: true),
-                    .init(title: "Pavimenti lavati", description: "", type: .passFail, isRequired: true, requiresNoteIfFailed: true),
-                    .init(title: "Utensili lavati", description: "", type: .passFail, isRequired: true, requiresNoteIfFailed: true),
-                    .init(title: "Maniglie e superfici toccate sanificate", description: "", type: .passFail, isRequired: true, requiresNoteIfFailed: true)
-                ]
-            ),
-            .init(
-                title: "Igiene personale",
-                description: "Controlli igiene personale staff.",
-                category: .personalHygiene,
-                frequency: .daily,
-                scheduledHour: 10,
-                scheduledMinute: 0,
-                items: [
-                    .init(title: "Mani lavate", description: "", type: .passFail, isRequired: true, requiresNoteIfFailed: true),
-                    .init(title: "Divisa pulita", description: "", type: .passFail, isRequired: true, requiresNoteIfFailed: true),
-                    .init(title: "Capelli coperti se necessario", description: "", type: .passFail, isRequired: true, requiresNoteIfFailed: true),
-                    .init(title: "Guanti disponibili", description: "", type: .passFail, isRequired: true, requiresNoteIfFailed: true),
-                    .init(title: "Nessun oggetto personale in zona preparazione", description: "", type: .passFail, isRequired: true, requiresNoteIfFailed: true)
-                ]
-            ),
-            .init(
-                title: "Conservazione alimenti",
-                description: "Controlli conservazione e stoccaggio.",
-                category: .foodStorage,
-                frequency: .daily,
-                scheduledHour: 12,
-                scheduledMinute: 0,
-                items: [
-                    .init(title: "Prodotti coperti", description: "", type: .passFail, isRequired: true, requiresNoteIfFailed: true),
-                    .init(title: "Crudo e cotto separati", description: "", type: .passFail, isRequired: true, requiresNoteIfFailed: true),
-                    .init(title: "Scadenze visibili", description: "", type: .passFail, isRequired: true, requiresNoteIfFailed: true),
-                    .init(title: "Etichette leggibili", description: "", type: .passFail, isRequired: true, requiresNoteIfFailed: true),
-                    .init(title: "Nessun prodotto scaduto", description: "", type: .passFail, isRequired: true, requiresNoteIfFailed: true)
-                ]
-            ),
-            .init(
-                title: "Controllo scadenze visibili",
-                description: "Verifica giornaliera scadenze e rotazione prodotti.",
-                category: .foodStorage,
-                frequency: .daily,
-                scheduledHour: 18,
-                scheduledMinute: 0,
-                items: [
-                    .init(title: "Scadenze del giorno verificate", description: "", type: .passFail, isRequired: true, requiresNoteIfFailed: true),
-                    .init(title: "Prodotti in scadenza separati", description: "", type: .passFail, isRequired: true, requiresNoteIfFailed: true),
-                    .init(title: "Aggiornata rotazione FIFO", description: "", type: .passFail, isRequired: true, requiresNoteIfFailed: true),
-                    .init(title: "Prodotti scaduti rimossi", description: "", type: .passFail, isRequired: true, requiresNoteIfFailed: true)
-                ]
-            ),
-            .init(
-                title: "Allergeni",
-                description: "Controlli prevenzione allergeni.",
-                category: .allergens,
-                frequency: .weekly,
-                scheduledHour: 13,
-                scheduledMinute: 0,
-                items: [
-                    .init(title: "Allergeni separati", description: "", type: .passFail, isRequired: true, requiresNoteIfFailed: true),
-                    .init(title: "Utensili dedicati/puliti", description: "", type: .passFail, isRequired: true, requiresNoteIfFailed: true),
-                    .init(title: "Contaminazione crociata evitata", description: "", type: .passFail, isRequired: true, requiresNoteIfFailed: true),
-                    .init(title: "Ingredienti allergeni identificati", description: "", type: .passFail, isRequired: true, requiresNoteIfFailed: true)
-                ]
-            ),
-            .init(
-                title: "Ricevimento merci",
-                description: "Controlli ingresso merci.",
-                category: .receivingGoods,
-                frequency: .daily,
-                scheduledHour: 8,
-                scheduledMinute: 30,
-                items: [
-                    .init(title: "Imballi integri", description: "", type: .passFail, isRequired: true, requiresNoteIfFailed: true),
-                    .init(title: "Prodotti controllati", description: "", type: .passFail, isRequired: true, requiresNoteIfFailed: true),
-                    .init(title: "Temperature verificate se necessario", description: "", type: .passFail, isRequired: true, requiresNoteIfFailed: true),
-                    .init(title: "Lotti/documenti presenti", description: "", type: .passFail, isRequired: true, requiresNoteIfFailed: true),
-                    .init(title: "Prodotti non conformi separati", description: "", type: .passFail, isRequired: true, requiresNoteIfFailed: true)
-                ]
-            ),
-            .init(
-                title: "Rifiuti",
-                description: "Controlli gestione rifiuti.",
-                category: .waste,
-                frequency: .daily,
-                scheduledHour: 17,
-                scheduledMinute: 0,
-                items: [
-                    .init(title: "Bidoni non pieni", description: "", type: .passFail, isRequired: true, requiresNoteIfFailed: true),
-                    .init(title: "Sacchi sostituiti", description: "", type: .passFail, isRequired: true, requiresNoteIfFailed: true),
-                    .init(title: "Area rifiuti pulita", description: "", type: .passFail, isRequired: true, requiresNoteIfFailed: true),
-                    .init(title: "Differenziata rispettata", description: "", type: .passFail, isRequired: true, requiresNoteIfFailed: true)
-                ]
-            ),
-            .init(
-                title: "Attrezzature",
-                description: "Controlli stato e pulizia attrezzature.",
-                category: .equipment,
-                frequency: .weekly,
-                scheduledHour: 15,
-                scheduledMinute: 0,
-                items: [
-                    .init(title: "Forni/piastre puliti", description: "", type: .passFail, isRequired: true, requiresNoteIfFailed: true),
-                    .init(title: "Frigoriferi funzionanti", description: "", type: .passFail, isRequired: true, requiresNoteIfFailed: true),
-                    .init(title: "Abbattitore pulito", description: "", type: .passFail, isRequired: true, requiresNoteIfFailed: true),
-                    .init(title: "Utensili integri", description: "", type: .passFail, isRequired: true, requiresNoteIfFailed: true),
-                    .init(title: "Nessuna attrezzatura danneggiata", description: "", type: .passFail, isRequired: true, requiresNoteIfFailed: true)
-                ]
-            ),
-            .init(
-                title: "Verifica settimanale HACCP",
-                description: "Controlli di conformita settimanali del piano HACCP.",
-                category: .custom,
-                frequency: .weekly,
-                scheduledHour: 11,
-                scheduledMinute: 0,
-                items: [
-                    .init(title: "Procedure compilate correttamente", description: "", type: .passFail, isRequired: true, requiresNoteIfFailed: true),
-                    .init(title: "Azioni correttive chiuse", description: "", type: .passFail, isRequired: true, requiresNoteIfFailed: true),
-                    .init(title: "Tracciabilita lotti aggiornata", description: "", type: .passFail, isRequired: true, requiresNoteIfFailed: true)
-                ]
-            ),
-            .init(
-                title: "Pulizia profonda settimanale",
-                description: "Pulizia approfondita aree critiche e zone meno accessibili.",
-                category: .cleaning,
-                frequency: .weekly,
-                scheduledHour: 20,
-                scheduledMinute: 0,
-                items: [
-                    .init(title: "Pulizia cappe e filtri", description: "", type: .passFail, isRequired: true, requiresNoteIfFailed: true),
-                    .init(title: "Pulizia retro attrezzature", description: "", type: .passFail, isRequired: true, requiresNoteIfFailed: true),
-                    .init(title: "Sanificazione celle frigo interne", description: "", type: .passFail, isRequired: true, requiresNoteIfFailed: true)
-                ]
-            ),
-            .init(
-                title: "Pulizia profonda frigoriferi",
-                description: "Pulizia completa frigoriferi e guarnizioni.",
-                category: .cleaning,
-                frequency: .weekly,
-                scheduledHour: 19,
-                scheduledMinute: 0,
-                items: [
-                    .init(title: "Ripiani frigoriferi puliti", description: "", type: .passFail, isRequired: true, requiresNoteIfFailed: true),
-                    .init(title: "Guarnizioni sanificate", description: "", type: .passFail, isRequired: true, requiresNoteIfFailed: true),
-                    .init(title: "Scolo condensa controllato", description: "", type: .passFail, isRequired: true, requiresNoteIfFailed: true)
-                ]
-            ),
-            .init(
-                title: "Sanificazione scaffali",
-                description: "Sanificazione completa scaffalature cucina e magazzino.",
-                category: .cleaning,
-                frequency: .weekly,
-                scheduledHour: 18,
-                scheduledMinute: 30,
-                items: [
-                    .init(title: "Scaffali area cucina sanificati", description: "", type: .passFail, isRequired: true, requiresNoteIfFailed: true),
-                    .init(title: "Scaffali magazzino sanificati", description: "", type: .passFail, isRequired: true, requiresNoteIfFailed: true),
-                    .init(title: "Prodotti riposizionati correttamente", description: "", type: .passFail, isRequired: true, requiresNoteIfFailed: true)
-                ]
-            ),
-            .init(
-                title: "Verifica stato utensili",
-                description: "Controllo integrita utensili e sostituzione danneggiati.",
-                category: .equipment,
-                frequency: .weekly,
-                scheduledHour: 16,
-                scheduledMinute: 30,
-                items: [
-                    .init(title: "Coltelli integri e affilati", description: "", type: .passFail, isRequired: true, requiresNoteIfFailed: true),
-                    .init(title: "Taglieri non danneggiati", description: "", type: .passFail, isRequired: true, requiresNoteIfFailed: true),
-                    .init(title: "Utensili rotti rimossi", description: "", type: .passFail, isRequired: true, requiresNoteIfFailed: true)
-                ]
-            ),
-            .init(
-                title: "Controllo aree magazzino",
-                description: "Verifica ordine, pulizia e corretta segregazione magazzino.",
-                category: .foodStorage,
-                frequency: .weekly,
-                scheduledHour: 17,
-                scheduledMinute: 30,
-                items: [
-                    .init(title: "Area magazzino pulita", description: "", type: .passFail, isRequired: true, requiresNoteIfFailed: true),
-                    .init(title: "Prodotti separati per categoria", description: "", type: .passFail, isRequired: true, requiresNoteIfFailed: true),
-                    .init(title: "Nessun imballo danneggiato", description: "", type: .passFail, isRequired: true, requiresNoteIfFailed: true)
-                ]
-            ),
-            .init(
-                title: "Controllo prodotti secchi",
-                description: "Verifica settimanale prodotti secchi, integrita confezioni e scadenze.",
-                category: .foodStorage,
-                frequency: .weekly,
-                scheduledHour: 12,
-                scheduledMinute: 30,
-                items: [
-                    .init(title: "Confezioni integre", description: "", type: .passFail, isRequired: true, requiresNoteIfFailed: true),
-                    .init(title: "Scadenze prodotti secchi verificate", description: "", type: .passFail, isRequired: true, requiresNoteIfFailed: true),
-                    .init(title: "Prodotti aperti etichettati", description: "", type: .passFail, isRequired: true, requiresNoteIfFailed: true)
-                ]
-            ),
-            .init(
-                title: "Controllo scadenze settimanale",
-                description: "Controllo esteso FIFO e scadenze di tutti i reparti.",
-                category: .foodStorage,
-                frequency: .weekly,
-                scheduledHour: 16,
-                scheduledMinute: 0,
-                items: [
-                    .init(title: "FIFO rispettato in tutti i reparti", description: "", type: .passFail, isRequired: true, requiresNoteIfFailed: true),
-                    .init(title: "Prodotti prossimi a scadenza segregati", description: "", type: .passFail, isRequired: true, requiresNoteIfFailed: true),
-                    .init(title: "Etichette leggibili e complete", description: "", type: .passFail, isRequired: true, requiresNoteIfFailed: true)
-                ]
-            ),
-            .init(
-                title: "Manutenzione mensile attrezzature",
-                description: "Check funzionale e sicurezza attrezzature principali.",
-                category: .equipment,
-                frequency: .monthly,
-                scheduledHour: 10,
-                scheduledMinute: 30,
-                items: [
-                    .init(title: "Forni e piastre verificati", description: "", type: .passFail, isRequired: true, requiresNoteIfFailed: true),
-                    .init(title: "Frigoriferi con guarnizioni integre", description: "", type: .passFail, isRequired: true, requiresNoteIfFailed: true),
-                    .init(title: "Abbattitore verificato", description: "", type: .passFail, isRequired: true, requiresNoteIfFailed: true),
-                    .init(title: "Scheda manutenzione aggiornata", description: "", type: .passFail, isRequired: true, requiresNoteIfFailed: true)
-                ]
-            ),
-            .init(
-                title: "Audit mensile allergeni ed etichette",
-                description: "Verifica documentale e operativa allergeni.",
-                category: .allergens,
-                frequency: .monthly,
-                scheduledHour: 14,
-                scheduledMinute: 0,
-                items: [
-                    .init(title: "Matrice allergeni aggiornata", description: "", type: .passFail, isRequired: true, requiresNoteIfFailed: true),
-                    .init(title: "Etichette ingredienti complete", description: "", type: .passFail, isRequired: true, requiresNoteIfFailed: true),
-                    .init(title: "Procedure anti-contaminazione confermate", description: "", type: .passFail, isRequired: true, requiresNoteIfFailed: true)
-                ]
-            ),
-            .init(
-                title: "Verifica generale HACCP",
-                description: "Revisione mensile completa dell'applicazione HACCP.",
-                category: .custom,
-                frequency: .monthly,
-                scheduledHour: 10,
-                scheduledMinute: 0,
-                items: [
-                    .init(title: "Punti critici monitorati", description: "", type: .passFail, isRequired: true, requiresNoteIfFailed: true),
-                    .init(title: "Registri HACCP completi", description: "", type: .passFail, isRequired: true, requiresNoteIfFailed: true),
-                    .init(title: "Azioni correttive tracciate", description: "", type: .passFail, isRequired: true, requiresNoteIfFailed: true)
-                ]
-            ),
-            .init(
-                title: "Controllo documentazione",
-                description: "Controllo mensile documentazione obbligatoria e registri.",
-                category: .custom,
-                frequency: .monthly,
-                scheduledHour: 11,
-                scheduledMinute: 0,
-                items: [
-                    .init(title: "Manuale HACCP aggiornato", description: "", type: .passFail, isRequired: true, requiresNoteIfFailed: true),
-                    .init(title: "Schede controllo archiviate", description: "", type: .passFail, isRequired: true, requiresNoteIfFailed: true),
-                    .init(title: "Documentazione fornitori disponibile", description: "", type: .passFail, isRequired: true, requiresNoteIfFailed: true)
-                ]
-            ),
-            .init(
-                title: "Revisione procedure pulizia",
-                description: "Revisione mensile procedure pulizia e sanificazione.",
-                category: .cleaning,
-                frequency: .monthly,
-                scheduledHour: 15,
-                scheduledMinute: 0,
-                items: [
-                    .init(title: "Procedure pulizia aggiornate", description: "", type: .passFail, isRequired: true, requiresNoteIfFailed: true),
-                    .init(title: "Prodotti sanificanti conformi", description: "", type: .passFail, isRequired: true, requiresNoteIfFailed: true),
-                    .init(title: "Piano interventi straordinari definito", description: "", type: .passFail, isRequired: true, requiresNoteIfFailed: true)
-                ]
-            ),
-            .init(
-                title: "Verifica formazione personale",
-                description: "Verifica mensile formazione e aggiornamento staff su procedure.",
-                category: .personalHygiene,
-                frequency: .monthly,
-                scheduledHour: 16,
-                scheduledMinute: 0,
-                items: [
-                    .init(title: "Nuovi ingressi formati", description: "", type: .passFail, isRequired: true, requiresNoteIfFailed: true),
-                    .init(title: "Richiami formativi registrati", description: "", type: .passFail, isRequired: true, requiresNoteIfFailed: true),
-                    .init(title: "Procedure HACCP comprese dal team", description: "", type: .passFail, isRequired: true, requiresNoteIfFailed: true)
-                ]
-            )
-        ]
+    init(
+        title: String,
+        description: String,
+        category: ChecklistCategory,
+        frequency: ChecklistFrequency,
+        scheduledHour: Int?,
+        scheduledMinute: Int?,
+        scheduleWeekday: Int? = nil,
+        scheduleDayOfMonth: Int? = nil,
+        scheduleMonth: Int? = nil,
+        allowsBulkPass: Bool = true,
+        bulkPassTitle: String? = nil,
+        items: [ChecklistItemTemplateDraft]
+    ) {
+        self.title = title
+        self.description = description
+        self.category = category
+        self.frequency = frequency
+        self.scheduledHour = scheduledHour
+        self.scheduledMinute = scheduledMinute
+        self.scheduleWeekday = scheduleWeekday
+        self.scheduleDayOfMonth = scheduleDayOfMonth
+        self.scheduleMonth = scheduleMonth
+        self.allowsBulkPass = allowsBulkPass
+        self.bulkPassTitle = bulkPassTitle
+        self.items = items
     }
 }

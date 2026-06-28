@@ -23,7 +23,7 @@ struct ProductionLabelSourcePickerSheet: View {
 
         var icon: String {
             switch self {
-            case .traceability: return "archivebox.fill"
+            case .traceability: return "fork.knife"
             case .blast: return "wind.snow"
             case .defrost: return "snowflake"
             }
@@ -31,7 +31,7 @@ struct ProductionLabelSourcePickerSheet: View {
 
         var subtitle: String {
             switch self {
-            case .traceability: return "Lotti in ingresso e in uso"
+            case .traceability: return "Piatti preparati dopo associazione lotti"
             case .blast: return "Abbattimenti completati"
             case .defrost: return "Decongelamenti completati"
             }
@@ -173,7 +173,7 @@ private struct ProductionLabelSourceListView: View {
 
     private var emptyMessage: String {
         switch segment {
-        case .traceability: return "Non ci sono lotti in tracciabilità."
+        case .traceability: return "Non ci sono piatti preparati da etichettare. Associa i lotti in ingresso a un piatto in Tracciabilità."
         case .blast: return "Non ci sono abbattimenti completati."
         case .defrost: return "Non ci sono decongelamenti completati."
         }
@@ -182,7 +182,9 @@ private struct ProductionLabelSourceListView: View {
     private var items: [AnyHashableSourceItem] {
         switch segment {
         case .traceability:
-            return dataStore.traceabilityRecords.map { .traceability($0) }
+            return dataStore.traceabilityRecords
+                .filter(TraceabilityRecordSupport.isLabelTraceabilitySource)
+                .map { .traceability($0) }
         case .blast:
             return dataStore.blastRecords.map { .blast($0) }
         case .defrost:
@@ -202,9 +204,10 @@ private struct ProductionLabelSourceListView: View {
     private func sourceRow(for item: AnyHashableSourceItem) -> some View {
         switch item {
         case .traceability(let record):
+            let source = TraceabilityRecordSupport.expirySourceLabel(for: record) ?? "Produzione finita"
             sourceRowContent(
                 title: record.productName,
-                subtitle: "Lotto \(record.lotCode) · \(record.supplier) · \(record.productStatus.label)",
+                subtitle: "Batch \(record.lotCode) · \(source)",
                 icon: segment.icon,
                 photoData: traceabilityPhotoData(for: record)
             )

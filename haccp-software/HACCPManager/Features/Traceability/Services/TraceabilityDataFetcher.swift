@@ -12,15 +12,16 @@ struct TraceabilityFetchedData {
     var links: [TraceabilityLink] = []
     var logs: [TraceabilityLog] = []
     var images: [ProductImage] = []
-    var goodsReceipts: [GoodsReceipt] = []
     var defrostRecords: [DefrostRecord] = []
+    var lottoFotos: [LottoFoto] = []
+    var lottoProductionLinks: [LottoFotoProductionLink] = []
 }
 
-@MainActor
 enum TraceabilityDataFetcher {
 
     static func fetch(context: ModelContext, restaurantId: UUID) -> TraceabilityFetchedData {
         let rid = restaurantId
+
         let recordLimit = PerformanceConfig.traceabilityActiveFetchLimit
 
         var data = TraceabilityFetchedData()
@@ -29,9 +30,17 @@ enum TraceabilityDataFetcher {
             sortBy: [SortDescriptor(\TraceabilityRecord.createdAt, order: .reverse)]
         )
         recordDescriptor.fetchLimit = recordLimit
-        data.records = (try? context.fetch(recordDescriptor)) ?? []
-
-        let recordIds = Set(data.records.map(\.id))
+        let fetched = (try? context.fetch(recordDescriptor)) ?? []
+        // Esclude batch produzione finiti (restano collegati via produzioneBatchId).
+        data.records = fetched.filter { $0.produzioneBatchId == nil }
+        var didMigratePartialStatus = false
+        for record in data.records where record.productStatusRaw == "PARTIALLY_USED" {
+            record.productStatusRaw = ProductStatus.available.rawValue
+            didMigratePartialStatus = true
+        }
+        if didMigratePartialStatus {
+            context.saveSafely(operation: "traceability-status-migration")
+        }
 
         var productionDescriptor = FetchDescriptor<Production>(
             predicate: #Predicate { $0.restaurantId == rid },
@@ -40,12 +49,19 @@ enum TraceabilityDataFetcher {
         productionDescriptor.fetchLimit = 300
         data.productions = (try? context.fetch(productionDescriptor)) ?? []
 
-        var receiptDescriptor = FetchDescriptor<GoodsReceivingRecord>(
+        var lottoDescriptor = FetchDescriptor<LottoFoto>(
             predicate: #Predicate { $0.restaurantId == rid && !$0.isArchived },
-            sortBy: [SortDescriptor(\GoodsReceivingRecord.receivedAt, order: .reverse)]
+            sortBy: [SortDescriptor(\LottoFoto.dataScatto, order: .reverse)]
         )
-        receiptDescriptor.fetchLimit = recordLimit
-        data.goodsReceipts = (try? context.fetch(receiptDescriptor)) ?? []
+        lottoDescriptor.fetchLimit = recordLimit * 2
+        data.lottoFotos = ((try? context.fetch(lottoDescriptor)) ?? []).filter(\.isConfirmed)
+
+        data.lottoProductionLinks = ((try? context.fetch(FetchDescriptor<LottoFotoProductionLink>())) ?? [])
+            .filter { link in
+                data.lottoFotos.contains(where: { $0.id == link.lottoFotoId })
+            }
+
+        let recordIds = Set(data.records.map(\.id))
 
         var defrostDescriptor = FetchDescriptor<DefrostRecord>(
             predicate: #Predicate { $0.restaurantId == rid && !$0.isArchived },

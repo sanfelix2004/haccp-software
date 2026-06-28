@@ -11,19 +11,20 @@ struct HistoryFetchedData {
     var fridgeRecords: [FridgeCheckRecord] = []
     var checklistRuns: [ChecklistRun] = []
     var checklistItemResults: [ChecklistItemResult] = []
-    var checklistAuditLogs: [ChecklistAuditLog] = []
     var cleaningRecords: [CleaningRecord] = []
     var defrostRecords: [DefrostRecord] = []
     var blastRecords: [BlastChillingRecord] = []
     var labelRecords: [ProductionLabelRecord] = []
     var goodsRecords: [GoodsReceipt] = []
     var traceabilityRecords: [TraceabilityRecord] = []
+    var traceabilityLinks: [TraceabilityLink] = []
     var traceabilityLogs: [TraceabilityLog] = []
+    var lottoProductionLinks: [LottoFotoProductionLink] = []
+    var lottoFotos: [LottoFoto] = []
     var productions: [Production] = []
     var oilRecords: [OilControlRecord] = []
 }
 
-@MainActor
 enum HistoryDataFetcher {
 
     static func fetch(context: ModelContext, restaurantId: UUID) -> HistoryFetchedData {
@@ -35,17 +36,28 @@ enum HistoryDataFetcher {
         data.fridgeRecords = fetchLimited(context, restaurantId: rid, limit: limit, sort: SortDescriptor(\FridgeCheckRecord.createdAt, order: .reverse))
         data.checklistRuns = fetchLimited(context, restaurantId: rid, limit: limit, sort: SortDescriptor(\ChecklistRun.startedAt, order: .reverse))
         data.checklistItemResults = fetchChecklistItemResults(context, runIds: Set(data.checklistRuns.map(\.id)), limit: limit * 2)
-        data.checklistAuditLogs = fetchLimited(context, restaurantId: rid, limit: min(limit, 200), sort: SortDescriptor(\ChecklistAuditLog.timestamp, order: .reverse))
         data.cleaningRecords = fetchLimited(context, restaurantId: rid, limit: limit, sort: SortDescriptor(\CleaningRecord.createdAt, order: .reverse))
         data.defrostRecords = fetchLimited(context, restaurantId: rid, limit: limit, sort: SortDescriptor(\DefrostRecord.startAt, order: .reverse))
         data.blastRecords = fetchLimited(context, restaurantId: rid, limit: limit, sort: SortDescriptor(\BlastChillingRecord.startedAt, order: .reverse))
         data.labelRecords = fetchLimited(context, restaurantId: rid, limit: limit, sort: SortDescriptor(\ProductionLabelRecord.createdAt, order: .reverse))
         data.goodsRecords = fetchLimited(context, restaurantId: rid, limit: limit, sort: SortDescriptor(\GoodsReceipt.receivedAt, order: .reverse))
         data.traceabilityRecords = fetchLimited(context, restaurantId: rid, limit: limit, sort: SortDescriptor(\TraceabilityRecord.createdAt, order: .reverse))
+        let recordIds = Set(data.traceabilityRecords.map(\.id))
+        data.traceabilityLinks = fetchTraceabilityLinks(
+            context,
+            recordIds: recordIds,
+            limit: limit * 3
+        )
         data.traceabilityLogs = fetchTraceabilityLogs(
             context,
-            recordIds: Set(data.traceabilityRecords.map(\.id)),
-            limit: limit
+            recordIds: recordIds,
+            limit: limit * 4
+        )
+        data.lottoFotos = fetchLottoFotos(context, restaurantId: rid, limit: limit * 2)
+        data.lottoProductionLinks = fetchLottoProductionLinks(
+            context,
+            lottoIds: Set(data.lottoFotos.map(\.id)),
+            limit: limit * 3
         )
         data.productions = fetchLimited(context, restaurantId: rid, limit: 500, sort: SortDescriptor(\Production.name, order: .forward))
         data.oilRecords = fetchLimited(context, restaurantId: rid, limit: limit, sort: SortDescriptor(\OilControlRecord.checkedAt, order: .reverse))
@@ -76,8 +88,47 @@ enum HistoryDataFetcher {
             sortBy: [SortDescriptor(\TraceabilityLog.timestamp, order: .reverse)]
         )
         descriptor.fetchLimit = limit
-        let batch = (try? context.fetch(descriptor)) ?? []
-        return batch.filter { recordIds.contains($0.receivedItemId) }
+        return ((try? context.fetch(descriptor)) ?? []).filter { recordIds.contains($0.receivedItemId) }
+    }
+
+    private static func fetchTraceabilityLinks(
+        _ context: ModelContext,
+        recordIds: Set<UUID>,
+        limit: Int
+    ) -> [TraceabilityLink] {
+        guard !recordIds.isEmpty else { return [] }
+        var descriptor = FetchDescriptor<TraceabilityLink>(
+            sortBy: [SortDescriptor(\TraceabilityLink.createdAt, order: .reverse)]
+        )
+        descriptor.fetchLimit = limit
+        return ((try? context.fetch(descriptor)) ?? []).filter { recordIds.contains($0.receivedItemId) }
+    }
+
+    private static func fetchLottoProductionLinks(
+        _ context: ModelContext,
+        lottoIds: Set<UUID>,
+        limit: Int
+    ) -> [LottoFotoProductionLink] {
+        guard !lottoIds.isEmpty else { return [] }
+        var descriptor = FetchDescriptor<LottoFotoProductionLink>(
+            sortBy: [SortDescriptor(\LottoFotoProductionLink.createdAt, order: .reverse)]
+        )
+        descriptor.fetchLimit = limit
+        return ((try? context.fetch(descriptor)) ?? []).filter { lottoIds.contains($0.lottoFotoId) }
+    }
+
+    private static func fetchLottoFotos(
+        _ context: ModelContext,
+        restaurantId: UUID,
+        limit: Int
+    ) -> [LottoFoto] {
+        let rid = restaurantId
+        var descriptor = FetchDescriptor<LottoFoto>(
+            predicate: #Predicate { $0.restaurantId == rid && !$0.isArchived },
+            sortBy: [SortDescriptor(\LottoFoto.dataScatto, order: .reverse)]
+        )
+        descriptor.fetchLimit = limit
+        return (try? context.fetch(descriptor)) ?? []
     }
 
     private static func fetchChecklistItemResults(

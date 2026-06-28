@@ -10,6 +10,8 @@ final class Production {
     var categoryNameSnapshot: String
     var createdAt: Date
     var isCustom: Bool
+    /// Giorni di conservazione del prodotto finito (opzionale; se `nil` si usa `ProductionShelfLifeDefaults`).
+    var shelfLifeDays: Int?
 
     init(
         id: UUID = UUID(),
@@ -18,7 +20,8 @@ final class Production {
         categoryId: UUID,
         categoryNameSnapshot: String,
         createdAt: Date = Date(),
-        isCustom: Bool
+        isCustom: Bool,
+        shelfLifeDays: Int? = nil
     ) {
         self.id = id
         self.restaurantId = restaurantId
@@ -27,5 +30,6 @@ final class Production {
         self.categoryNameSnapshot = categoryNameSnapshot
         self.createdAt = createdAt
         self.isCustom = isCustom
+        self.shelfLifeDays = shelfLifeDays
     }
 }

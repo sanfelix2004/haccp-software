@@ -162,7 +162,7 @@ enum HACCPDocumentAuditLogBuilder {
     private static func isImportantTraceabilityAction(_ action: TraceabilityActionType) -> Bool {
         switch action {
         case .expired, .rejected, .nonCompliance, .withdrawn: return true
-        case .created, .linkedToProduction: return false
+        case .created, .linkedToProduction, .expiryRegistered, .archivedFromExpiryControl: return false
         }
     }
 
@@ -189,6 +189,8 @@ enum HACCPDocumentAuditLogBuilder {
         case .withdrawn: return "Ritiro / scarto"
         case .created: return "Creazione record"
         case .linkedToProduction: return "Collegamento produzione"
+        case .expiryRegistered: return "Scadenza registrata"
+        case .archivedFromExpiryControl: return "Archiviato controllo scadenze"
         }
     }
 }

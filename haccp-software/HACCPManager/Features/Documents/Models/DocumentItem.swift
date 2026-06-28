@@ -51,6 +51,7 @@ enum DocumentModule: String, Codable, CaseIterable {
     case combinatoCatenaFreddo = "COMBINATO_CATENA_FREDDO"
     case combinatoIgieneControlli = "COMBINATO_IGIENE_CONTROLLI"
     case combinatoProduzione = "COMBINATO_PRODUZIONE"
+    case combinatoTracciabilitaProduzione = "COMBINATO_TRACCIABILITA_PRODUZIONE"
 
     var label: String {
         switch self {
@@ -62,7 +63,7 @@ enum DocumentModule: String, Codable, CaseIterable {
         case .controlloPulizia: return "Controllo pulizia"
         case .abbattimento: return "Abbattimento"
         case .programmazione: return "Programmazione"
-        case .controlloScadenze: return "Controllo scadenze"
+        case .controlloScadenze: return "Controllo scadenze abbattimento"
         case .decongelamento: return "Decongelamento"
         case .controlloOlio: return "Controllo olio"
         case .etichetteProduzione: return "Etichette di produzione"
@@ -71,6 +72,7 @@ enum DocumentModule: String, Codable, CaseIterable {
         case .combinatoCatenaFreddo: return "Catena del freddo"
         case .combinatoIgieneControlli: return "Igiene e controlli"
         case .combinatoProduzione: return "Produzione ed etichettatura"
+        case .combinatoTracciabilitaProduzione: return "Tracciabilità e produzioni"
         }
     }
 
@@ -80,7 +82,8 @@ enum DocumentModule: String, Codable, CaseIterable {
              .combinatoIngressoTracciabilita,
              .combinatoCatenaFreddo,
              .combinatoIgieneControlli,
-             .combinatoProduzione:
+             .combinatoProduzione,
+             .combinatoTracciabilitaProduzione:
             return true
         default:
             return false

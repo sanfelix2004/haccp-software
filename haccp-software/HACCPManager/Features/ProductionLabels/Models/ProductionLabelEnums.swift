@@ -78,16 +78,21 @@ enum ProductionLabelLinkedSource: String, CaseIterable, Identifiable, Hashable {
 
     var title: String {
         switch self {
-        case .traceability: return "Tracciabilità"
+        case .traceability: return "Produzione finita"
         case .blastChilling, .defrost: return labelSource.tabTitle
         }
     }
 
-    var icon: String { labelSource.icon }
+    var icon: String {
+        switch self {
+        case .traceability: return "fork.knife"
+        default: return labelSource.icon
+        }
+    }
 
     var subtitle: String {
         switch self {
-        case .traceability: return "Lotti in ingresso e in uso"
+        case .traceability: return "Piatti preparati dopo associazione lotti"
         case .blastChilling: return "Abbattimenti completati"
         case .defrost: return "Decongelamenti completati"
         }
@@ -95,7 +100,7 @@ enum ProductionLabelLinkedSource: String, CaseIterable, Identifiable, Hashable {
 
     var emptyItemsMessage: String {
         switch self {
-        case .traceability: return "Non ci sono lotti in tracciabilità."
+        case .traceability: return "Non ci sono piatti preparati da etichettare. Associa i lotti in ingresso a un piatto in Tracciabilità."
         case .blastChilling: return "Non ci sono abbattimenti completati."
         case .defrost: return "Non ci sono decongelamenti completati."
         }

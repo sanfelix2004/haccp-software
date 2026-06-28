@@ -60,7 +60,37 @@ enum ProductTemplateSeeder {
         Seed(name: "Prodotti confezionati", category: .packaged, requiresLot: true, requiresExpiry: true),
         Seed(name: "Scatolame e lunga conservazione", category: .longShelfLife, requiresLot: true, requiresExpiry: true),
         Seed(name: "Alimenti congelati", category: .frozen, defaultMaxTemp: -18, requiresTemperature: true, requiresLot: true, requiresExpiry: true),
-        Seed(name: "Deperibili (generico)", category: .perishable, defaultMinTemp: 0, defaultMaxTemp: 4, requiresTemperature: true, requiresLot: true, requiresExpiry: true, requiresAppearanceCheck: true)
+        Seed(name: "Deperibili (generico)", category: .perishable, defaultMinTemp: 0, defaultMaxTemp: 4, requiresTemperature: true, requiresLot: true, requiresExpiry: true, requiresAppearanceCheck: true),
+
+        // Ingredienti specifici (durata HACCP realistica)
+        Seed(name: "Mozzarella di bufala", category: .refrigerated, defaultMinTemp: 0, defaultMaxTemp: 4, requiresTemperature: true, requiresLot: true, requiresExpiry: true),
+        Seed(name: "Pomodoro pelato", category: .packaged, requiresLot: true, requiresExpiry: true),
+        Seed(name: "Pomodoro fresco", category: .produce, requiresAppearanceCheck: true, requiresMoldCheck: true),
+        Seed(name: "Olio extravergine", category: .packaged, requiresLot: true, requiresExpiry: true),
+        Seed(name: "Basilico fresco", category: .produce, requiresAppearanceCheck: true, requiresFreshnessCheck: true),
+        Seed(name: "Alici fresche", category: .freshFish, defaultMinTemp: 0, defaultMaxTemp: 4, requiresTemperature: true, requiresLot: true, requiresExpiry: true, requiresAppearanceCheck: true),
+        Seed(name: "Tonno fresco", category: .freshFish, defaultMinTemp: 0, defaultMaxTemp: 4, requiresTemperature: true, requiresLot: true, requiresExpiry: true, requiresAppearanceCheck: true),
+        Seed(name: "Gamberi", category: .freshFish, defaultMinTemp: 0, defaultMaxTemp: 4, requiresTemperature: true, requiresLot: true, requiresExpiry: true, requiresAppearanceCheck: true),
+        Seed(name: "Polpo", category: .freshFish, defaultMinTemp: 0, defaultMaxTemp: 4, requiresTemperature: true, requiresLot: true, requiresExpiry: true, requiresAppearanceCheck: true),
+        Seed(name: "Latte intero", category: .refrigerated, defaultMinTemp: 0, defaultMaxTemp: 4, requiresTemperature: true, requiresLot: true, requiresExpiry: true),
+        Seed(name: "Panna fresca", category: .refrigerated, defaultMinTemp: 0, defaultMaxTemp: 4, requiresTemperature: true, requiresLot: true, requiresExpiry: true),
+        Seed(name: "Parmigiano Reggiano", category: .refrigerated, requiresLot: true, requiresExpiry: true),
+        Seed(name: "Pecorino", category: .refrigerated, requiresLot: true, requiresExpiry: true),
+        Seed(name: "Mascarpone", category: .refrigerated, defaultMinTemp: 0, defaultMaxTemp: 4, requiresTemperature: true, requiresLot: true, requiresExpiry: true),
+        Seed(name: "Burro", category: .refrigerated, defaultMinTemp: 0, defaultMaxTemp: 4, requiresTemperature: true, requiresLot: true, requiresExpiry: true),
+        Seed(name: "Farina tipo 00", category: .dryProducts, requiresLot: true, requiresExpiry: true),
+        Seed(name: "Zucchero", category: .dryProducts),
+        Seed(name: "Sale fino", category: .dryProducts),
+        Seed(name: "Caffè", category: .dryProducts),
+        Seed(name: "Cioccolato fondente", category: .dryProducts, requiresLot: true, requiresExpiry: true),
+        Seed(name: "Savoiardi", category: .dryProducts, requiresLot: true, requiresExpiry: true),
+        Seed(name: "Pinoli", category: .dryProducts, requiresLot: true, requiresExpiry: true),
+        Seed(name: "Capperi", category: .packaged, requiresLot: true, requiresExpiry: true),
+        Seed(name: "Olive", category: .packaged, requiresLot: true, requiresExpiry: true),
+        Seed(name: "Aceto", category: .packaged, requiresLot: true, requiresExpiry: true),
+        Seed(name: "Vino bianco", category: .packaged, requiresLot: true, requiresExpiry: true),
+        Seed(name: "Riso", category: .dryProducts, requiresLot: true, requiresExpiry: true),
+        Seed(name: "Pasta secca", category: .dryProducts, requiresLot: true, requiresExpiry: true)
     ]
 
     /// Inserisce i template mancanti per il ristorante (idempotente per nome).
@@ -86,12 +116,18 @@ enum ProductTemplateSeeder {
                 requiresAppearanceCheck: seed.requiresAppearanceCheck,
                 requiresThawingCheck: seed.requiresThawingCheck,
                 requiresMoldCheck: seed.requiresMoldCheck,
-                requiresFreshnessCheck: seed.requiresFreshnessCheck
+                requiresFreshnessCheck: seed.requiresFreshnessCheck,
+                shelfLifeDays: IncomingFoodShelfLifeDefaults.days(forName: seed.name, category: seed.category)
             )
             modelContext.insert(template)
             didInsert = true
         }
-        if didInsert {
+        var didBackfill = false
+        for template in existing where template.shelfLifeDays == nil {
+            template.shelfLifeDays = IncomingFoodShelfLifeDefaults.days(forName: template.name, category: template.category)
+            didBackfill = true
+        }
+        if didInsert || didBackfill {
             try? modelContext.save()
         }
     }

@@ -46,7 +46,8 @@ enum ProductionLabelDataFetcher {
             sortBy: [SortDescriptor(\TraceabilityRecord.createdAt, order: .reverse)]
         )
         traceDescriptor.fetchLimit = sourcePickerLimit
-        data.traceabilityRecords = (try? context.fetch(traceDescriptor)) ?? []
+        data.traceabilityRecords = ((try? context.fetch(traceDescriptor)) ?? [])
+            .filter(TraceabilityRecordSupport.isLabelTraceabilitySource)
 
         var goodsDescriptor = FetchDescriptor<GoodsReceivingRecord>(
             predicate: #Predicate { $0.restaurantId == rid && !$0.isArchived },

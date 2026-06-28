@@ -24,6 +24,8 @@ struct CleaningSummary {
 }
 
 struct CleaningControlService {
+    private let engine = PeriodicTaskEngine()
+
     private struct SeedTask {
         let title: String
         let frequency: CleaningTaskFrequency
@@ -129,21 +131,102 @@ struct CleaningControlService {
     }
 
     func dueInterval(for task: CleaningTask, from reference: Date = Date(), calendar: Calendar) -> DateInterval {
-        switch task.frequency {
-        case .giornaliero:
-            let start = calendar.startOfDay(for: reference)
-            let end = calendar.date(byAdding: .day, value: 1, to: start) ?? start.addingTimeInterval(86400)
-            return DateInterval(start: start, end: end)
-        case .settimanale:
-            return calendar.dateInterval(of: .weekOfYear, for: reference) ?? DateInterval(start: reference, end: reference.addingTimeInterval(86400))
-        case .mensile:
-            return calendar.dateInterval(of: .month, for: reference) ?? DateInterval(start: reference, end: reference.addingTimeInterval(86400))
-        case .personalizzato:
-            let interval = max(task.customIntervalDays ?? 1, 1)
-            let start = calendar.startOfDay(for: reference)
-            let end = calendar.date(byAdding: .day, value: interval, to: start) ?? start.addingTimeInterval(Double(interval) * 86400)
-            return DateInterval(start: start, end: end)
+        engine.periodInterval(
+            for: task.frequency,
+            customIntervalDays: task.customIntervalDays,
+            reference: reference
+        )
+    }
+
+    /// Chiude i record di cicli passati ancora «da fare» come «Non fatta».
+    func closeStaleCleaningRecords(
+        restaurantId: UUID,
+        tasks: [CleaningTask],
+        records: [CleaningRecord],
+        calendar: Calendar,
+        modelContext: ModelContext,
+        now: Date = Date()
+    ) {
+        let scopedTasks = tasks.filter { $0.restaurantId == restaurantId && $0.isActive }
+        let scopedRecords = records.filter { $0.restaurantId == restaurantId && !$0.isArchived }
+
+        for task in scopedTasks {
+            let currentPeriod = dueInterval(for: task, from: now, calendar: calendar)
+            for record in scopedRecords where record.taskId == task.id && record.outcome == .daFare {
+                guard record.periodStart != currentPeriod.start else { continue }
+                record.outcome = .nonFatto
+                record.updatedAt = now
+                record.notes = record.notes ?? "Ciclo non completato"
+            }
         }
+        try? modelContext.save()
+    }
+
+    func buildTaskCards(
+        restaurantId: UUID,
+        tasks: [CleaningTask],
+        records: [CleaningRecord],
+        criticalities: [CleaningCriticality],
+        calendar: Calendar
+    ) -> (todo: [CleaningTaskCard], overdue: [CleaningTaskCard], completed: [CleaningTaskCard], history: [CleaningRecord]) {
+        let taskEngine = PeriodicTaskEngine(calendar: calendar)
+        let activeTasks = tasks
+            .filter { $0.restaurantId == restaurantId && $0.isActive }
+            .sorted {
+                if $0.areaNameSnapshot == $1.areaNameSnapshot { return $0.title < $1.title }
+                return $0.areaNameSnapshot < $1.areaNameSnapshot
+            }
+
+        var todo: [CleaningTaskCard] = []
+        var overdue: [CleaningTaskCard] = []
+        var completed: [CleaningTaskCard] = []
+        let now = Date()
+
+        for task in activeTasks {
+            let due = dueInterval(for: task, from: now, calendar: calendar)
+            guard let record = records.first(where: { $0.taskId == task.id && $0.periodStart == due.start }) else { continue }
+            let hasOpenCriticality = resolveCriticalityForRecord(record, criticalities: criticalities) != nil
+            let adapter = CleaningRecordPeriodicAdapter(
+                record: record,
+                currentPeriodStart: due.start,
+                hasOpenCriticality: hasOpenCriticality,
+                now: now,
+                engine: taskEngine
+            )
+
+            guard taskEngine.isVisibleOnDashboard(adapter, now: now) || adapter.lifecycleStatus.isTerminal else { continue }
+
+            let isOverdue = taskEngine.isOverdueForDashboard(adapter, now: now)
+            let isCompleted = adapter.lifecycleStatus == .completed || adapter.lifecycleStatus == .notApplicable
+            let visibleDueDate = calendar.date(byAdding: .second, value: -1, to: due.end) ?? due.end
+            let card = CleaningTaskCard(
+                id: task.id,
+                areaName: task.areaNameSnapshot,
+                taskName: task.title,
+                frequency: task.frequency,
+                customIntervalDays: task.customIntervalDays,
+                dueDate: visibleDueDate,
+                isOverdue: isOverdue,
+                isCompleted: isCompleted,
+                record: record
+            )
+            if isCompleted {
+                completed.append(card)
+            } else if isOverdue {
+                overdue.append(card)
+            } else if adapter.lifecycleStatus == .pending || adapter.lifecycleStatus == .failed {
+                todo.append(card)
+            }
+        }
+
+        let history = records
+            .filter {
+                $0.restaurantId == restaurantId &&
+                ($0.outcome == .pulito || $0.outcome == .nonPulito || $0.outcome == .nonApplicabile || $0.outcome == .nonFatto)
+            }
+            .sorted { $0.updatedAt > $1.updatedAt }
+
+        return (todo, overdue, completed, history)
     }
 
     func ensureRecordForCurrentPeriod(
@@ -187,58 +270,6 @@ struct CleaningControlService {
         criticalities: [CleaningCriticality]
     ) -> CleaningCriticality? {
         criticalities.first(where: { $0.recordId == record.id && $0.isResolved == false })
-    }
-
-    func buildTaskCards(
-        restaurantId: UUID,
-        tasks: [CleaningTask],
-        records: [CleaningRecord],
-        criticalities: [CleaningCriticality],
-        calendar: Calendar
-    ) -> (todo: [CleaningTaskCard], overdue: [CleaningTaskCard], completed: [CleaningTaskCard], history: [CleaningRecord]) {
-        let activeTasks = tasks
-            .filter { $0.restaurantId == restaurantId && $0.isActive }
-            .sorted {
-                if $0.areaNameSnapshot == $1.areaNameSnapshot { return $0.title < $1.title }
-                return $0.areaNameSnapshot < $1.areaNameSnapshot
-            }
-
-        var todo: [CleaningTaskCard] = []
-        var overdue: [CleaningTaskCard] = []
-        var completed: [CleaningTaskCard] = []
-        let now = Date()
-
-        for task in activeTasks {
-            let due = dueInterval(for: task, from: now, calendar: calendar)
-            guard let record = records.first(where: { $0.taskId == task.id && $0.periodStart == due.start }) else { continue }
-            let hasOpenCriticality = resolveCriticalityForRecord(record, criticalities: criticalities) != nil
-            let done = record.outcome != .daFare && !hasOpenCriticality
-            let visibleDueDate = calendar.date(byAdding: .second, value: -1, to: due.end) ?? due.end
-            let card = CleaningTaskCard(
-                id: task.id,
-                areaName: task.areaNameSnapshot,
-                taskName: task.title,
-                frequency: task.frequency,
-                customIntervalDays: task.customIntervalDays,
-                dueDate: visibleDueDate,
-                isOverdue: due.end < now && !done,
-                isCompleted: done,
-                record: record
-            )
-            if done {
-                completed.append(card)
-            } else if card.isOverdue {
-                overdue.append(card)
-            } else {
-                todo.append(card)
-            }
-        }
-
-        let history = records
-            .filter { $0.restaurantId == restaurantId && $0.outcome != .daFare }
-            .sorted { $0.updatedAt > $1.updatedAt }
-
-        return (todo, overdue, completed, history)
     }
 
     func summary(for cards: [CleaningTaskCard]) -> CleaningSummary {

@@ -91,12 +91,25 @@ struct ProductionLibraryService {
                         name: productionName,
                         categoryId: category.id,
                         categoryNameSnapshot: category.name,
-                        isCustom: false
+                        isCustom: false,
+                        shelfLifeDays: ProductionShelfLifeDefaults.days(forName: productionName, categoryName: category.name)
                     )
                 )
             }
         }
+        backfillShelfLifeDays(restaurantId: restaurantId, modelContext: modelContext)
         try? modelContext.save()
+    }
+
+    private func backfillShelfLifeDays(restaurantId: UUID, modelContext: ModelContext) {
+        let scopedProductions = ((try? modelContext.fetch(FetchDescriptor<Production>())) ?? [])
+            .filter { $0.restaurantId == restaurantId }
+        for production in scopedProductions where production.shelfLifeDays == nil {
+            production.shelfLifeDays = ProductionShelfLifeDefaults.days(
+                forName: production.name,
+                categoryName: production.categoryNameSnapshot
+            )
+        }
     }
 
     func associate(
@@ -127,9 +140,6 @@ struct ProductionLibraryService {
             record.productionReference = current.joined(separator: ", ")
         } else {
             record.productionReference = (current + [production.name]).joined(separator: ", ")
-        }
-        if record.productStatus == .available {
-            record.productStatus = .partiallyUsed
         }
         modelContext.insert(
             TraceabilityLog(
@@ -171,10 +181,74 @@ struct ProductionLibraryService {
 
         let names = selectedProductions.map(\.name).sorted()
         record.productionReference = names.isEmpty ? nil : names.joined(separator: ", ")
-        if selectedIds.isEmpty && record.productStatus == .partiallyUsed {
-            record.productStatus = .available
-        }
         try modelContext.save()
+    }
+
+    /// Rimuove un piatto di produzione dall'archivio tracciabilità (lotti restano, senza collegamento).
+    func removeProductionGroup(
+        group: TraceabilityProductionArchiveGroup,
+        records: [TraceabilityRecord],
+        links: [TraceabilityLink],
+        lottoProductionLinks: [LottoFotoProductionLink],
+        productionsById: [UUID: Production],
+        modelContext: ModelContext
+    ) throws {
+        let recordIds = Set(group.ingredients.map(\.recordId))
+        let productionId = group.productionId
+        let recordsById = Dictionary(uniqueKeysWithValues: records.map { ($0.id, $0) })
+
+        var deletedLottoLinkIds = Set<UUID>()
+        for recordId in recordIds {
+            guard let record = recordsById[recordId] else { continue }
+
+            if let lottoId = record.lottoFotoId {
+                let matching = lottoProductionLinks.filter { link in
+                    link.lottoFotoId == lottoId
+                        && link.productionId == productionId
+                        && matchesBatch(link.produzioneBatchId, groupBatchId: group.batchId)
+                }
+                for link in matching {
+                    modelContext.delete(link)
+                    deletedLottoLinkIds.insert(link.id)
+                }
+            }
+        }
+
+        let remainingLottoLinks = lottoProductionLinks.filter { !deletedLottoLinkIds.contains($0.id) }
+
+        for recordId in recordIds {
+            guard let record = recordsById[recordId] else { continue }
+
+            let stillLinkedViaLotto: Bool = {
+                guard let lottoId = record.lottoFotoId else { return false }
+                return remainingLottoLinks.contains {
+                    $0.lottoFotoId == lottoId && $0.productionId == productionId
+                }
+            }()
+
+            guard !stillLinkedViaLotto else { continue }
+
+            links
+                .filter { $0.receivedItemId == recordId && $0.productionId == productionId }
+                .forEach { modelContext.delete($0) }
+
+            let remainingProductionIds = Set(
+                links
+                    .filter { $0.receivedItemId == recordId && $0.productionId != productionId }
+                    .map(\.productionId)
+            )
+            let names = remainingProductionIds
+                .compactMap { productionsById[$0]?.name }
+                .sorted()
+            record.productionReference = names.isEmpty ? nil : names.joined(separator: ", ")
+        }
+
+        try modelContext.save()
+    }
+
+    private func matchesBatch(_ linkBatchId: UUID?, groupBatchId: UUID?) -> Bool {
+        guard let groupBatchId else { return linkBatchId == nil }
+        return linkBatchId == groupBatchId
     }
 
     func addProduction(
@@ -182,7 +256,8 @@ struct ProductionLibraryService {
         category: ProductionCategory,
         restaurantId: UUID,
         existingProductions: [Production],
-        modelContext: ModelContext
+        modelContext: ModelContext,
+        shelfLifeDays: Int? = nil
     ) throws {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
@@ -200,7 +275,8 @@ struct ProductionLibraryService {
                 name: trimmed,
                 categoryId: category.id,
                 categoryNameSnapshot: category.name,
-                isCustom: true
+                isCustom: true,
+                shelfLifeDays: shelfLifeDays
             )
         )
         try modelContext.save()
@@ -211,7 +287,8 @@ struct ProductionLibraryService {
         name: String,
         category: ProductionCategory,
         existingProductions: [Production],
-        modelContext: ModelContext
+        modelContext: ModelContext,
+        shelfLifeDays: Int? = nil
     ) throws {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
@@ -227,6 +304,7 @@ struct ProductionLibraryService {
         production.name = trimmed
         production.categoryId = category.id
         production.categoryNameSnapshot = category.name
+        production.shelfLifeDays = shelfLifeDays
         try modelContext.save()
     }
 

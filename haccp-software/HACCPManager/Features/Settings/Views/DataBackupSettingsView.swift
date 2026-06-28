@@ -343,7 +343,7 @@ struct DataBackupSettingsView: View {
                     .frame(maxWidth: .infinity)
                 }
 
-                Text("A fine mese i PDF vengono copiati su iCloud con la struttura Mensili → Singoli / Combinati.")
+                Text("A fine mese i PDF vengono copiati su iCloud con la struttura Mensili → {Modulo}.")
                     .font(theme.typography.caption2)
                     .foregroundStyle(theme.colorTextSecondary)
             }

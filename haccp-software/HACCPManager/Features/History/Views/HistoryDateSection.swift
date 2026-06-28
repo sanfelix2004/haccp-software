@@ -31,6 +31,7 @@ struct HistoryDateSection: View {
                     entry: entry,
                     isLastInSection: index == entries.count - 1
                 )
+                .equatable()
             }
         }
     }

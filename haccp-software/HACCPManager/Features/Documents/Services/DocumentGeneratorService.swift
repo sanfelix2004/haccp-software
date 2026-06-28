@@ -879,15 +879,33 @@ final class DocumentGenerationService {
         let pathIndex = DocumentFolderPathIndex(folders: folders)
         let venueName = DocumentArchiveLayout.venueFolderName(for: restaurant)
         let moduleTitle = DocumentArchiveLayout.moduleFolderTitle(module)
-        let groupName = DocumentArchiveLayout.groupFolderName(for: module)
-        let monthlySuffix = "\(groupName)/\(moduleTitle)"
+        let monthlySuffix = DocumentArchiveLayout.monthlyPathSuffix(for: module)
 
         if let leaf = pathIndex.folder(venueFolderName: venueName, monthlyPathSuffix: monthlySuffix) {
             return leaf.id
         }
 
-        // Fallback legacy: modulo direttamente sotto Mensili.
-        return pathIndex.folder(venueFolderName: venueName, monthlyPathSuffix: moduleTitle)?.id
+        // Fallback layout precedente: modulo sotto Singoli / Combinati.
+        if let groupName = DocumentArchiveLayout.groupFolderName(for: module) {
+            return pathIndex.folder(
+                venueFolderName: venueName,
+                monthlyPathSuffix: "\(groupName)/\(moduleTitle)"
+            )?.id
+        }
+
+        for legacyGroup in [
+            DocumentArchiveLayout.legacySingoliGroup,
+            DocumentArchiveLayout.legacyCombinatiGroup
+        ] {
+            if let legacy = pathIndex.folder(
+                venueFolderName: venueName,
+                monthlyPathSuffix: "\(legacyGroup)/\(moduleTitle)"
+            )?.id {
+                return legacy
+            }
+        }
+
+        return nil
     }
 
     private func fetchOperationalSource(in modelContext: ModelContext, restaurantId: UUID) -> HACCPOperationalSourceData {
@@ -902,7 +920,16 @@ final class DocumentGenerationService {
         let oilControlRecords = scoped(FetchDescriptor<OilControlRecord>(), filter: { $0.restaurantId == restaurantId })
         let checklistRuns = scoped(FetchDescriptor<ChecklistRun>(), filter: { $0.restaurantId == restaurantId })
         let checklistItemResults = (try? modelContext.fetch(FetchDescriptor<ChecklistItemResult>())) ?? []
+        let checklistTemplates = scoped(FetchDescriptor<ChecklistTemplate>(), filter: { $0.restaurantId == restaurantId })
         let productionLabels = scoped(FetchDescriptor<ProductionLabelRecord>(), filter: { $0.restaurantId == restaurantId })
+        let productionIncomingIngredients = scoped(
+            FetchDescriptor<ProductionIncomingIngredient>(),
+            filter: { $0.restaurantId == restaurantId }
+        )
+        let produzioneBatches = scoped(FetchDescriptor<ProduzioneBatch>(), filter: { $0.restaurantId == restaurantId })
+        let ingredientiTracciati = scoped(FetchDescriptor<IngredienteTracciato>(), filter: { $0.restaurantId == restaurantId })
+        let lottoProductionLinks = (try? modelContext.fetch(FetchDescriptor<LottoFotoProductionLink>())) ?? []
+        let lottoFotos = scoped(FetchDescriptor<LottoFoto>(), filter: { $0.restaurantId == restaurantId })
 
         return HACCPOperationalSourceData(
             temperatureRecords: temperatureRecords,
@@ -912,7 +939,13 @@ final class DocumentGenerationService {
             oilControlRecords: oilControlRecords,
             checklistRuns: checklistRuns,
             checklistItemResults: checklistItemResults,
-            productionLabels: productionLabels
+            checklistTemplates: checklistTemplates,
+            productionLabels: productionLabels,
+            productionIncomingIngredients: productionIncomingIngredients,
+            produzioneBatches: produzioneBatches,
+            ingredientiTracciati: ingredientiTracciati,
+            lottoProductionLinks: lottoProductionLinks,
+            lottoFotos: lottoFotos
         )
     }
 
@@ -1007,6 +1040,22 @@ final class DocumentGenerationService {
         operational: HACCPOperationalSourceData
     ) -> Bool {
         if DocumentArchiveLayout.isAffinityCombined(module) {
+            if module == .combinatoTracciabilitaProduzione {
+                let sourcesActive = DocumentArchiveLayout.sourceModules(for: module).contains { source in
+                    moduleHasActivity(
+                        module: source,
+                        interval: interval,
+                        receipts: receipts,
+                        traceability: traceability,
+                        images: images,
+                        operational: operational
+                    )
+                }
+                let hubActive = traceability.contains {
+                    TraceabilityRecordSupport.isHubRecord($0) && interval.contains($0.receivedAt)
+                }
+                return sourcesActive || hubActive
+            }
             return DocumentArchiveLayout.sourceModules(for: module).contains { source in
                 moduleHasActivity(
                     module: source,
@@ -1063,7 +1112,14 @@ final class DocumentGenerationService {
         case .frigoriferi:
             return !TemperatureRegister.rows(in: interval, records: operational.temperatureRecords, df: df).isEmpty
         case .controlloPulizia:
-            return !CleaningRegister.rows(in: interval, records: operational.cleaningRecords, df: df).isEmpty
+            return !CleaningRegister.unifiedRows(
+                in: interval,
+                records: operational.cleaningRecords,
+                runs: operational.checklistRuns,
+                itemResults: operational.checklistItemResults,
+                templates: operational.checklistTemplates,
+                df: df
+            ).isEmpty
         case .abbattimento:
             return !BlastChillingRegister.rows(in: interval, records: operational.blastChillingRecords, df: df).isEmpty
         case .decongelamento:
@@ -1079,6 +1135,15 @@ final class DocumentGenerationService {
             ).isEmpty
         case .etichetteProduzione:
             return !ProductionLabelsRegister.rows(in: interval, labels: operational.productionLabels, df: df).isEmpty
+        case .controlloScadenze:
+            return !ExpiryControlRegister.productionRows(in: interval, records: traceability, df: df).isEmpty
+        case .combinatoTracciabilitaProduzione:
+            if operational.produzioneBatches.contains(where: { interval.contains($0.producedAt) }) {
+                return true
+            }
+            return traceability.contains {
+                TraceabilityRecordSupport.isHubRecord($0) && interval.contains($0.receivedAt)
+            }
         default:
             return false
         }

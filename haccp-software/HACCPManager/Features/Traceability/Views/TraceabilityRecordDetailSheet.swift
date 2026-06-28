@@ -7,29 +7,38 @@ import SwiftUI
 struct TraceabilityRecordDetailSheet: View {
     let record: TraceabilityRecord
     let display: TraceabilityRecordDisplay
-    let image: UIImage?
     let associatedProductions: [Production]
+    let ingredientCountByProductionId: [UUID: Int]
+    let linkedIngredientCount: Int
     let defrostRecords: [DefrostRecord]
-    let receiptStatus: String?
+    let auditLogs: [TraceabilityLog]
+    let productionsById: [UUID: Production]
     let canDeleteRecords: Bool
     let hasExistingLabel: Bool
+    let masterUser: LocalUser?
     let onAssociate: () -> Void
     let onLabel: () -> Void
     let onNonCompliant: () -> Void
-    let onWithdraw: () -> Void
     let onDelete: () -> Void
     let onDismiss: () -> Void
 
     @Environment(\.theme) private var theme
+    @State private var showMasterDeleteAuth = false
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: theme.spacing.sectionSpacing) {
+                    if let production = associatedProductions.first {
+                        productionContextBanner(production)
+                    }
                     headerBlock
                     infoCard
                     if !associatedProductions.isEmpty {
                         productionsCard
+                    }
+                    if !auditLogs.isEmpty {
+                        timelineCard
                     }
                     if !defrostRecords.isEmpty {
                         defrostCard
@@ -49,24 +58,76 @@ struct TraceabilityRecordDetailSheet: View {
                     Button("Chiudi", action: onDismiss)
                 }
             }
+            .fullScreenCover(isPresented: $showMasterDeleteAuth) {
+                if let masterUser {
+                    MasterAuthOverlay(
+                        master: masterUser,
+                        operation: .deleteTraceabilityEntry,
+                        onAuthorized: {
+                            showMasterDeleteAuth = false
+                            onDelete()
+                        },
+                        onCancel: {
+                            showMasterDeleteAuth = false
+                        }
+                    ) { EmptyView() }
+                }
+            }
         }
+    }
+
+    private func productionContextBanner(_ production: Production) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: "fork.knife")
+                .font(.title3.weight(.semibold))
+                .foregroundStyle(theme.colorPrimary)
+                .frame(width: 44, height: 44)
+                .background(theme.colorPrimary.opacity(0.12))
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(production.name)
+                    .font(theme.typography.headline)
+                    .foregroundStyle(theme.colorTextPrimary)
+                Text("Piatto di produzione")
+                    .font(theme.typography.caption)
+                    .foregroundStyle(theme.colorTextSecondary)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(12)
+        .background(theme.colorSurface)
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 
     private var headerBlock: some View {
         HStack(alignment: .top, spacing: 16) {
-            if let image {
-                HACCPZoomablePhotoThumbnail(image: image, size: 96, zoomTitle: display.productName)
-                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-            }
+            Image(systemName: "shippingbox.fill")
+                .font(.title2.weight(.semibold))
+                .foregroundStyle(theme.colorPrimary)
+                .frame(width: 56, height: 56)
+                .background(theme.colorPrimary.opacity(0.12))
+                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+
             VStack(alignment: .leading, spacing: 8) {
                 HACCPBadge(title: display.statusLabel, style: display.badgeStyle)
                 Text("Ricevuto \(display.receivedAt.formatted(date: .abbreviated, time: .shortened))")
                     .font(theme.typography.caption)
                     .foregroundStyle(theme.colorTextSecondary)
-                if let receiptStatus {
-                    Text("Stato ricezione: \(receiptStatus)")
-                        .font(theme.typography.caption)
-                        .foregroundStyle(theme.colorWarning)
+                if display.productionCount > 0 {
+                    Label(
+                        TraceabilityCountLabel.piattiEAlimenti(
+                            productionCount: display.productionCount,
+                            ingredientCount: display.linkedIngredientCount
+                        ),
+                        systemImage: "link"
+                    )
+                    .font(theme.typography.caption.weight(.semibold))
+                    .foregroundStyle(theme.colorSuccess)
+                } else if display.needsProductionLink {
+                    Label("Da associare a un piatto", systemImage: "link.badge.plus")
+                        .font(theme.typography.caption.weight(.semibold))
+                        .foregroundStyle(theme.colorPrimary)
                 }
             }
             Spacer(minLength: 0)
@@ -81,27 +142,62 @@ struct TraceabilityRecordDetailSheet: View {
                 if let category = display.category {
                     detailRow("Categoria", category)
                 }
-                if let expiry = display.expiryDate {
-                    detailRow(
-                        "Scadenza",
-                        expiry.formatted(date: .abbreviated, time: .omitted),
-                        highlight: display.expiryWarning
-                    )
-                }
+                detailRow(
+                    "Registrato",
+                    display.receivedAt.formatted(date: .abbreviated, time: .shortened)
+                )
             }
         }
     }
 
     private var productionsCard: some View {
-        DashboardCardView(title: "Produzioni associate", subtitle: "\(associatedProductions.count) collegate") {
-            VStack(alignment: .leading, spacing: 8) {
+        DashboardCardView(
+            title: "Piatti collegati",
+            subtitle: TraceabilityCountLabel.piattiEAlimenti(
+                productionCount: associatedProductions.count,
+                ingredientCount: linkedIngredientCount
+            )
+        ) {
+            VStack(alignment: .leading, spacing: 10) {
                 ForEach(associatedProductions) { production in
-                    HStack(spacing: 8) {
+                    HStack(alignment: .top, spacing: 8) {
                         Image(systemName: "fork.knife")
                             .foregroundStyle(theme.colorSuccess)
-                        Text(production.name)
-                            .font(theme.typography.subheadline)
-                            .foregroundStyle(theme.colorTextPrimary)
+                            .padding(.top, 2)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(production.name)
+                                .font(theme.typography.subheadline)
+                                .foregroundStyle(theme.colorTextPrimary)
+                            Text(
+                                TraceabilityCountLabel.alimenti(
+                                    ingredientCountByProductionId[production.id] ?? 0
+                                )
+                            )
+                            .font(theme.typography.caption)
+                            .foregroundStyle(theme.colorTextSecondary)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private var timelineCard: some View {
+        DashboardCardView(title: "Cronologia", subtitle: "Audit HACCP") {
+            VStack(alignment: .leading, spacing: 10) {
+                ForEach(auditLogs, id: \.id) { log in
+                    HStack(alignment: .top, spacing: 10) {
+                        Image(systemName: timelineIcon(for: log.actionType))
+                            .font(.caption)
+                            .foregroundStyle(theme.colorTextSecondary)
+                            .frame(width: 18)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(timelineTitle(for: log))
+                                .font(theme.typography.caption.weight(.semibold))
+                            Text("\(log.operatorName) · \(log.timestamp.formatted(date: .abbreviated, time: .shortened))")
+                                .font(theme.typography.caption2)
+                                .foregroundStyle(theme.colorTextSecondary)
+                        }
                     }
                 }
             }
@@ -143,55 +239,35 @@ struct TraceabilityRecordDetailSheet: View {
     private var actionsCard: some View {
         DashboardCardView(title: "Azioni", subtitle: "Gestione in cucina") {
             VStack(spacing: 12) {
-                PrimaryButton(title: "Associa a produzione", icon: "link") {
-                    onDismiss()
+                PrimaryButton(
+                    title: display.needsProductionLink ? "Associa a piatto" : "Modifica collegamenti",
+                    icon: "link"
+                ) {
                     onAssociate()
                 }
                 .disabled(!display.isActionable)
 
-                if record.canBeWithdrawn {
-                    PrimaryButton(title: "Segna ritirato / scartato", icon: "archivebox.fill") {
-                        onDismiss()
-                        onWithdraw()
-                    }
-                }
-
                 if record.productStatus != .rejected {
-                    if hasExistingLabel {
-                        SecondaryButton(title: "Vedi etichetta HACCP", icon: "tag.fill") {
-                            onDismiss()
-                            onLabel()
-                        }
-                    } else {
-                        SecondaryButton(title: "Crea etichetta HACCP", icon: "tag.fill") {
-                            onDismiss()
-                            onLabel()
-                        }
-                    }
+                    SecondaryButton(
+                        title: hasExistingLabel ? "Vedi etichetta HACCP" : "Crea etichetta HACCP",
+                        icon: "tag.fill",
+                        action: onLabel
+                    )
                 }
 
-                SecondaryButton(title: "Segna non conforme", icon: "exclamationmark.triangle.fill") {
-                    onDismiss()
-                    onNonCompliant()
-                }
-                .disabled(record.productStatus == .rejected)
+                SecondaryButton(title: "Segna non conforme", icon: "exclamationmark.triangle.fill", action: onNonCompliant)
+                    .disabled(record.productStatus == .rejected)
 
                 if canDeleteRecords {
                     SecondaryButton(title: "Elimina scheda", icon: "trash") {
-                        onDismiss()
-                        onDelete()
+                        showMasterDeleteAuth = true
                     }
                 }
 
-                if !display.isActionable && !record.canBeWithdrawn {
-                    Text("Prodotto scaduto o respinto: non associabile a produzioni.")
+                if !display.isActionable {
+                    Text("Prodotto non più associabile. Per scadenze e ritiro usa Controllo scadenze.")
                         .font(theme.typography.caption)
-                        .foregroundStyle(theme.colorWarning)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                } else if record.canBeWithdrawn {
-                    Text("Lotto scaduto: registra ritiro o scarto per chiudere la criticità.")
-                        .font(theme.typography.caption)
-                        .foregroundStyle(theme.colorWarning)
+                        .foregroundStyle(theme.colorTextSecondary)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
@@ -207,6 +283,36 @@ struct TraceabilityRecordDetailSheet: View {
             Text(value)
                 .font(theme.typography.subheadline.weight(.semibold))
                 .foregroundStyle(highlight ? theme.colorWarning : theme.colorTextPrimary)
+        }
+    }
+
+    private func timelineIcon(for action: TraceabilityActionType) -> String {
+        switch action {
+        case .created: return "plus.circle"
+        case .linkedToProduction: return "link"
+        case .expired: return "clock.badge.exclamationmark"
+        case .rejected: return "xmark.circle"
+        case .nonCompliance: return "exclamationmark.triangle"
+        case .withdrawn: return "archivebox"
+        case .expiryRegistered: return "calendar.badge.clock"
+        case .archivedFromExpiryControl: return "archivebox.fill"
+        }
+    }
+
+    private func timelineTitle(for log: TraceabilityLog) -> String {
+        switch log.actionType {
+        case .created: return "Lotto registrato"
+        case .linkedToProduction:
+            if let name = log.linkedProductionDisplayName(productionsById: productionsById) {
+                return "Collegato a \(name)"
+            }
+            return "Collegato a produzione"
+        case .expired: return "Marcato scaduto"
+        case .rejected: return "Respinto"
+        case .nonCompliance: return "Non conformità"
+        case .withdrawn: return log.detail ?? "Ritirato / scartato"
+        case .expiryRegistered: return log.detail ?? "Scadenza registrata"
+        case .archivedFromExpiryControl: return log.detail ?? "Rimosso da controllo scadenze"
         }
     }
 }

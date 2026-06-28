@@ -6,27 +6,33 @@
 import Foundation
 import SwiftData
 
-@MainActor
 enum DataArchiveService {
 
     private static func lastRunKey(restaurantId: UUID) -> String {
         "DataArchiveService.lastRun.\(restaurantId.uuidString)"
     }
 
-    /// Esegue al massimo un ciclo al giorno per ristorante.
-    static func runIfNeeded(context: ModelContext, restaurantId: UUID) async {
+    /// Esegue al massimo un ciclo al giorno per ristorante (orchestrazione UI — lavoro pesante off-main).
+    @MainActor
+    static func runIfNeeded(modelContainer: ModelContainer, restaurantId: UUID) async {
         let key = lastRunKey(restaurantId: restaurantId)
         if let last = UserDefaults.standard.object(forKey: key) as? Date,
            Date().timeIntervalSince(last) < PerformanceConfig.archiveRunInterval {
             return
         }
 
-        await Task.yield()
-        let archivedCount = archiveRestaurant(context: context, restaurantId: restaurantId)
+        let actor = BackgroundPersistenceActor(modelContainer: modelContainer)
+        let archivedCount = await actor.archiveRestaurant(restaurantId: restaurantId)
         if archivedCount > 0 {
-            try? context.save()
+            _ = await actor.saveAfterArchive()
         }
         UserDefaults.standard.set(Date(), forKey: key)
+    }
+
+    /// Versione legacy con context main — preferire `runIfNeeded(modelContainer:)`.
+    @MainActor
+    static func runIfNeeded(context: ModelContext, restaurantId: UUID) async {
+        await runIfNeeded(modelContainer: context.container, restaurantId: restaurantId)
     }
 
     @discardableResult

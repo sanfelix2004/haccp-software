@@ -9,6 +9,12 @@ final class ChecklistTemplateViewModel: ObservableObject {
     @Published var frequency: ChecklistFrequency = .daily
     @Published var scheduledHour: Int = 9
     @Published var scheduledMinute: Int = 0
+    @Published var scheduleWeekday: Int = ChecklistSchedulePicker.defaultWeekday()
+    @Published var scheduleDayOfMonth: Int = ChecklistSchedulePicker.defaultDayOfMonth()
+    @Published var scheduleMonth: Int = 1
+    @Published var allowsBulkPass: Bool = true
+    @Published var bulkPassTitle: String = ""
+    @Published var areaTag: String = ""
     @Published var items: [ChecklistItemTemplateDraft] = []
     @Published var validationError: String?
 

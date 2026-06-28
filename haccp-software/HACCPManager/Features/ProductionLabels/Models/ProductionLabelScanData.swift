@@ -28,7 +28,31 @@ struct ProductionLabelScanData: Identifiable, Equatable {
     }
 
     var hasRichContent: Bool {
-        !productName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let hasName = !productName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let hasDates = productionDate != nil || expiryDate != nil
+        let hasLot = !(lotCode?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
+        return hasName || hasDates || hasLot
+    }
+
+    static func from(_ label: ProductionLabelRecord, restaurantName: String?) -> ProductionLabelScanData {
+        ProductionLabelScanData(
+            id: label.id,
+            productName: label.productName,
+            productionDate: label.productionDate,
+            expiryDate: label.expiryDate,
+            lotCode: label.lotCode,
+            operatorName: label.createdByNameSnapshot,
+            supplier: label.supplier,
+            category: label.category,
+            allergens: label.allergens,
+            temperatureNote: label.temperatureNote,
+            storageInstructions: label.storageInstructions,
+            quantityDisplay: label.quantityDisplay,
+            productStatusLabel: label.productStatus.label,
+            sourceModuleLabel: label.sourceModule.displayLabel,
+            notes: label.notes,
+            restaurantName: restaurantName
+        )
     }
 
     var expiryState: ProductionLabelExpiryState {

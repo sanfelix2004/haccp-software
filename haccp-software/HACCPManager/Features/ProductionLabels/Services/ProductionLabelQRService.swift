@@ -63,20 +63,29 @@ enum ProductionLabelQRService {
     private static let scanProductMax = 18
     private static let scanFieldMax = 12
 
-    /// Payload per stampa fisica — corto, grandi moduli, scansionabile.
+    /// Payload per stampa fisica — il più ricco possibile entro i limiti dell'adesivo.
     static func printPayload(for label: ProductionLabelRecord, restaurantName: String? = nil) -> String {
-        buildScanPayload(for: label)
+        buildScanPayload(for: label, restaurantName: restaurantName)
     }
 
-    /// Payload salvato su record (può essere più ricco).
+    /// Payload salvato su record (allineato alla stampa).
     static func buildPayload(for label: ProductionLabelRecord, restaurantName: String? = nil) -> String {
-        buildScanPayload(for: label)
+        buildScanPayload(for: label, restaurantName: restaurantName)
     }
 
-    private static func buildScanPayload(for label: ProductionLabelRecord) -> String {
-        let essential = compactScanPayload(for: label)
-        if LabelQRCodeLayout.fitsOnLabel(payload: essential, cellSize: LabelQRCodeLayout.preferredCellSize) {
-            return essential
+    private static func buildScanPayload(for label: ProductionLabelRecord, restaurantName: String? = nil) -> String {
+        let candidates = [
+            buildFullPayload(for: label, restaurantName: restaurantName),
+            buildEssentialPayload(for: label, restaurantName: restaurantName),
+            compactScanPayload(for: label),
+            compactMinimalPayload(for: label)
+        ]
+        for cellSize in [LabelQRCodeLayout.preferredCellSize, LabelQRCodeLayout.minCellSize] {
+            if let payload = candidates.first(where: {
+                LabelQRCodeLayout.fitsOnLabel(payload: $0, cellSize: cellSize)
+            }) {
+                return payload
+            }
         }
         return compactMinimalPayload(for: label)
     }
@@ -111,7 +120,7 @@ enum ProductionLabelQRService {
         String(value.trimmingCharacters(in: .whitespacesAndNewlines).prefix(max))
     }
 
-    private static func buildEssentialPayload(for label: ProductionLabelRecord) -> String {
+    private static func buildEssentialPayload(for label: ProductionLabelRecord, restaurantName: String? = nil) -> String {
         encodeFields(
             id: label.id.uuidString.uppercased(),
             product: label.productName,
@@ -120,7 +129,10 @@ enum ProductionLabelQRService {
             expiryDay: label.expiryDate,
             operatorName: label.createdByNameSnapshot,
             allergens: label.allergens ?? "",
-            storage: label.storageInstructions ?? ""
+            storage: label.storageInstructions ?? "",
+            restaurant: restaurantName ?? "",
+            status: label.productStatus.label,
+            source: label.sourceModule.displayLabel
         )
     }
 
@@ -139,7 +151,9 @@ enum ProductionLabelQRService {
             storage: label.storageInstructions ?? "",
             quantity: label.quantityDisplay ?? "",
             notes: label.notes ?? "",
-            restaurant: restaurantName ?? ""
+            restaurant: restaurantName ?? "",
+            status: label.productStatus.label,
+            source: label.sourceModule.displayLabel
         )
     }
 
@@ -167,7 +181,9 @@ enum ProductionLabelQRService {
         storage: String = "",
         quantity: String = "",
         notes: String = "",
-        restaurant: String = ""
+        restaurant: String = "",
+        status: String = "",
+        source: String = ""
     ) -> String {
         pipeEncode([
             "HC2",
@@ -184,7 +200,9 @@ enum ProductionLabelQRService {
             clip(storage),
             clip(quantity),
             clip(notes),
-            clip(restaurant)
+            clip(restaurant),
+            clip(status),
+            clip(source)
         ])
     }
 
@@ -367,8 +385,8 @@ enum ProductionLabelQRService {
             temperatureNote: field(9),
             storageInstructions: field(10),
             quantityDisplay: field(11),
-            productStatusLabel: nil,
-            sourceModuleLabel: nil,
+            productStatusLabel: field(14),
+            sourceModuleLabel: field(15),
             notes: field(12),
             restaurantName: field(13)
         )
@@ -425,7 +443,10 @@ enum ProductionLabelQRService {
     }
 
     private static func isoDay(_ date: Date) -> String {
-        isoDayFormatter.string(from: date)
+        let normalized = HACCPDateNormalizer.startOfLocalDay(date)
+        let parts = HACCPDateNormalizer.calendar.dateComponents([.year, .month, .day], from: normalized)
+        guard let year = parts.year, let month = parts.month, let day = parts.day else { return "" }
+        return String(format: "%04d-%02d-%02d", year, month, day)
     }
 
     private static func ciImage(from string: String) -> CIImage? {
@@ -458,14 +479,5 @@ enum ProductionLabelQRService {
 }
 
 private func parseISODay(_ value: String) -> Date? {
-    isoDayFormatter.date(from: value)
+    HACCPDateNormalizer.dateFromDayString(value)
 }
-
-private let isoDayFormatter: DateFormatter = {
-    let f = DateFormatter()
-    f.calendar = Calendar(identifier: .gregorian)
-    f.locale = Locale(identifier: "en_US_POSIX")
-    f.timeZone = TimeZone(secondsFromGMT: 0)
-    f.dateFormat = "yyyy-MM-dd"
-    return f
-}()

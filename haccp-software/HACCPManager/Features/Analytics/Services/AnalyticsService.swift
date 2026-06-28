@@ -383,7 +383,7 @@ struct AnalyticsService {
             guard count > 0 else { return nil }
             let color: Color = {
                 switch status {
-                case .available, .partiallyUsed: return .green
+                case .available: return .green
                 case .used: return .blue
                 case .expired, .rejected: return .red
                 }
@@ -402,7 +402,7 @@ struct AnalyticsService {
         let scoped = records.filter {
             $0.restaurantId == restaurantId
                 && !$0.isArchived
-                && ($0.productStatus == .available || $0.productStatus == .partiallyUsed)
+                && $0.productStatus == .available
                 && $0.expiryDate != nil
         }
         return (0..<7).compactMap { offset -> AnalyticsDailyPoint? in
@@ -418,18 +418,18 @@ struct AnalyticsService {
     }
 
     func traceabilityKPIs(records: [TraceabilityRecord], restaurantId: UUID, now: Date = Date()) -> [AnalyticsKPI] {
-        let calendar = Calendar.current
         let scoped = records.filter { $0.restaurantId == restaurantId && !$0.isArchived }
-        let threshold = calendar.date(byAdding: .day, value: 3, to: now) ?? now
+        let thresholdDays = SettingsStorageService.shared.haccp.productExpiryThreshold
         let expiringSoon = scoped.filter {
-            guard let expiry = $0.expiryDate else { return false }
-            return expiry >= now && expiry <= threshold
-                && ($0.productStatus == .available || $0.productStatus == .partiallyUsed)
+            ProductExpiryEvaluator.isMonitorableExpiring($0, thresholdDays: thresholdDays, now: now)
+        }.count
+        let expiredCount = scoped.filter {
+            ProductExpiryEvaluator.effectiveDisplayStatus($0, expiryDate: $0.expiryDate, now: now) == .expired
         }.count
         return [
             AnalyticsKPI(title: "Disponibili", value: "\(scoped.filter { $0.productStatus == .available }.count)", color: .green),
-            AnalyticsKPI(title: "Scadenza ≤3 gg", value: "\(expiringSoon)", color: expiringSoon > 0 ? .orange : .gray),
-            AnalyticsKPI(title: "Scaduti", value: "\(scoped.filter { $0.productStatus == .expired }.count)", color: .red),
+            AnalyticsKPI(title: "Scadenza ≤\(thresholdDays) gg", value: "\(expiringSoon)", color: expiringSoon > 0 ? .orange : .gray),
+            AnalyticsKPI(title: "Scaduti", value: "\(expiredCount)", color: .red),
             AnalyticsKPI(title: "Respinti", value: "\(scoped.filter { $0.productStatus == .rejected }.count)", color: .red)
         ]
     }

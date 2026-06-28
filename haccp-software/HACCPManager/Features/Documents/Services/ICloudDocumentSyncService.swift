@@ -244,13 +244,17 @@ final class ICloudDocumentSyncService: ObservableObject, ICloudDocumentSyncServi
         let retiredSegments: [String] = {
             var segments: [String] = []
             let period = DocumentArchiveLayout.monthlyPeriodName
-            let singoli = DocumentArchiveLayout.singoliGroup
-            let combinati = DocumentArchiveLayout.combinatiGroup
-            for title in DocumentArchiveLayout.retiredSingoliFolderTitles {
-                segments.append("/\(period)/\(singoli)/\(title)/")
+            for title in DocumentArchiveLayout.retiredModuleFolderTitles {
+                segments.append("/\(period)/\(title)/")
             }
-            for title in DocumentArchiveLayout.retiredCombinatiFolderTitles {
-                segments.append("/\(period)/\(combinati)/\(title)/")
+            let legacyGroups = [
+                DocumentArchiveLayout.legacySingoliGroup,
+                DocumentArchiveLayout.legacyCombinatiGroup
+            ]
+            for group in legacyGroups {
+                for title in DocumentArchiveLayout.retiredModuleFolderTitles {
+                    segments.append("/\(period)/\(group)/\(title)/")
+                }
             }
             return segments
         }()
@@ -274,19 +278,28 @@ final class ICloudDocumentSyncService: ObservableObject, ICloudDocumentSyncServi
         let removed = await Task.detached(priority: .utility) { () -> Int in
             let fm = FileManager.default
             var count = 0
-            for title in DocumentArchiveLayout.retiredSingoliFolderTitles {
-                let dir = monthlyBase
-                    .appendingPathComponent(DocumentArchiveLayout.singoliGroup, isDirectory: true)
-                    .appendingPathComponent(title, isDirectory: true)
-                if fm.fileExists(atPath: dir.path), (try? fm.removeItem(at: dir)) != nil {
+            for title in DocumentArchiveLayout.retiredModuleFolderTitles {
+                let flatDir = monthlyBase.appendingPathComponent(title, isDirectory: true)
+                if fm.fileExists(atPath: flatDir.path), (try? fm.removeItem(at: flatDir)) != nil {
                     count += 1
                 }
             }
-            for title in DocumentArchiveLayout.retiredCombinatiFolderTitles {
-                let dir = monthlyBase
-                    .appendingPathComponent(DocumentArchiveLayout.combinatiGroup, isDirectory: true)
-                    .appendingPathComponent(title, isDirectory: true)
-                if fm.fileExists(atPath: dir.path), (try? fm.removeItem(at: dir)) != nil {
+            for group in [
+                DocumentArchiveLayout.legacySingoliGroup,
+                DocumentArchiveLayout.legacyCombinatiGroup
+            ] {
+                for title in DocumentArchiveLayout.retiredModuleFolderTitles {
+                    let dir = monthlyBase
+                        .appendingPathComponent(group, isDirectory: true)
+                        .appendingPathComponent(title, isDirectory: true)
+                    if fm.fileExists(atPath: dir.path), (try? fm.removeItem(at: dir)) != nil {
+                        count += 1
+                    }
+                }
+                let groupDir = monthlyBase.appendingPathComponent(group, isDirectory: true)
+                if fm.fileExists(atPath: groupDir.path),
+                   (try? fm.contentsOfDirectory(atPath: groupDir.path))?.isEmpty == true,
+                   (try? fm.removeItem(at: groupDir)) != nil {
                     count += 1
                 }
             }

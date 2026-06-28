@@ -8,7 +8,8 @@ struct ProductTemplateCatalogService {
         category: GoodsCategory,
         restaurantId: UUID,
         existing: [ProductTemplate],
-        modelContext: ModelContext
+        modelContext: ModelContext,
+        shelfLifeDays: Int? = nil
     ) throws {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
@@ -26,7 +27,8 @@ struct ProductTemplateCatalogService {
             ProductTemplate(
                 restaurantId: restaurantId,
                 name: trimmed,
-                category: category
+                category: category,
+                shelfLifeDays: shelfLifeDays
             )
         )
         try modelContext.save()
@@ -37,7 +39,8 @@ struct ProductTemplateCatalogService {
         name: String,
         category: GoodsCategory,
         existing: [ProductTemplate],
-        modelContext: ModelContext
+        modelContext: ModelContext,
+        shelfLifeDays: Int? = nil
     ) throws {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
@@ -54,6 +57,7 @@ struct ProductTemplateCatalogService {
         }
         template.name = trimmed
         template.category = category
+        template.shelfLifeDays = shelfLifeDays
         try modelContext.save()
     }
 

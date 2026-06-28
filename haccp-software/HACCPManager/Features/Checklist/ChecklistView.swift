@@ -8,12 +8,9 @@ struct ChecklistView: View {
     @EnvironmentObject var appState: AppState
     @Query private var users: [LocalUser]
     @Query private var restaurants: [Restaurant]
-    @Query private var templates: [ChecklistTemplate]
-    @Query private var runs: [ChecklistRun]
-    @Query private var itemResults: [ChecklistItemResult]
-    @Query private var alerts: [ChecklistAlert]
 
     @StateObject private var vm = ChecklistViewModel()
+    @StateObject private var dataStore = ChecklistDataStore()
     @StateObject private var historyVM = ChecklistHistoryViewModel()
     @State private var selectedRunForSheet: ChecklistRun?
     @State private var showRunSheet = false
@@ -28,18 +25,37 @@ struct ChecklistView: View {
         appState.activeRestaurantId ?? restaurants.first?.id
     }
     private var scopedTemplates: [ChecklistTemplate] {
-        guard let restaurantId else { return [] }
-        return templates.filter { $0.restaurantId == restaurantId && !$0.isSuggestedLibrary }
+        guard restaurantId != nil else { return [] }
+        return dataStore.templates.filter {
+            !$0.isSuggestedLibrary
+                && !$0.isCleaningBridge
+                && $0.category != .cleaning
+        }
+    }
+
+    private var operationalTemplateIds: Set<UUID> {
+        Set(scopedTemplates.map(\.id))
+    }
+
+    private var operationalRuns: [ChecklistRun] {
+        scopedRuns.filter { operationalTemplateIds.contains($0.templateId) }
+    }
+
+    private var operationalAlerts: [ChecklistAlert] {
+        let runIds = Set(operationalRuns.map(\.id))
+        return scopedAlerts.filter { runIds.contains($0.checklistRunId) }
     }
 
     private var scopedRuns: [ChecklistRun] {
-        guard let restaurantId else { return [] }
-        return runs.filter { $0.restaurantId == restaurantId && !$0.isArchived }
+        dataStore.runs
     }
 
     private var scopedAlerts: [ChecklistAlert] {
-        guard let restaurantId else { return [] }
-        return alerts.filter { $0.restaurantId == restaurantId }
+        dataStore.alerts
+    }
+
+    private var scopedCleaningCriticalities: [CleaningCriticality] {
+        dataStore.cleaningCriticalities
     }
 
     private var permissions: UserPermissions { currentUser.permissions }
@@ -69,8 +85,13 @@ struct ChecklistView: View {
 
     private func requestDeleteTemplate(_ template: ChecklistTemplate) {
         masterAuth.request(permission: .manageChecklistTemplates, permissions: permissions) {
-            modelContext.delete(template)
-            try? modelContext.save()
+            guard let currentUser else { return }
+            do {
+                try vm.service.deleteTemplate(template, user: currentUser, modelContext: modelContext)
+                reloadChecklistData()
+            } catch {
+                vm.errorMessage = error.localizedDescription
+            }
         }
     }
 
@@ -78,6 +99,8 @@ struct ChecklistView: View {
         Group {
             if restaurantId == nil {
                 emptyRestaurant
+            } else if dataStore.isLoading && dataStore.runs.isEmpty && dataStore.templates.isEmpty {
+                loadingState
             } else {
                 mainContent
             }
@@ -112,11 +135,17 @@ struct ChecklistView: View {
         .sheet(isPresented: $showRunSheet) {
             if let selectedRunForSheet {
                 NavigationStack {
-                    ChecklistRunView(run: selectedRunForSheet, service: vm.service)
+                    ChecklistRunView(
+                        run: selectedRunForSheet,
+                        service: vm.service,
+                        onOpenCriticalities: {
+                            vm.selectedTab = .alerts
+                        }
+                    )
                 }
             }
         }
-        .sheet(isPresented: $vm.showCreateTemplate) {
+        .sheet(isPresented: $vm.showCreateTemplate, onDismiss: reloadChecklistData) {
             CreateChecklistTemplateView(service: vm.service)
         }
         .sheet(isPresented: $vm.showQuickTaskSheet) {
@@ -133,7 +162,7 @@ struct ChecklistView: View {
                 )
             }
         }
-        .sheet(isPresented: $showEditTemplateSheet) {
+        .sheet(isPresented: $showEditTemplateSheet, onDismiss: reloadChecklistData) {
             if let templateToEdit {
                 EditChecklistTemplateView(template: templateToEdit, service: vm.service)
             }
@@ -148,10 +177,24 @@ struct ChecklistView: View {
         } message: {
             Text(vm.errorMessage ?? "")
         }
-        .onAppear {
+        .task(id: restaurantId) {
+            reloadChecklistData()
             SchedulingToChecklistMigrationService.migrateIfNeeded(modelContext: modelContext)
             syncScheduledChecklistState()
         }
+        .onReceive(NotificationCenter.default.publisher(for: .kitchenProcessRecordsDidChange)) { _ in
+            reloadChecklistData()
+        }
+    }
+
+    private var loadingState: some View {
+        VStack(spacing: 16) {
+            ProgressView()
+            Text("Caricamento checklist…")
+                .font(theme.typography.subheadline)
+                .foregroundStyle(theme.colorTextSecondary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private var emptyRestaurant: some View {
@@ -177,11 +220,10 @@ struct ChecklistView: View {
                 switch vm.selectedTab {
                 case .dashboard:
                     ChecklistDashboardView(
-                        runs: scopedRuns,
+                        runs: operationalRuns,
                         templates: scopedTemplates,
-                        itemResults: itemResults,
-                        alerts: scopedAlerts,
-                        counts: vm.dashboardCounts(runs: scopedRuns, alerts: scopedAlerts),
+                        itemResults: dataStore.itemResults,
+                        counts: vm.dashboardCounts(runs: operationalRuns, templates: scopedTemplates),
                         onCreateTemplate: { requestCreateTemplate() },
                         onCreateQuickTask: { requestQuickTask() },
                         canCreate: true,
@@ -201,19 +243,25 @@ struct ChecklistView: View {
                     )
                 case .history:
                     ChecklistHistoryView(
-                        runs: scopedRuns,
+                        runs: operationalRuns,
                         templates: scopedTemplates,
                         vm: historyVM
                     )
                 case .alerts:
-                    ChecklistAlertsView(
-                        alerts: scopedAlerts,
-                        onResolve: resolveAlert
+                    UnifiedCriticalitiesView(
+                        checklistAlerts: operationalAlerts,
+                        cleaningCriticalities: scopedCleaningCriticalities,
+                        onResolveChecklist: resolveAlert,
+                        onResolveCleaning: resolveCleaningCriticality
                     )
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
+    }
+
+    private func reloadChecklistData() {
+        dataStore.reload(context: modelContext, restaurantId: restaurantId)
     }
 
     private func openRun(_ run: ChecklistRun) {
@@ -230,9 +278,24 @@ struct ChecklistView: View {
                 user: currentUser,
                 modelContext: modelContext
             )
+            reloadChecklistData()
         } catch {
             vm.errorMessage = "Risoluzione criticità non riuscita."
         }
+    }
+
+    private func resolveCleaningCriticality(_ criticality: CleaningCriticality, correctiveAction: String) {
+        guard let currentUser else { return }
+        criticality.isResolved = true
+        criticality.correctiveAction = correctiveAction
+        criticality.resolvedAt = Date()
+        criticality.resolvedByUserId = currentUser.id
+        criticality.resolvedByNameSnapshot = currentUser.name
+        if !modelContext.saveSafely(operation: "cleaning-criticality-resolve") {
+            vm.errorMessage = "Salvataggio criticità non riuscito."
+            return
+        }
+        reloadChecklistData()
     }
 
     private func startRun(from template: ChecklistTemplate) {
@@ -247,6 +310,7 @@ struct ChecklistView: View {
                 restaurantId: restaurantId,
                 modelContext: modelContext
             )
+            reloadChecklistData()
             openRun(run)
         } catch {
             vm.errorMessage = "Avvio checklist non riuscito."
@@ -260,5 +324,6 @@ struct ChecklistView: View {
             user: currentUser,
             modelContext: modelContext
         )
+        reloadChecklistData()
     }
 }

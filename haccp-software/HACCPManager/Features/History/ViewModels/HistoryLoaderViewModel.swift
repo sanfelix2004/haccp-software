@@ -15,6 +15,7 @@ final class HistoryLoaderViewModel: ObservableObject {
 
     private let service = HistoryService()
     private var loadTask: Task<Void, Never>?
+    private var reloadGeneration = 0
 
     func reload(context: ModelContext, restaurantId: UUID?) {
         loadTask?.cancel()
@@ -24,13 +25,24 @@ final class HistoryLoaderViewModel: ObservableObject {
             return
         }
 
+        let token = MainActorDataLoad.begin(generation: &reloadGeneration)
         isLoading = true
-        let token = UUID()
-        loadToken = token
+        let publishedToken = UUID()
+        loadToken = publishedToken
 
-        loadTask = Task {
+        loadTask = Task { @MainActor in
+            defer {
+                if MainActorDataLoad.isCurrent(generation: token, activeGeneration: reloadGeneration) {
+                    isLoading = false
+                }
+            }
+            await Task.yield()
+            guard MainActorDataLoad.isCurrent(generation: token, activeGeneration: reloadGeneration),
+                  !Task.isCancelled else { return }
+
             let data = HistoryDataFetcher.fetch(context: context, restaurantId: restaurantId)
-            guard !Task.isCancelled else { return }
+            guard MainActorDataLoad.isCurrent(generation: token, activeGeneration: reloadGeneration),
+                  !Task.isCancelled else { return }
 
             let built = service.buildEntries(
                 restaurantId: restaurantId,
@@ -38,21 +50,24 @@ final class HistoryLoaderViewModel: ObservableObject {
                 fridgeRecords: data.fridgeRecords,
                 checklistRuns: data.checklistRuns,
                 checklistItemResults: data.checklistItemResults,
-                checklistAuditLogs: data.checklistAuditLogs,
                 cleaningRecords: data.cleaningRecords,
                 defrostRecords: data.defrostRecords,
                 blastRecords: data.blastRecords,
                 labelRecords: data.labelRecords,
                 goodsRecords: data.goodsRecords,
                 traceabilityRecords: data.traceabilityRecords,
+                traceabilityLinks: data.traceabilityLinks,
                 traceabilityLogs: data.traceabilityLogs,
+                lottoProductionLinks: data.lottoProductionLinks,
+                lottoFotos: data.lottoFotos,
                 productions: data.productions,
                 oilRecords: data.oilRecords
             )
 
-            guard !Task.isCancelled, loadToken == token else { return }
+            guard MainActorDataLoad.isCurrent(generation: token, activeGeneration: reloadGeneration),
+                  !Task.isCancelled,
+                  loadToken == publishedToken else { return }
             entries = built
-            isLoading = false
         }
     }
 

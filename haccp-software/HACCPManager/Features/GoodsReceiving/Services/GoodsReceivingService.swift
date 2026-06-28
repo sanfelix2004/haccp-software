@@ -4,7 +4,6 @@ import SwiftData
 struct GoodsReceivingService {
     let requirementService = GoodsReceiptRequirementService()
     let validationService = GoodsReceiptValidationService()
-    let traceabilityService = GoodsReceiptTraceabilityService()
 
     func saveReceipt(
         restaurantId: UUID,
@@ -49,6 +48,10 @@ struct GoodsReceivingService {
         }()
         let tempStatus: GoodsReceiptStatus = validation.temperatureOutOfRange ? .acceptedWithNotes : .conforme
 
+        let storedPhoto = hasNonOk
+            ? StoredImageCompression.preparedForStorage(photoData)
+            : nil
+
         let receipt = GoodsReceipt(
             restaurantId: restaurantId,
             supplierId: supplier.id,
@@ -67,7 +70,7 @@ struct GoodsReceivingService {
             quantity: quantity,
             unit: unit,
             checklistResultsData: try? JSONEncoder().encode(checklistResults),
-            photoData: StoredImageCompression.preparedForStorage(photoData),
+            photoData: storedPhoto,
             notes: notes,
             correctiveAction: correctiveAction,
             status: status,
@@ -75,14 +78,15 @@ struct GoodsReceivingService {
             createdByNameSnapshot: user.name
         )
         modelContext.insert(receipt)
-        let trace = traceabilityService.createTraceabilityItem(receipt: receipt, modelContext: modelContext)
-        if let compressed = StoredImageCompression.preparedForStorage(photoData), compressed.isEmpty == false {
+        if hasNonOk,
+           let compressed = storedPhoto,
+           !compressed.isEmpty {
             modelContext.insert(
                 ProductImage(
-                    receivedItemId: trace.id,
+                    receivedItemId: receipt.id,
                     imageData: compressed,
                     localPath: nil,
-                    type: hasNonOk ? .nonComplianceRequired : .receiptOptional,
+                    type: .nonComplianceRequired,
                     createdByUserId: user.id,
                     createdByNameSnapshot: user.name
                 )
