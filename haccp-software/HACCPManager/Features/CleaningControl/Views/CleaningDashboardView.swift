@@ -1,7 +1,7 @@
 import SwiftUI
 import SwiftData
 
-/// Dashboard operativa pulizie: stesso motore checklist, UX inline senza fogli di dettaglio.
+/// Dashboard operativa pulizie: macro-aree espandibili con check inline.
 struct CleaningDashboardView: View {
     enum Tab: String, CaseIterable, Identifiable {
         case oggi = "Oggi"
@@ -11,9 +11,36 @@ struct CleaningDashboardView: View {
         var id: String { rawValue }
     }
 
+    private struct AreaSection: Identifiable {
+        let id: String
+        let name: String
+        let isUnassigned: Bool
+
+        init(area: CleaningArea) {
+            id = "area:\(CleaningAreaGrouping.normalizeName(area.name))"
+            name = area.name
+            isUnassigned = false
+        }
+
+        init(unassigned: Void = ()) {
+            id = CleaningDashboardView.unassignedSectionKey
+            name = "Senza area"
+            isUnassigned = true
+        }
+
+        init(tagName: String) {
+            id = "tag:\(tagName.lowercased())"
+            name = tagName
+            isUnassigned = tagName == "Senza area"
+        }
+    }
+
+    private static let unassignedSectionKey = "unassigned"
+
     @Environment(\.modelContext) private var modelContext
     @Environment(\.theme) private var theme
 
+    let areas: [CleaningArea]
     let runs: [ChecklistRun]
     let templates: [ChecklistTemplate]
     let service: ChecklistService
@@ -22,7 +49,9 @@ struct CleaningDashboardView: View {
     let onSync: () -> Void
 
     @State private var selectedTab: Tab = .oggi
+    @State private var expandedAreaIds: Set<String> = []
     @State private var errorMessage: String?
+    @State private var pendingBulkAreaName: String?
 
     private let engine = PeriodicTaskEngine()
 
@@ -39,75 +68,220 @@ struct CleaningDashboardView: View {
             }
             .pickerStyle(.segmented)
 
-            Group {
-                switch selectedTab {
-                case .oggi:
-                    areaGroupedList(runsForTab(.oggi), emptyText: "Nessun task da fare oggi.")
-                case .ritardo:
-                    areaGroupedList(runsForTab(.ritardo), emptyText: "Nessun task in ritardo.")
-                case .completate:
-                    areaGroupedList(runsForTab(.completate), emptyText: "Nessun task completato nel ciclo corrente.")
-                }
-            }
+            areaGroupedList(
+                runsForTab(selectedTab),
+                emptyText: emptyText(for: selectedTab)
+            )
         }
         .alert("Pulizie", isPresented: Binding(get: { errorMessage != nil }, set: { _ in errorMessage = nil })) {
             Button("OK", role: .cancel) {}
         } message: {
             Text(errorMessage ?? "")
         }
-        .onAppear { onSync() }
+        .alert("Completa tutto", isPresented: Binding(
+            get: { pendingBulkAreaName != nil },
+            set: { if !$0 { pendingBulkAreaName = nil } }
+        )) {
+            Button("Annulla", role: .cancel) {
+                pendingBulkAreaName = nil
+            }
+            Button("Completa tutto") {
+                if let name = pendingBulkAreaName {
+                    completeAllInArea(named: name)
+                }
+                pendingBulkAreaName = nil
+            }
+        } message: {
+            if let name = pendingBulkAreaName {
+                Text("Segnare come completati tutti i controlli pulizia aperti in «\(name)»?")
+            }
+        }
+        .onChange(of: selectedTab) { _, newTab in
+            autoExpandAreasWithPendingWork(in: runsForTab(newTab))
+        }
+        .onAppear {
+            autoExpandAreasWithPendingWork(in: runsForTab(selectedTab))
+        }
     }
 
-    // MARK: - Raggruppamento per area
+    // MARK: - Macro aree espandibili
 
-    private func areaGroupedList(_ runs: [ChecklistRun], emptyText: String) -> some View {
+    private func areaGroupedList(_ tabRuns: [ChecklistRun], emptyText: String) -> some View {
         Group {
-            if runs.isEmpty {
+            if areaSections(for: tabRuns).isEmpty {
                 DashboardEmptyStateView(state: .init(title: "Nessun elemento", message: emptyText, actionTitle: nil))
             } else {
-                VStack(spacing: 14) {
-                    ForEach(areaNames(in: runs), id: \.self) { area in
-                        let areaRuns = runs.filter { areaTag(for: $0) == area }
-                        areaSection(areaName: area, runs: areaRuns)
+                VStack(spacing: 12) {
+                    ForEach(areaSections(for: tabRuns)) { section in
+                        let sectionRuns = runs(for: section, in: tabRuns)
+                        collapsibleAreaSection(
+                            section: section,
+                            runs: sectionRuns,
+                            emptyText: emptyText
+                        )
                     }
                 }
             }
         }
     }
 
-    private func areaSection(areaName: String, runs: [ChecklistRun]) -> some View {
-        let completed = runs.filter { $0.statusRaw == ChecklistRunStatus.completed.rawValue }.count
-        return VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Label(areaName, systemImage: "square.grid.2x2")
-                    .font(.headline)
-                    .foregroundStyle(theme.colorTextPrimary)
-                Spacer()
-                Text("\(completed)/\(runs.count)")
-                    .font(.caption.bold())
-                    .foregroundStyle(theme.colorTextSecondary)
-            }
-            ProgressView(value: runs.isEmpty ? 0 : Double(completed) / Double(runs.count))
-                .tint(theme.colorSuccess)
+    private func areaSections(for tabRuns: [ChecklistRun]) -> [AreaSection] {
+        if areas.isEmpty {
+            return areaNames(in: tabRuns).map { AreaSection(tagName: $0) }
+        }
 
-            ForEach(runs) { run in
-                CleaningInlineTaskRow(
-                    run: run,
-                    template: templateById[run.templateId],
-                    canExecute: canExecute,
-                    onComplete: { completeInline(run) }
-                )
+        var sections = CleaningAreaGrouping.uniqueByName(areas)
+            .map { AreaSection(area: $0) }
+
+        if !unmatchedRuns(in: tabRuns).isEmpty {
+            sections.append(AreaSection(unassigned: ()))
+        }
+
+        return sections
+    }
+
+    private func collapsibleAreaSection(
+        section: AreaSection,
+        runs sectionRuns: [ChecklistRun],
+        emptyText: String
+    ) -> some View {
+        let isExpanded = expandedAreaIds.contains(section.id)
+        let completed = sectionRuns.filter { $0.statusRaw == ChecklistRunStatus.completed.rawValue }.count
+        let total = sectionRuns.count
+
+        return VStack(alignment: .leading, spacing: 0) {
+            Button {
+                withAnimation(.easeInOut(duration: 0.22)) {
+                    toggleArea(section.id)
+                }
+            } label: {
+                HStack(spacing: 12) {
+                    Image(systemName: isExpanded ? "chevron.down.circle.fill" : "chevron.right.circle.fill")
+                        .font(.title3)
+                        .foregroundStyle(theme.colorPrimary)
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Label(section.name, systemImage: "square.grid.2x2")
+                            .font(.headline)
+                            .foregroundStyle(theme.colorTextPrimary)
+                        Text(total == 0
+                            ? "Nessun controllo in questo filtro"
+                            : "\(completed)/\(total) completati")
+                            .font(.caption)
+                            .foregroundStyle(theme.colorTextSecondary)
+                    }
+
+                    Spacer(minLength: 0)
+
+                    if total > 0 {
+                        ProgressView(value: Double(completed) / Double(total))
+                            .frame(width: 56)
+                            .tint(theme.colorSuccess)
+                    }
+                }
+                .padding(12)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            if isExpanded {
+                VStack(alignment: .leading, spacing: 8) {
+                    if canExecute, sectionRuns.contains(where: { $0.statusRaw != ChecklistRunStatus.completed.rawValue }) {
+                        Button {
+                            pendingBulkAreaName = section.name
+                        } label: {
+                            Label("Completa tutto", systemImage: "checkmark.circle.fill")
+                                .font(.subheadline.weight(.semibold))
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(theme.colorSuccess)
+                        .padding(.horizontal, 12)
+                        .padding(.bottom, 4)
+                    }
+
+                    if sectionRuns.isEmpty {
+                        Text(emptyText)
+                            .font(.caption)
+                            .foregroundStyle(theme.colorTextSecondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, 12)
+                            .padding(.bottom, 4)
+                    } else {
+                        ForEach(sectionRuns) { run in
+                            CleaningInlineTaskRow(
+                                run: run,
+                                template: templateById[run.templateId],
+                                canExecute: canExecute,
+                                onComplete: { completeInline(run) }
+                            )
+                            .padding(.horizontal, 8)
+                        }
+                    }
+                }
+                .padding(.bottom, 10)
+                .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
-        .padding(12)
         .background(
-            RoundedRectangle(cornerRadius: 16)
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .fill(theme.colorSurface)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 16)
-                        .stroke(theme.colorDivider, lineWidth: 1)
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .stroke(isExpanded ? theme.colorPrimary.opacity(0.35) : theme.colorDivider, lineWidth: 1)
                 )
         )
+    }
+
+    private func toggleArea(_ areaId: String) {
+        if expandedAreaIds.contains(areaId) {
+            expandedAreaIds.remove(areaId)
+        } else {
+            expandedAreaIds.insert(areaId)
+        }
+    }
+
+    private func autoExpandAreasWithPendingWork(in tabRuns: [ChecklistRun]) {
+        guard expandedAreaIds.isEmpty else { return }
+        let pendingSectionIds = areaSections(for: tabRuns).compactMap { section -> String? in
+            let sectionRuns = runs(for: section, in: tabRuns)
+            let hasOpen = sectionRuns.contains {
+                $0.statusRaw != ChecklistRunStatus.completed.rawValue
+            }
+            return hasOpen ? section.id : nil
+        }
+        if pendingSectionIds.count == 1, let only = pendingSectionIds.first {
+            expandedAreaIds.insert(only)
+        }
+    }
+
+    private func runs(for section: AreaSection, in tabRuns: [ChecklistRun]) -> [ChecklistRun] {
+        if section.isUnassigned {
+            return unmatchedRuns(in: tabRuns)
+        }
+        if areas.isEmpty {
+            return tabRuns.filter {
+                areaTag(for: $0).localizedCaseInsensitiveCompare(section.name) == .orderedSame
+            }
+        }
+        return tabRuns.filter {
+            areaTag(for: $0).localizedCaseInsensitiveCompare(section.name) == .orderedSame
+        }
+    }
+
+    private func unmatchedRuns(in tabRuns: [ChecklistRun]) -> [ChecklistRun] {
+        let configuredNames = Set(areas.map { $0.name.lowercased() })
+        return tabRuns.filter { run in
+            !configuredNames.contains(areaTag(for: run).lowercased())
+        }
+    }
+
+    private func emptyText(for tab: Tab) -> String {
+        switch tab {
+        case .oggi: return "Nessun controllo da fare oggi in quest'area."
+        case .ritardo: return "Nessun controllo in ritardo in quest'area."
+        case .completate: return "Nessun controllo completato in quest'area nel ciclo corrente."
+        }
     }
 
     // MARK: - Filtri tab
@@ -150,6 +324,37 @@ struct CleaningDashboardView: View {
     }
 
     // MARK: - Azioni
+
+    private func completeAllInArea(named areaName: String) {
+        guard let user else {
+            errorMessage = "Accedi per registrare la pulizia."
+            return
+        }
+        let tabRuns = runsForTab(selectedTab)
+        let targetRuns: [ChecklistRun]
+        if areaName == "Senza area" {
+            targetRuns = unmatchedRuns(in: tabRuns).filter { $0.status != .completed }
+        } else {
+            targetRuns = tabRuns.filter {
+                areaTag(for: $0).localizedCaseInsensitiveCompare(areaName) == .orderedSame
+                    && $0.status != .completed
+            }
+        }
+        guard !targetRuns.isEmpty else { return }
+        do {
+            let count = try service.completeAllCleaningRuns(
+                runs: targetRuns,
+                user: user,
+                restaurantId: targetRuns[0].restaurantId,
+                modelContext: modelContext
+            )
+            if count > 0 {
+                HapticManager.shared.notification(.success)
+            }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
 
     private func completeInline(_ run: ChecklistRun) {
         guard let user else {

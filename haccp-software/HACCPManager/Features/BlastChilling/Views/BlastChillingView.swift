@@ -8,10 +8,7 @@ struct BlastChillingView: View {
     @EnvironmentObject private var blastManager: ActiveBlastChillingManager
     @Query private var users: [LocalUser]
     @Query private var restaurants: [Restaurant]
-    @Query private var records: [BlastChillingRecord]
-    @Query private var productionLabels: [ProductionLabelRecord]
-    @Query private var categories: [ProductionCategory]
-    @Query private var productions: [Production]
+    @ObservedObject private var dataStore = ModuleStoreRegistry.shared.blastChilling
     @StateObject private var vm = BlastChillingViewModel()
     @State private var showNewSheet = false
     @State private var pendingSubject: KitchenProcessSubject?
@@ -23,17 +20,17 @@ struct BlastChillingView: View {
 
     private var scopedRecords: [BlastChillingRecord] {
         guard let rid = appState.activeRestaurantId else { return [] }
-        return records.filter { $0.restaurantId == rid }.sorted(by: { $0.createdAt > $1.createdAt })
+        return dataStore.records.filter { $0.restaurantId == rid }.sorted(by: { $0.createdAt > $1.createdAt })
     }
 
     private var scopedCategories: [ProductionCategory] {
         guard let rid = appState.activeRestaurantId else { return [] }
-        return categories.filter { $0.restaurantId == rid }.sorted { $0.orderIndex < $1.orderIndex }
+        return dataStore.categories.filter { $0.restaurantId == rid }.sorted { $0.orderIndex < $1.orderIndex }
     }
 
     private var scopedProductions: [Production] {
         guard let rid = appState.activeRestaurantId else { return [] }
-        return productions.filter { $0.restaurantId == rid }
+        return dataStore.productions.filter { $0.restaurantId == rid }
     }
 
     private var currentUser: LocalUser? {
@@ -47,7 +44,7 @@ struct BlastChillingView: View {
 
     private var scopedLabels: [ProductionLabelRecord] {
         guard let rid = appState.activeRestaurantId else { return [] }
-        return productionLabels.filter { $0.restaurantId == rid }
+        return dataStore.productionLabels.filter { $0.restaurantId == rid }
     }
 
     private var permissions: UserPermissions { currentUser.permissions }
@@ -108,12 +105,12 @@ struct BlastChillingView: View {
         .background(theme.colorBackground.ignoresSafeArea())
         .navigationTitle("Abbattimento")
         .haccpControlTint()
-        .onAppear {
-            ensureProductions()
-            blastManager.refresh(context: modelContext, restaurantId: appState.activeRestaurantId)
-        }
-        .onChange(of: appState.activeRestaurantId) { _, _ in
-            ensureProductions()
+        .moduleScreenLoad(restaurantId: appState.activeRestaurantId) {
+            guard let rid = appState.activeRestaurantId else { return }
+            dataStore.reload(context: modelContext, restaurantId: rid)
+            RestaurantModuleBootstrap.shared.runOnce(restaurantId: rid, module: "blast-productions") {
+                ensureProductions()
+            }
         }
         .sheet(isPresented: $showNewSheet) {
             if currentUser != nil {
@@ -369,8 +366,6 @@ struct BlastChillingView: View {
         guard let rid = appState.activeRestaurantId else { return }
         libraryService.ensureDefaults(
             restaurantId: rid,
-            categories: categories,
-            productions: productions,
             modelContext: modelContext
         )
     }

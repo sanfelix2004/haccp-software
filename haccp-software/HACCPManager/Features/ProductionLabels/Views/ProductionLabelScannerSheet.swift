@@ -48,7 +48,7 @@ struct ProductionLabelScannerSheet: View {
                 }
             }
             .safeAreaInset(edge: .bottom) {
-                Text("Inquadra il QR sull’etichetta: vedi subito prodotto, lotto e scadenza, anche da un altro telefono.")
+                Text("Inquadra il QR: su iPad apre la scheda HACCP. Su telefono senza app, la fotocamera mostra prodotto, lotto, date e allergeni in italiano.")
                     .font(theme.typography.caption)
                     .foregroundStyle(theme.colorTextSecondary)
                     .multilineTextAlignment(.center)

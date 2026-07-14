@@ -13,119 +13,105 @@ struct ProfileSettingsView: View {
     @State private var editedName = ""
     
     var body: some View {
-        VStack(spacing: 32) {
+        VStack(spacing: 24) {
             if let user = user {
                 // Header Profile
-                VStack(spacing: 24) {
+                VStack(spacing: 20) {
                     ZStack {
                         if let data = user.profileImageData, let uiImage = UIImage(data: data) {
                             Image(uiImage: uiImage)
                                 .resizable()
                                 .scaledToFill()
-                                .frame(width: 140, height: 140)
+                                .frame(width: 110, height: 110)
                                 .clipShape(Circle())
-                                .shadow(color: .black.opacity(0.3), radius: 15, y: 10)
+                                .shadow(color: .black.opacity(0.2), radius: 10, y: 6)
                         } else {
                             Circle()
                                 .fill(Color(hex: user.avatarColorHex))
-                                .frame(width: 140, height: 140)
-                                .shadow(color: .black.opacity(0.3), radius: 15, y: 10)
+                                .frame(width: 110, height: 110)
+                                .shadow(color: .black.opacity(0.2), radius: 10, y: 6)
                                 .overlay(
                                     Text(String(user.name.prefix(1)).uppercased())
-                                        .font(.system(size: 60, weight: .black, design: .rounded))
+                                        .font(.system(size: 48, weight: .bold, design: .rounded))
                                         .foregroundStyle(ThemeManager.shared.colorTextPrimary)
                                 )
                         }
                         
-                        // Edit Overlay
                         PhotosPicker(selection: $selectedItem, matching: .images) {
                             Circle()
                                 .fill(ThemeManager.shared.colorScrim)
-                                .frame(width: 40, height: 40)
-                                .overlay(Image(systemName: "camera.fill").foregroundStyle(ThemeManager.shared.colorTextPrimary))
+                                .frame(width: 36, height: 36)
+                                .overlay(Image(systemName: "camera.fill").font(.caption).foregroundStyle(ThemeManager.shared.colorTextPrimary))
                         }
-                        .offset(x: 45, y: 45)
+                        .offset(x: 38, y: 38)
                     }
                     
-                    VStack(spacing: 8) {
-                        HStack {
+                    VStack(spacing: 6) {
+                        HStack(spacing: 8) {
                             Text(user.name)
-                                .font(.system(size: 32, weight: .black, design: .rounded))
-                            
+                                .font(.title2.weight(.bold))
                             Button(action: {
                                 editedName = user.name
                                 showingNameEdit = true
                             }) {
                                 Image(systemName: "pencil.circle.fill")
                                     .foregroundColor(.red)
-                                    .font(.title3)
                             }
                         }
                         
-                        Text(user.role.rawValue.uppercased())
-                            .font(.system(size: 14, weight: .black))
+                        Text(user.role.rawValue)
+                            .font(.caption.weight(.semibold))
                             .foregroundColor(.red)
-                            .tracking(3)
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 6)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 4)
                             .background(Color.red.opacity(0.1))
                             .cornerRadius(8)
                     }
                 }
                 
-                // Details
-                VStack(alignment: .leading, spacing: 0) {
-                    EditableSettingRow(title: "Nome Collaboratore", value: user.name) {
-                        editedName = user.name
-                        showingNameEdit = true
-                    }
-                    
-                    Divider().background(ThemeManager.shared.colorDivider)
-                    
-                    StaticSettingRow(title: "Ruolo", value: user.role.rawValue, icon: "shield.fill")
-                    
-                    if user.role == .master {
-                        Divider().background(ThemeManager.shared.colorDivider)
-                        EditableSettingRow(title: "Email Professionale", value: user.email ?? "Non configurata") {
-                            tempValue = user.email ?? ""
-                            editField = .email
-                            showingDetailEdit = true
-                        }
-                        Divider().background(ThemeManager.shared.colorDivider)
-                        EditableSettingRow(title: "Telefono", value: user.phoneNumber ?? "Non configurato") {
-                            tempValue = user.phoneNumber ?? ""
-                            editField = .phone
-                            showingDetailEdit = true
+                SettingsPanelCard(title: "Dettagli") {
+                    VStack(alignment: .leading, spacing: 0) {
+                        StaticSettingRow(title: "Ruolo", value: user.role.rawValue, icon: "shield.fill")
+                        
+                        if user.role == .master {
+                            Divider().background(ThemeManager.shared.colorDivider)
+                            EditableSettingRow(title: "Email", value: user.email ?? "Non configurata") {
+                                tempValue = user.email ?? ""
+                                editField = .email
+                                showingDetailEdit = true
+                            }
+                            Divider().background(ThemeManager.shared.colorDivider)
+                            EditableSettingRow(title: "Telefono", value: user.phoneNumber ?? "Non configurato") {
+                                tempValue = user.phoneNumber ?? ""
+                                editField = .phone
+                                showingDetailEdit = true
+                            }
                         }
                     }
                 }
-                .background(ThemeManager.shared.colorSurface)
-                .cornerRadius(20)
 
                 ProfileICloudConnectionSection()
                 
-                // Actions
-                VStack(spacing: 16) {
+                VStack(spacing: 12) {
                     Button(action: { showingPinChange = true }) {
-                        Label("MODIFICA PIN DI ACCESSO", systemImage: "key.fill")
+                        Label("Modifica PIN", systemImage: "key.fill")
                             .font(.headline)
                             .frame(maxWidth: .infinity)
-                            .padding(.vertical, 18)
+                            .padding(.vertical, 16)
                             .background(ThemeManager.shared.colorDivider)
-                            .cornerRadius(16)
+                            .cornerRadius(14)
                     }
                     
                     Button(action: { appState.logout() }) {
-                        Label("LOGOUT SESSIONE", systemImage: "rectangle.portrait.and.arrow.right")
+                        Label("Esci", systemImage: "rectangle.portrait.and.arrow.right")
                             .font(.headline)
                             .foregroundColor(.red)
                             .frame(maxWidth: .infinity)
-                            .padding(.vertical, 18)
+                            .padding(.vertical, 16)
                             .background(Color.red.opacity(0.1))
-                            .cornerRadius(16)
+                            .cornerRadius(14)
                     }
                 }
-                .padding(.top, 20)
             }
         }
         .onChange(of: selectedItem) { _ in
@@ -181,10 +167,9 @@ struct StaticSettingRow: View {
                 .frame(width: 30)
             
             VStack(alignment: .leading, spacing: 4) {
-                Text(title.uppercased())
-                    .font(.system(size: 10, weight: .black))
+                Text(title)
+                    .font(.caption.weight(.semibold))
                     .foregroundStyle(ThemeManager.shared.colorTextSecondary)
-                    .tracking(1)
                 Text(value)
                     .font(.body)
                     .foregroundStyle(ThemeManager.shared.colorTextPrimary)
@@ -209,10 +194,9 @@ struct EditableSettingRow: View {
                     .frame(width: 30)
                 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(title.uppercased())
-                        .font(.system(size: 10, weight: .black))
+                    Text(title)
+                        .font(.caption.weight(.semibold))
                         .foregroundColor(.red)
-                        .tracking(1)
                     Text(value)
                         .font(.body)
                         .foregroundStyle(ThemeManager.shared.colorTextPrimary)

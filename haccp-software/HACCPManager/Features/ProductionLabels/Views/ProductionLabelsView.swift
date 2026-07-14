@@ -14,7 +14,7 @@ struct ProductionLabelsView: View {
     @Query private var users: [LocalUser]
     @Query private var restaurants: [Restaurant]
 
-    @StateObject private var dataStore = ProductionLabelsDataStore()
+    @ObservedObject private var dataStore = ModuleStoreRegistry.shared.productionLabels
 
     @State private var selectedLabelId: UUID?
     @State private var pendingWorkspaceSource: ProductionLabelLinkedSource?
@@ -81,11 +81,8 @@ struct ProductionLabelsView: View {
                     : nil
             )
         }
-        .task(id: appState.activeRestaurantId) {
+        .moduleScreenLoad(restaurantId: appState.activeRestaurantId) {
             reloadData()
-        }
-        .onAppear {
-            Task { await drainPrintQueue() }
         }
         .onChange(of: printQueue.pendingJobs.count) { _, _ in
             Task { await drainPrintQueue() }

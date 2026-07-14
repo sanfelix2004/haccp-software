@@ -40,10 +40,10 @@ final class GoodsReceiptControlViewModel: ObservableObject {
     }
 
     var temperatureValue: Double? {
-        Double(temperatureText.replacingOccurrences(of: ",", with: "."))
+        HACCPSafeParse.decimal(from: temperatureText)
     }
 
     var quantityValue: Double? {
-        Double(quantityText.replacingOccurrences(of: ",", with: "."))
+        HACCPSafeParse.decimal(from: quantityText)
     }
 }

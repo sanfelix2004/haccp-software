@@ -48,35 +48,65 @@ struct ProductionLibraryService {
 
     func ensureDefaults(
         restaurantId: UUID,
-        categories: [ProductionCategory],
-        productions: [Production],
         modelContext: ModelContext
     ) {
-        var scopedCategories = categories.filter { $0.restaurantId == restaurantId }
-        if let legacyEntre = scopedCategories.first(where: { normalized($0.name) == "entre" }) {
-            legacyEntre.name = "Entrè"
-        }
-        for (index, name) in Self.defaultCategoryNames.enumerated() {
-            guard name != "Tutti" else { continue }
-            if scopedCategories.contains(where: { normalized($0.name) == normalized(name) }) == false {
-                let category = ProductionCategory(restaurantId: restaurantId, name: name, orderIndex: index)
-                modelContext.insert(category)
-                scopedCategories.append(category)
-            } else if let category = scopedCategories.first(where: { normalized($0.name) == normalized(name) }) {
-                category.orderIndex = index
-            }
-        }
-        try? modelContext.save()
-
-        let refreshedCategories = (try? modelContext.fetch(FetchDescriptor<ProductionCategory>()))?.filter { $0.restaurantId == restaurantId } ?? []
-        normalizeExistingProductions(
+        guard !catalogIsPopulated(restaurantId: restaurantId, modelContext: modelContext) else { return }
+        seedCatalogDefaults(
             restaurantId: restaurantId,
-            categories: refreshedCategories,
             modelContext: modelContext
         )
-        let scopedProductions = ((try? modelContext.fetch(FetchDescriptor<Production>())) ?? productions)
-            .filter { $0.restaurantId == restaurantId }
-        for category in refreshedCategories {
+    }
+
+    func ensureDefaultsAsync(
+        restaurantId: UUID,
+        modelContext: ModelContext
+    ) async {
+        guard !catalogIsPopulated(restaurantId: restaurantId, modelContext: modelContext) else { return }
+        await seedCatalogDefaultsAsync(
+            restaurantId: restaurantId,
+            modelContext: modelContext
+        )
+    }
+
+    private func catalogIsPopulated(restaurantId: UUID, modelContext: ModelContext) -> Bool {
+        let rid = restaurantId
+        var productionDescriptor = FetchDescriptor<Production>(
+            predicate: #Predicate { $0.restaurantId == rid }
+        )
+        productionDescriptor.fetchLimit = 1
+        return !((try? modelContext.fetch(productionDescriptor)) ?? []).isEmpty
+    }
+
+    private func seedCatalogDefaults(
+        restaurantId: UUID,
+        modelContext: ModelContext
+    ) {
+        let rid = restaurantId
+        var scopedCategories = fetchCategories(restaurantId: rid, modelContext: modelContext)
+        var didMutate = upsertDefaultCategories(
+            restaurantId: restaurantId,
+            scopedCategories: &scopedCategories,
+            modelContext: modelContext
+        )
+
+        if RestaurantModuleBootstrap.shared.claimOnce(
+            restaurantId: restaurantId,
+            module: "production-catalog-normalize"
+        ) {
+            didMutate = normalizeExistingProductions(
+                restaurantId: restaurantId,
+                categories: scopedCategories,
+                modelContext: modelContext
+            ) || didMutate
+        }
+
+        var productionDescriptor = FetchDescriptor<Production>(
+            predicate: #Predicate { $0.restaurantId == rid },
+            sortBy: [SortDescriptor(\Production.name)]
+        )
+        productionDescriptor.fetchLimit = 400
+        let scopedProductions = (try? modelContext.fetch(productionDescriptor)) ?? []
+        for category in scopedCategories {
             let categoryName = category.name == "Entre" ? "Entrè" : category.name
             for productionName in Self.defaultProductionsByCategory[categoryName] ?? [] {
                 let alreadyExists = scopedProductions.contains {
@@ -92,24 +122,143 @@ struct ProductionLibraryService {
                         categoryId: category.id,
                         categoryNameSnapshot: category.name,
                         isCustom: false,
-                        shelfLifeDays: ProductionShelfLifeDefaults.days(forName: productionName, categoryName: category.name)
+                        shelfLifeDays: ProductionShelfLifeDefaults.days(
+                            forName: productionName,
+                            categoryName: category.name
+                        )
                     )
                 )
+                didMutate = true
             }
         }
-        backfillShelfLifeDays(restaurantId: restaurantId, modelContext: modelContext)
-        try? modelContext.save()
+        didMutate = backfillShelfLifeDays(restaurantId: restaurantId, modelContext: modelContext) || didMutate
+        if didMutate {
+            modelContext.saveSafely(operation: "production-catalog-seed")
+        }
     }
 
-    private func backfillShelfLifeDays(restaurantId: UUID, modelContext: ModelContext) {
-        let scopedProductions = ((try? modelContext.fetch(FetchDescriptor<Production>())) ?? [])
-            .filter { $0.restaurantId == restaurantId }
+    private func seedCatalogDefaultsAsync(
+        restaurantId: UUID,
+        modelContext: ModelContext
+    ) async {
+        let rid = restaurantId
+        var scopedCategories = fetchCategories(restaurantId: rid, modelContext: modelContext)
+        var didMutate = upsertDefaultCategories(
+            restaurantId: restaurantId,
+            scopedCategories: &scopedCategories,
+            modelContext: modelContext
+        )
+        await Task.yield()
+
+        if RestaurantModuleBootstrap.shared.claimOnce(
+            restaurantId: restaurantId,
+            module: "production-catalog-normalize"
+        ) {
+            didMutate = normalizeExistingProductions(
+                restaurantId: restaurantId,
+                categories: scopedCategories,
+                modelContext: modelContext
+            ) || didMutate
+            await Task.yield()
+        }
+
+        var productionDescriptor = FetchDescriptor<Production>(
+            predicate: #Predicate { $0.restaurantId == rid },
+            sortBy: [SortDescriptor(\Production.name)]
+        )
+        productionDescriptor.fetchLimit = 400
+        let scopedProductions = (try? modelContext.fetch(productionDescriptor)) ?? []
+        var insertedCount = 0
+        for category in scopedCategories {
+            let categoryName = category.name == "Entre" ? "Entrè" : category.name
+            for productionName in Self.defaultProductionsByCategory[categoryName] ?? [] {
+                let alreadyExists = scopedProductions.contains {
+                    $0.restaurantId == restaurantId &&
+                    $0.categoryId == category.id &&
+                    normalized($0.name) == normalized(productionName)
+                }
+                guard !alreadyExists else { continue }
+                modelContext.insert(
+                    Production(
+                        restaurantId: restaurantId,
+                        name: productionName,
+                        categoryId: category.id,
+                        categoryNameSnapshot: category.name,
+                        isCustom: false,
+                        shelfLifeDays: ProductionShelfLifeDefaults.days(
+                            forName: productionName,
+                            categoryName: category.name
+                        )
+                    )
+                )
+                didMutate = true
+                insertedCount += 1
+                if insertedCount.isMultiple(of: 12) {
+                    await Task.yield()
+                }
+            }
+        }
+        didMutate = backfillShelfLifeDays(restaurantId: restaurantId, modelContext: modelContext) || didMutate
+        if didMutate {
+            modelContext.saveSafely(operation: "production-catalog-seed")
+        }
+    }
+
+    private func fetchCategories(restaurantId: UUID, modelContext: ModelContext) -> [ProductionCategory] {
+        let rid = restaurantId
+        var categoryDescriptor = FetchDescriptor<ProductionCategory>(
+            predicate: #Predicate { $0.restaurantId == rid },
+            sortBy: [SortDescriptor(\ProductionCategory.orderIndex)]
+        )
+        categoryDescriptor.fetchLimit = 100
+        return (try? modelContext.fetch(categoryDescriptor)) ?? []
+    }
+
+    @discardableResult
+    private func upsertDefaultCategories(
+        restaurantId: UUID,
+        scopedCategories: inout [ProductionCategory],
+        modelContext: ModelContext
+    ) -> Bool {
+        var didMutate = false
+        if let legacyEntre = scopedCategories.first(where: { normalized($0.name) == "entre" }) {
+            legacyEntre.name = "Entrè"
+            didMutate = true
+        }
+        for (index, name) in Self.defaultCategoryNames.enumerated() {
+            guard name != "Tutti" else { continue }
+            if scopedCategories.contains(where: { normalized($0.name) == normalized(name) }) == false {
+                let category = ProductionCategory(restaurantId: restaurantId, name: name, orderIndex: index)
+                modelContext.insert(category)
+                scopedCategories.append(category)
+                didMutate = true
+            } else if let category = scopedCategories.first(where: { normalized($0.name) == normalized(name) }) {
+                if category.orderIndex != index {
+                    category.orderIndex = index
+                    didMutate = true
+                }
+            }
+        }
+        return didMutate
+    }
+
+    @discardableResult
+    private func backfillShelfLifeDays(restaurantId: UUID, modelContext: ModelContext) -> Bool {
+        let rid = restaurantId
+        var productionDescriptor = FetchDescriptor<Production>(
+            predicate: #Predicate { $0.restaurantId == rid }
+        )
+        productionDescriptor.fetchLimit = 400
+        let scopedProductions = (try? modelContext.fetch(productionDescriptor)) ?? []
+        var didMutate = false
         for production in scopedProductions where production.shelfLifeDays == nil {
             production.shelfLifeDays = ProductionShelfLifeDefaults.days(
                 forName: production.name,
                 categoryName: production.categoryNameSnapshot
             )
+            didMutate = true
         }
+        return didMutate
     }
 
     func associate(
@@ -193,7 +342,7 @@ struct ProductionLibraryService {
         productionsById: [UUID: Production],
         modelContext: ModelContext
     ) throws {
-        let recordIds = Set(group.ingredients.map(\.recordId))
+        let recordIds = Set(group.ingredients.compactMap(\.recordId))
         let productionId = group.productionId
         let recordsById = Dictionary(uniqueKeysWithValues: records.map { ($0.id, $0) })
 
@@ -329,20 +478,37 @@ struct ProductionLibraryService {
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    @discardableResult
     private func normalizeExistingProductions(
         restaurantId: UUID,
         categories: [ProductionCategory],
         modelContext: ModelContext
-    ) {
+    ) -> Bool {
         var categoryByName: [String: ProductionCategory] = [:]
         for category in categories {
             categoryByName[normalized(category.name)] = category
         }
-        let scopedProductions = ((try? modelContext.fetch(FetchDescriptor<Production>())) ?? [])
-            .filter { $0.restaurantId == restaurantId }
-        let traceabilityLinks = (try? modelContext.fetch(FetchDescriptor<TraceabilityLink>())) ?? []
-        let blastRecords = (try? modelContext.fetch(FetchDescriptor<BlastChillingRecord>())) ?? []
+        let rid = restaurantId
+        var productionDescriptor = FetchDescriptor<Production>(
+            predicate: #Predicate { $0.restaurantId == rid }
+        )
+        productionDescriptor.fetchLimit = 400
+        let scopedProductions = (try? modelContext.fetch(productionDescriptor)) ?? []
+        guard !scopedProductions.isEmpty else { return false }
 
+        var blastDescriptor = FetchDescriptor<BlastChillingRecord>(
+            predicate: #Predicate { $0.restaurantId == rid }
+        )
+        blastDescriptor.fetchLimit = PerformanceConfig.analyticsSeriesFetchLimit
+        let blastRecords = (try? modelContext.fetch(blastDescriptor)) ?? []
+
+        var linkDescriptor = FetchDescriptor<TraceabilityLink>()
+        linkDescriptor.fetchLimit = 2_000
+        let productionIds = Set(scopedProductions.map(\.id))
+        let traceabilityLinks = ((try? modelContext.fetch(linkDescriptor)) ?? [])
+            .filter { productionIds.contains($0.productionId) }
+
+        var didMutate = false
         for production in scopedProductions {
             let currentCategoryName = categories.first(where: { $0.id == production.categoryId })?.name
                 ?? production.categoryNameSnapshot
@@ -358,17 +524,23 @@ struct ProductionLibraryService {
             }) {
                 if isProductionUsed(production, traceabilityLinks: traceabilityLinks, blastRecords: blastRecords) == false {
                     modelContext.delete(production)
+                    didMutate = true
                     continue
                 }
                 if isProductionUsed(duplicate, traceabilityLinks: traceabilityLinks, blastRecords: blastRecords) == false {
                     modelContext.delete(duplicate)
+                    didMutate = true
                 }
             }
 
-            production.categoryId = targetCategory.id
-            production.categoryNameSnapshot = targetCategory.name
+            if production.categoryId != targetCategory.id
+                || production.categoryNameSnapshot != targetCategory.name {
+                production.categoryId = targetCategory.id
+                production.categoryNameSnapshot = targetCategory.name
+                didMutate = true
+            }
         }
-        try? modelContext.save()
+        return didMutate
     }
 
     private func correctedCategoryName(for productionName: String, currentCategoryName: String) -> String? {

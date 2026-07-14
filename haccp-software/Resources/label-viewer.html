@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Etichetta HACCP</title>
+  <style>
+    :root { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #111; }
+    body { margin: 0; padding: 16px; background: #f4f4f5; }
+    .card { background: #fff; border-radius: 12px; padding: 16px; box-shadow: 0 2px 12px rgba(0,0,0,.08); max-width: 480px; margin: 0 auto; }
+    h1 { font-size: 1.25rem; margin: 0 0 8px; }
+    .hint { color: #666; font-size: .9rem; margin-bottom: 16px; }
+    textarea { width: 100%; min-height: 120px; border: 1px solid #ccc; border-radius: 8px; padding: 10px; font-size: .85rem; box-sizing: border-box; }
+    button { margin-top: 10px; width: 100%; padding: 12px; border: 0; border-radius: 8px; background: #c41e3a; color: #fff; font-weight: 600; font-size: 1rem; }
+    dl { margin: 16px 0 0; }
+    dt { font-size: .75rem; text-transform: uppercase; color: #888; margin-top: 10px; }
+    dd { margin: 2px 0 0; font-size: 1rem; }
+    .badge { display: inline-block; padding: 4px 8px; border-radius: 6px; background: #fef3c7; font-size: .8rem; margin-right: 6px; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Lettore etichetta HACCP</h1>
+    <p class="hint">Incolla il testo letto dal QR (formato HACCP multiriga) oppure apri questa pagina dopo aver scansionato con la fotocamera.</p>
+    <textarea id="input" placeholder="HACCP&#10;Prodotto: ...&#10;Lotto: ..."></textarea>
+    <button type="button" onclick="render()">Mostra etichetta</button>
+    <div id="out"></div>
+  </div>
+  <script>
+    function parse(text) {
+      const lines = text.replace(/\r/g, '').split('\n').map(l => l.trim()).filter(Boolean);
+      if (!lines.length || !lines[0].startsWith('HACCP')) return null;
+      const data = {};
+      for (const line of lines.slice(1)) {
+        const i = line.indexOf(':');
+        if (i < 0) continue;
+        const key = line.slice(0, i).trim().toLowerCase();
+        const val = line.slice(i + 1).trim();
+        if (val) data[key] = val;
+      }
+      return data;
+    }
+    function row(label, value) {
+      if (!value) return '';
+      return '<dt>' + label + '</dt><dd>' + escapeHtml(value) + '</dd>';
+    }
+    function escapeHtml(s) {
+      return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+    function render() {
+      const raw = document.getElementById('input').value.trim();
+      const d = parse(raw);
+      const out = document.getElementById('out');
+      if (!d) { out.innerHTML = '<p style="color:#c41e3a">Testo non riconosciuto. Usa un QR HACCP stampato dall’app.</p>'; return; }
+      let badges = '';
+      if (d.allergeni) badges += '<span class="badge">Allergeni</span>';
+      out.innerHTML = '<h2 style="margin:16px 0 4px">' + escapeHtml(d.prodotto || 'Etichetta') + '</h2>' + badges +
+        '<dl>' +
+        row('Lotto', d.lotto) +
+        row('Produzione', d.prod) +
+        row('Scadenza', d.scad) +
+        row('Operatore', d.op) +
+        row('Fornitore', d.fornitore) +
+        row('Categoria', d.categoria) +
+        row('Quantità', d['qtà'] || d.qta) +
+        row('Temperatura', d.temp) +
+        row('Conservazione', d.conserv) +
+        row('Allergeni', d.allergeni) +
+        row('Stato', d.stato) +
+        row('Note', d.note) +
+        row('Locale', d.locale) +
+        row('ID', d.id) +
+        '</dl>';
+    }
+    const params = new URLSearchParams(location.search);
+    const q = params.get('d');
+    if (q) { document.getElementById('input').value = decodeURIComponent(q); render(); }
+  </script>
+</body>
+</html>

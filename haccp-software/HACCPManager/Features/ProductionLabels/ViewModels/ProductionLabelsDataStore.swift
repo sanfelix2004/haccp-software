@@ -18,14 +18,22 @@ final class ProductionLabelsDataStore: ObservableObject {
 
     private var loadTask: Task<Void, Never>?
 
-    func reload(context: ModelContext, restaurantId: UUID?, includeArchived: Bool = false) {
+    private var reloadPolicy = DataStoreReloadPolicy()
+
+    func reload(context: ModelContext, restaurantId: UUID?, includeArchived: Bool = false, force: Bool = false) {
         loadTask?.cancel()
         guard let restaurantId else {
             clear()
             return
         }
+        guard reloadPolicy.shouldReload(
+            restaurantId: restaurantId,
+            hasData: !labels.isEmpty,
+            force: force
+        ) else { return }
+
         isLoading = true
-        loadTask = Task {
+        loadTask = Task { @MainActor in
             await Task.yield()
             let data = ProductionLabelDataFetcher.fetch(
                 context: context,
@@ -40,10 +48,12 @@ final class ProductionLabelsDataStore: ObservableObject {
             defrostRecords = data.defrostRecords
             productions = data.productions
             isLoading = false
+            reloadPolicy.markLoaded(restaurantId: restaurantId)
         }
     }
 
     func clear() {
+        reloadPolicy.invalidate()
         labels = []
         traceabilityRecords = []
         goodsReceipts = []
@@ -56,6 +66,11 @@ final class ProductionLabelsDataStore: ObservableObject {
     func mergeFetchedLabel(_ label: ProductionLabelRecord) {
         guard !labels.contains(where: { $0.id == label.id }) else { return }
         labels.insert(label, at: 0)
+    }
+
+    func cancelPendingLoad() {
+        loadTask?.cancel()
+        loadTask = nil
     }
 
     deinit {

@@ -138,7 +138,13 @@ struct HistoryDashboardView: View {
                     ForEach(visibleModules) { module in
                         let moduleEntries = entriesByModule[module] ?? []
                         NavigationLink {
-                            HistoryModuleDetailView(module: module, entries: moduleEntries)
+                            HistoryModuleDetailView(
+                                module: module,
+                                entries: moduleEntries,
+                                onDataChanged: {
+                                    NotificationCenter.default.post(name: .kitchenProcessRecordsDidChange, object: nil)
+                                }
+                            )
                         } label: {
                             HistoryModuleCard(module: module, entries: moduleEntries)
                         }

@@ -4,7 +4,7 @@ import SwiftData
 struct HistoryView: View {
     @EnvironmentObject var appState: AppState
     @Environment(\.modelContext) private var modelContext
-    @StateObject private var loader = HistoryLoaderViewModel()
+    @ObservedObject private var loader = ModuleStoreRegistry.shared.history
 
     var body: some View {
         Group {
@@ -21,11 +21,15 @@ struct HistoryView: View {
             }
         }
         .background(ThemeManager.shared.colorBackground.ignoresSafeArea())
-        .task(id: appState.activeRestaurantId) {
+        .moduleScreenLoad(restaurantId: appState.activeRestaurantId) {
             loader.reload(context: modelContext, restaurantId: appState.activeRestaurantId)
         }
         .onReceive(NotificationCenter.default.publisher(for: .kitchenProcessRecordsDidChange)) { _ in
-            loader.reload(context: modelContext, restaurantId: appState.activeRestaurantId)
+            loader.reload(
+                context: modelContext,
+                restaurantId: appState.activeRestaurantId,
+                force: true
+            )
         }
     }
 }

@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct TemperatureDevicePicker: View {
-    let devices: [TemperatureDevice]
+    let devices: [AnalyticsTemperatureDeviceOption]
     @Binding var selectedDeviceId: UUID?
 
     var body: some View {

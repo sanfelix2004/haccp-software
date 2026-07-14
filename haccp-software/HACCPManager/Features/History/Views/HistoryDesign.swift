@@ -56,15 +56,24 @@ extension HistoryModule {
 
 extension HistoryEntry {
     var statusBadgeStyle: HACCPBadgeStyle {
-        if hasCriticality { return .nonConforme }
         let normalized = status.lowercased()
-        if normalized.contains("crit") || normalized.contains("non") || normalized.contains("scad") {
+        if pendingTraceabilityRecordId != nil || normalized.contains("da chiud") {
+            return .warning
+        }
+        if hasCriticality { return .nonConforme }
+        if normalized == "usato" { return .conforme }
+        if normalized.contains("scartat") { return .nonConforme }
+        if normalized.contains("crit") || normalized.contains("non") {
             return .warning
         }
         if normalized.contains("ok") || normalized.contains("compl") || normalized.contains("conform") {
             return .conforme
         }
         return .info
+    }
+
+    var requiresClosureAction: Bool {
+        pendingTraceabilityRecordId != nil
     }
 }
 

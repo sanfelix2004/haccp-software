@@ -12,40 +12,18 @@ struct LabelStickerContent: Equatable {
     var sourceModuleLabel: String?
 
     static func from(_ label: ProductionLabelRecord, settings: LabelPrinterSettings) -> LabelStickerContent {
-        var lines: [String] = []
+        let profile = settings.labelSpec.layout
+        let allLines = ProductionLabelPrintContent.printLines(for: label, settings: settings)
+        let detailLines = allLines
+            .filter { $0.id != "brand" && $0.id != "product" }
+            .map(\.text)
+            .prefix(profile.maxDetailLines)
 
-        if settings.showLotNumber, let lot = label.lotCode?.trimmingCharacters(in: .whitespacesAndNewlines), !lot.isEmpty {
-            lines.append("Lotto \(LabelStickerText.fit(lot, maxLength: 28))")
-        }
-        if settings.showPrepDate {
-            lines.append("Prod. \(label.productionDate.formatted(date: .abbreviated, time: .omitted))")
-        }
-        if settings.showExpiryDate {
-            lines.append("Scad. \(label.expiryDate.formatted(date: .abbreviated, time: .omitted))")
-        }
-        if settings.showOperatorName {
-            lines.append("Op. \(LabelStickerText.fit(label.createdByNameSnapshot, maxLength: 22))")
-        }
-        if let supplier = label.supplier?.trimmingCharacters(in: .whitespacesAndNewlines), !supplier.isEmpty {
-            lines.append(LabelStickerText.fit(supplier, maxLength: 32))
-        }
-        if let qty = label.quantityDisplay {
-            lines.append(LabelStickerText.fit(qty, maxLength: 24))
-        }
-        if let temp = label.temperatureNote?.trimmingCharacters(in: .whitespacesAndNewlines), !temp.isEmpty {
-            lines.append(LabelStickerText.fit(temp, maxLength: 28))
-        }
-        if settings.showAllergenWarning, !label.allergenList.isEmpty {
-            let allergenText = label.allergenList.prefix(4).joined(separator: ", ")
-            lines.append("All: \(LabelStickerText.fit(allergenText, maxLength: 36))")
-        }
-        if let storage = label.storageInstructions?.trimmingCharacters(in: .whitespacesAndNewlines), !storage.isEmpty {
-            lines.append(LabelStickerText.fit(storage, maxLength: 36))
-        }
+        let productLine = allLines.first(where: { $0.id == "product" })?.text ?? label.productName
 
         return LabelStickerContent(
-            productName: label.productName,
-            detailLines: lines,
+            productName: productLine,
+            detailLines: Array(detailLines),
             qrPayload: LabelQRCodeLayout.payload(for: label),
             sourceModuleLabel: label.sourceModule.displayLabel
         )
@@ -72,25 +50,27 @@ struct LabelStickerCanvas: View {
 
     private var settings: LabelPrinterSettings { settingsStorage.printer }
 
-    private static var aspectRatio: CGFloat {
-        CGFloat(ClabelLabelDimensions.widthMM) / CGFloat(ClabelLabelDimensions.heightMM)
+    private var labelSpec: ClabelLabelSpec { settings.labelSpec }
+
+    private var aspectRatio: CGFloat {
+        CGFloat(labelSpec.widthMM) / CGFloat(labelSpec.heightMM)
     }
 
     var body: some View {
         VStack(spacing: 6) {
             GeometryReader { geo in
                 let width = min(geo.size.width, maxPreviewWidth)
-                let height = width / Self.aspectRatio
+                let height = width / aspectRatio
                 stickerSurface(width: width, height: height)
                     .frame(width: width, height: height)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-            .aspectRatio(Self.aspectRatio, contentMode: .fit)
+            .aspectRatio(aspectRatio, contentMode: .fit)
             .frame(maxWidth: maxPreviewWidth)
             .frame(maxWidth: .infinity)
 
             if showSizeCaption {
-                Text("\(ClabelLabelDimensions.widthMM)×\(ClabelLabelDimensions.heightMM) mm")
+                Text("\(labelSpec.widthMM)×\(labelSpec.heightMM) mm · CLABEL S1")
                     .font(.system(size: 10, weight: .medium))
                     .foregroundStyle(theme.colorTextSecondary)
             }
@@ -190,6 +170,14 @@ struct LabelStickerCanvas: View {
         }
     }
 
+    private func maxDetailLines(for density: TextDensity) -> Int {
+        let base = density.maxDetailLines
+        if settings.clabelSize == .mm40x30 {
+            return max(3, base - 3)
+        }
+        return base
+    }
+
     @ViewBuilder
     private func textStack(density: TextDensity, width: CGFloat) -> some View {
         VStack(alignment: .leading, spacing: density.spacing) {
@@ -208,7 +196,7 @@ struct LabelStickerCanvas: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            ForEach(Array(content.detailLines.prefix(density.maxDetailLines).enumerated()), id: \.offset) { _, line in
+            ForEach(Array(content.detailLines.prefix(maxDetailLines(for: density)).enumerated()), id: \.offset) { _, line in
                 Text(line)
                     .font(.system(size: density.lineSize, weight: .regular))
                     .foregroundStyle(.black.opacity(0.88))
@@ -255,14 +243,15 @@ struct LabelStickerCanvas: View {
 
     private func qrSideLength(labelHeight: CGFloat, labelWidth: CGFloat) -> CGFloat {
         guard settings.showQRCode else { return 0 }
-        let maxByHeight = labelHeight * 0.46
-        let maxByWidth = labelWidth * 0.3
-        return max(36, min(maxByHeight, maxByWidth))
+        let maxByHeight = labelHeight * (settings.clabelSize == .mm40x30 ? 0.42 : 0.46)
+        let maxByWidth = labelWidth * (settings.clabelSize == .mm40x30 ? 0.34 : 0.3)
+        return max(32, min(maxByHeight, maxByWidth))
     }
 
     private var qrTaskID: String {
         [
             content.qrPayload,
+            settings.labelSize,
             String(settings.showQRCode),
             String(settings.qrRotationRaw),
             String(settings.qrCellSize)
@@ -281,6 +270,7 @@ struct LabelStickerCanvas: View {
         let cell = LabelQRCodeLayout.clampedCellSize(
             settings.qrCellSize,
             payload: payload,
+            settings: settings,
             corner: settings.qrCorner
         )
         let dots = LabelQRCodeLayout.printSizeDots(cellSize: cell, payload: payload)

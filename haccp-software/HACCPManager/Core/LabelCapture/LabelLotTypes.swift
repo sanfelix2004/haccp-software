@@ -25,24 +25,40 @@ enum LabelLotError: LocalizedError {
 }
 
 enum LabelLotSanitizer {
+    private static let quoteCharacters = CharacterSet(charactersIn: "\"'")
+
+    private static let reservedLotTokens: Set<String> = [
+        "SELL", "BY", "BEST", "BEFORE", "LOT", "LOTT", "LOTTO", "EXP", "EXPIRY",
+        "TMC", "BB", "USE", "SCAD", "SCADE", "SCADENZA", "ENTRO", "NULL"
+    ]
+
     /// Pulisce prefissi comuni e scarta falsi positivi (EAN, date, rumore).
     static func clean(_ raw: String) -> String {
-        var value = raw
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
-            .replacingOccurrences(of: " ", with: "")
+        var value = String(raw)
+        value = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        value = value.trimmingCharacters(in: quoteCharacters)
+        value.removeAll { $0 == " " || $0 == "\u{00A0}" }
 
-        // L6036BH099, L52400V757 — la L fa parte del codice, non è un'etichetta
-        if value.range(of: #"^[Ll][A-Z0-9]{2,}$"#, options: .regularExpression) != nil {
+        // L6184 (Julian) → 6184
+        if let regex = try? NSRegularExpression(pattern: #"^[Ll](\d{3,5})$"#),
+           let match = regex.firstMatch(in: value, range: nsRange(for: value)),
+           match.numberOfRanges > 1,
+           let codeRange = Range(match.range(at: 1), in: value) {
+            return String(value[codeRange])
+        }
+
+        // L6036BH099, L52400V757 — L fa parte del codice alfanumerico
+        if value.range(of: #"^[Ll][A-Z0-9]{2,}$"#, options: .regularExpression) != nil,
+           value.dropFirst().contains(where: { $0.isLetter }) {
             return value
         }
 
-        // L.6036BH099 / L:6036 → L6036BH099 (rimuovi solo il separatore dopo L)
+        // L.24056 / L:24056 → 24056 (prefisso separato, no lettere nel corpo)
         if let regex = try? NSRegularExpression(pattern: #"^[Ll][:.]([A-Z0-9].*)$"#, options: .caseInsensitive),
-           let match = regex.firstMatch(in: value, range: NSRange(value.startIndex..., in: value)),
+           let match = regex.firstMatch(in: value, range: nsRange(for: value)),
            match.numberOfRanges > 1,
            let codeRange = Range(match.range(at: 1), in: value) {
-            return "L" + String(value[codeRange])
+            return String(value[codeRange])
         }
 
         let prefixPatterns = [
@@ -52,7 +68,7 @@ enum LabelLotSanitizer {
         ]
         for pattern in prefixPatterns {
             if let regex = try? NSRegularExpression(pattern: pattern),
-               let match = regex.firstMatch(in: value, range: NSRange(value.startIndex..., in: value)),
+               let match = regex.firstMatch(in: value, range: nsRange(for: value)),
                let range = Range(match.range, in: value) {
                 value = String(value[range.upperBound...])
                 break
@@ -62,12 +78,29 @@ enum LabelLotSanitizer {
         return value
     }
 
+    /// Validazione completa (OCR / Groq).
     static func validateLot(_ raw: String?, rawContext: String = "") -> String? {
+        validateCandidate(raw, rawContext: rawContext, restoreLeadingL: true)
+    }
+
+    /// Validazione per candidati estratti da regex — evita ricorsione con `extractLot`.
+    static func validateExtractedCandidate(_ raw: String, rawContext: String = "") -> String? {
+        validateCandidate(raw, rawContext: rawContext, restoreLeadingL: true)
+    }
+
+    private static func validateCandidate(
+        _ raw: String?,
+        rawContext: String,
+        restoreLeadingL: Bool
+    ) -> String? {
         guard let raw else { return nil }
         let cleaned = clean(raw)
         guard !cleaned.isEmpty, cleaned.lowercased() != "null" else { return nil }
+        guard !isReservedLotToken(cleaned) else { return nil }
         let context = rawContext.isEmpty ? raw : rawContext
-        let normalized = restoreLeadingLIfMissing(in: cleaned, rawContext: context)
+        let normalized = restoreLeadingL
+            ? restoreLeadingLIfMissing(in: cleaned, rawContext: context)
+            : cleaned
         guard !isConsumerBarcode(normalized) else { return nil }
         guard !looksLikeDate(normalized) else { return nil }
         guard !looksLikeISODate(normalized) else { return nil }
@@ -76,15 +109,39 @@ enum LabelLotSanitizer {
         return refineAmbiguousLotCharacters(normalized)
     }
 
-    /// Se Groq omette la L ma era presente nel testo grezzo (L6036BH099), ripristinala.
+    private static func nsRange(for string: String) -> NSRange {
+        NSRange(string.startIndex..<string.endIndex, in: string)
+    }
+
+    private static func isReservedLotToken(_ value: String) -> Bool {
+        let upper = value.uppercased()
+        if reservedLotTokens.contains(upper) { return true }
+        if upper.hasPrefix("SELL") || upper.hasPrefix("BEST") { return true }
+        return false
+    }
+
+    /// Se Groq omette la L ma era presente nel testo grezzo (L6036BH099, L9330 B8), ripristinala.
     static func restoreLeadingLIfMissing(in lot: String, rawContext: String) -> String {
         guard let first = lot.first, first.isNumber else { return lot }
+
         let candidates = ["L\(lot)", "l\(lot)"]
         for candidate in candidates {
-            if rawContext.contains(candidate) {
+            if rawContext.range(of: candidate, options: .caseInsensitive) != nil {
                 return "L" + lot
             }
         }
+
+        if let regex = try? NSRegularExpression(pattern: #"(?i)\bL(\d{3,6})\s+([A-Z0-9]{1,6})\b"#),
+           let match = regex.firstMatch(in: rawContext, range: nsRange(for: rawContext)),
+           match.numberOfRanges >= 3,
+           let numRange = Range(match.range(at: 1), in: rawContext),
+           let suffixRange = Range(match.range(at: 2), in: rawContext) {
+            let combined = "\(rawContext[numRange])\(rawContext[suffixRange])"
+            if lot.caseInsensitiveCompare(combined) == .orderedSame {
+                return "L" + lot
+            }
+        }
+
         return lot
     }
 
@@ -93,7 +150,7 @@ enum LabelLotSanitizer {
         var value = lot
 
         if let regex = try? NSRegularExpression(pattern: #"^\d{4,7}Y\d{2,5}$"#),
-           regex.firstMatch(in: value, range: NSRange(value.startIndex..., in: value)) != nil {
+           regex.firstMatch(in: value, range: nsRange(for: value)) != nil {
             value = value.replacingOccurrences(of: "Y", with: "V")
         }
 
@@ -119,7 +176,7 @@ enum LabelLotSanitizer {
     static func looksLikeTimeOnly(_ value: String) -> Bool {
         let pattern = #"^\d{1,2}:\d{2}(:\d{2})?$"#
         guard let regex = try? NSRegularExpression(pattern: pattern) else { return false }
-        return regex.firstMatch(in: value, range: NSRange(value.startIndex..., in: value)) != nil
+        return regex.firstMatch(in: value, range: nsRange(for: value)) != nil
     }
 
     static func validateExpiry(_ date: Date?) -> Date? {
@@ -143,14 +200,14 @@ enum LabelLotSanitizer {
         ]
         return patterns.contains { pattern in
             guard let regex = try? NSRegularExpression(pattern: pattern) else { return false }
-            return regex.firstMatch(in: value, range: NSRange(value.startIndex..., in: value)) != nil
+            return regex.firstMatch(in: value, range: nsRange(for: value)) != nil
         }
     }
 
     static func looksLikeISODate(_ value: String) -> Bool {
         let pattern = #"^\d{4}-\d{2}-\d{2}$"#
         guard let regex = try? NSRegularExpression(pattern: pattern) else { return false }
-        return regex.firstMatch(in: value, range: NSRange(value.startIndex..., in: value)) != nil
+        return regex.firstMatch(in: value, range: nsRange(for: value)) != nil
     }
 
     /// Scarta stringhe numeriche tipo YYMMDD o DDMMYY spesso scambiate col lotto.

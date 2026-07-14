@@ -10,6 +10,7 @@ final class SettingsStorageService {
     private var modelContext: ModelContext?
     private var dataStore: AppDataStore?
     private(set) var isHydratedFromSwiftData = false
+    private let saveDebouncer = DebouncedMainActorTask(milliseconds: 450)
 
     var restaurant = RestaurantSettings()
     var haccp = HACCPSettings()
@@ -57,7 +58,7 @@ final class SettingsStorageService {
             let newStore = AppDataStore()
             context.insert(newStore)
             dataStore = newStore
-            saveAll()
+            saveAllImmediately()
         }
         isHydratedFromSwiftData = true
     }
@@ -81,6 +82,18 @@ final class SettingsStorageService {
     }
 
     func saveAll() {
+        saveDebouncer.schedule { [self] in
+            persistAll()
+        }
+    }
+
+    /// Salvataggio immediato (bootstrap, wipe, chiusura app).
+    func saveAllImmediately() {
+        saveDebouncer.cancel()
+        persistAll()
+    }
+
+    private func persistAll() {
         appearance.normalizeStoredPreferences()
         ThemeStorage.shared.mirror(appearance)
 

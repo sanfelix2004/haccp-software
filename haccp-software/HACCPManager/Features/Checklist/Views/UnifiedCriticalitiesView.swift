@@ -75,7 +75,6 @@ struct UnifiedCriticalitiesView: View {
                     }
                 }
             }
-            .padding(theme.spacing.screenPadding)
         }
         .sheet(isPresented: $showResolveSheet) {
             resolveSheet

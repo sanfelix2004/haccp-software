@@ -5,13 +5,7 @@ struct CleaningControlView: View {
     @Environment(\.modelContext) private var modelContext
     @EnvironmentObject var appState: AppState
     @Query private var users: [LocalUser]
-    @Query private var areas: [CleaningArea]
-    @Query private var tasks: [CleaningTask]
-    @Query private var records: [CleaningRecord]
-    @Query private var criticalities: [CleaningCriticality]
-    @Query private var checklistTemplates: [ChecklistTemplate]
-    @Query private var checklistRuns: [ChecklistRun]
-    @Query private var checklistItemResults: [ChecklistItemResult]
+    @ObservedObject private var dataStore = ModuleStoreRegistry.shared.cleaningControl
     @StateObject private var vm = CleaningControlViewModel()
     private let cleaningBFF = CleaningTaskBFF()
     private let checklistService = ChecklistService()
@@ -25,6 +19,7 @@ struct CleaningControlView: View {
     @State private var newTaskName: String = ""
     @State private var newTaskFrequency: CleaningTaskFrequency = .giornaliero
     @State private var newTaskCustomDays: String = ""
+    @State private var maintenanceTask: Task<Void, Never>?
 
     private var currentUser: LocalUser? {
         users.first(where: { $0.id == appState.currentUserId })
@@ -41,32 +36,32 @@ struct CleaningControlView: View {
 
     private var scopedAreas: [CleaningArea] {
         guard let rid = appState.activeRestaurantId else { return [] }
-        return areas
-            .filter { $0.restaurantId == rid }
-            .sorted { $0.name < $1.name }
+        return CleaningAreaGrouping.uniqueByName(
+            dataStore.areas.filter { $0.restaurantId == rid }
+        )
     }
 
     private var scopedTasks: [CleaningTask] {
         guard let rid = appState.activeRestaurantId else { return [] }
-        return tasks.filter { $0.restaurantId == rid }
+        return dataStore.tasks.filter { $0.restaurantId == rid }
     }
 
     private var scopedRecords: [CleaningRecord] {
         guard let rid = appState.activeRestaurantId else { return [] }
-        return records.filter { $0.restaurantId == rid }
+        return dataStore.records.filter { $0.restaurantId == rid }
     }
 
     private var completedCleaningRuns: [ChecklistRun] {
         guard let rid = appState.activeRestaurantId else { return [] }
         let templateIds = Set(cleaningTemplates.map(\.id))
-        return checklistRuns
+        return dataStore.checklistRuns
             .filter { $0.restaurantId == rid && templateIds.contains($0.templateId) }
             .filter { $0.status == .completed || $0.status == .failed || $0.status == .missed || $0.status == .archived }
             .sorted { ($0.completedAt ?? $0.startedAt) > ($1.completedAt ?? $1.startedAt) }
     }
 
     private var templateById: [UUID: ChecklistTemplate] {
-        Dictionary(uniqueKeysWithValues: cleaningTemplates.map { ($0.id, $0) })
+        HACCPSafeParse.dictionary(cleaningTemplates.map { ($0.id, $0) })
     }
 
     private func areaTag(for run: ChecklistRun) -> String {
@@ -111,7 +106,7 @@ struct CleaningControlView: View {
     }
 
     private func runDetails(for run: ChecklistRun) -> (notes: String, action: String) {
-        let results = checklistItemResults.filter { $0.checklistRunId == run.id }
+        let results = dataStore.checklistItemResults.filter { $0.checklistRunId == run.id }
         let notesParts = results.compactMap { $0.note }.filter { !$0.isEmpty }
         let notes = notesParts.joined(separator: " · ")
         let fails = results.filter { $0.result == .fail }.map(\.titleSnapshot).joined(separator: " · ")
@@ -120,20 +115,20 @@ struct CleaningControlView: View {
 
     private var scopedCriticalities: [CleaningCriticality] {
         guard let rid = appState.activeRestaurantId else { return [] }
-        return criticalities.filter { $0.restaurantId == rid }
+        return dataStore.criticalities.filter { $0.restaurantId == rid }
     }
 
     private var cleaningTemplates: [ChecklistTemplate] {
         guard let rid = appState.activeRestaurantId else { return [] }
-        return checklistTemplates.filter {
-            $0.restaurantId == rid && $0.isActive && $0.isCleaningModule
+        return dataStore.checklistTemplates.filter {
+            $0.restaurantId == rid && $0.isActive && $0.matchesCleaningModuleFilter
         }
     }
 
     private var cleaningRuns: [ChecklistRun] {
         guard let rid = appState.activeRestaurantId else { return [] }
         let templateIds = Set(cleaningTemplates.map(\.id))
-        return checklistRuns.filter {
+        return dataStore.checklistRuns.filter {
             $0.restaurantId == rid && !$0.isArchived && templateIds.contains($0.templateId)
         }
     }
@@ -159,7 +154,51 @@ struct CleaningControlView: View {
         return CleaningSummary(completed: completed, total: relevant.count)
     }
 
+    private var hasOperationalContent: Bool {
+        !scopedTasks.isEmpty || !cleaningTemplates.isEmpty || !cleaningRuns.isEmpty || !scopedAreas.isEmpty
+    }
+
     var body: some View {
+        Group {
+            if dataStore.isLoading && !hasOperationalContent {
+                VStack(spacing: 16) {
+                    ProgressView()
+                    Text("Caricamento pulizie…")
+                        .font(.subheadline)
+                        .foregroundStyle(ThemeManager.shared.colorTextSecondary)
+                }
+                .frame(maxWidth: .infinity, minHeight: 280)
+            } else {
+                mainScrollContent
+            }
+        }
+        .overlay(alignment: .top) {
+            if dataStore.isRefreshingSupplementary {
+                ProgressView()
+                    .controlSize(.small)
+                    .padding(.top, 4)
+            }
+        }
+        .background(ThemeManager.shared.colorBackground.ignoresSafeArea())
+        .navigationTitle("Controllo pulizia")
+        .moduleScreenLoad(restaurantId: appState.activeRestaurantId) {
+            guard let rid = appState.activeRestaurantId else { return }
+            dataStore.reload(context: modelContext, restaurantId: rid)
+            scheduleDeferredMaintenance(restaurantId: rid)
+        }
+        .sheet(isPresented: $showCriticalitySheet) {
+            criticalitySheet
+        }
+        .sheet(isPresented: $showManageSheet) {
+            manageSheet
+        }
+        .masterAuthCover(coordinator: masterAuth, master: users.first(where: { $0.role == .master }))
+        .onDisappear {
+            maintenanceTask?.cancel()
+        }
+    }
+
+    private var mainScrollContent: some View {
         ScrollView {
             VStack(spacing: 14) {
                 ModuleScreenHeader(
@@ -170,7 +209,7 @@ struct CleaningControlView: View {
                 )
 
                 DashboardCardView(title: "Attività del giorno", subtitle: "Task da completare", help: ModuleHelpLibrary.sidebar(.cleaningControl)) {
-                if scopedTasks.isEmpty {
+                if !hasOperationalContent {
                     DashboardEmptyStateView(state: .init(
                         title: "Nessun task di pulizia disponibile",
                         message: canManageCleaning ? "Crea aree e task dal pulsante Gestione." : "Attendi che il responsabile configuri aree e task.",
@@ -209,6 +248,7 @@ struct CleaningControlView: View {
                         switch vm.selectedTab {
                         case .attivita:
                             CleaningDashboardView(
+                                areas: scopedAreas,
                                 runs: cleaningRuns,
                                 templates: cleaningTemplates,
                                 service: checklistService,
@@ -225,18 +265,6 @@ struct CleaningControlView: View {
             }
             .padding(24)
         }
-        .background(ThemeManager.shared.colorBackground.ignoresSafeArea())
-        .navigationTitle("Controllo pulizia")
-        .onAppear {
-            bootstrapTemplatesIfNeeded()
-        }
-        .sheet(isPresented: $showCriticalitySheet) {
-            criticalitySheet
-        }
-        .sheet(isPresented: $showManageSheet) {
-            manageSheet
-        }
-        .masterAuthCover(coordinator: masterAuth, master: users.first(where: { $0.role == .master }))
     }
 
     private var progressCard: some View {
@@ -307,10 +335,10 @@ struct CleaningControlView: View {
     private func areaChecklistHints(for areaName: String) -> [ChecklistTemplate] {
         guard let rid = appState.activeRestaurantId else { return [] }
         let engine = PeriodicTaskEngine()
-        return checklistTemplates.filter { template in
+        return dataStore.checklistTemplates.filter { template in
             guard template.restaurantId == rid, template.isActive, !template.isCleaningBridge else { return false }
             guard template.areaTag?.localizedCaseInsensitiveCompare(areaName) == .orderedSame else { return false }
-            guard let run = checklistRuns.first(where: { $0.templateId == template.id && !$0.isArchived }) else {
+            guard let run = dataStore.checklistRuns.first(where: { $0.templateId == template.id && !$0.isArchived }) else {
                 return true
             }
             let adapter = ChecklistRunPeriodicAdapter(
@@ -707,6 +735,11 @@ struct CleaningControlView: View {
         guard canUseCleaningConfig, let rid = appState.activeRestaurantId, let user = currentUser else { return }
         let name = newAreaName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty else { return }
+        let key = CleaningAreaGrouping.normalizeName(name)
+        guard !scopedAreas.contains(where: { CleaningAreaGrouping.normalizeName($0.name) == key }) else {
+            newAreaName = ""
+            return
+        }
         let area = CleaningArea(
             restaurantId: rid,
             name: name,
@@ -773,19 +806,63 @@ struct CleaningControlView: View {
         try? modelContext.save()
     }
 
-    private func bootstrapTemplatesIfNeeded() {
-        guard let rid = appState.activeRestaurantId, let user = currentUser else { return }
-        vm.service.ensureInitialTemplates(
-            restaurantId: rid,
-            user: user,
-            existingAreas: scopedAreas,
-            existingTasks: scopedTasks,
-            modelContext: modelContext
-        )
-        ensureRecordsForCurrentPeriod()
+    private func scheduleDeferredMaintenance(restaurantId: UUID) {
+        maintenanceTask?.cancel()
+        maintenanceTask = Task(priority: .utility) { @MainActor in
+            await MainThreadYield.awaitNavigationSettled {
+                ModuleNavigationCoordinator.shared.generation
+            }
+            try? await Task.sleep(nanoseconds: 350_000_000)
+            guard !Task.isCancelled, let user = currentUser else { return }
+
+            var didMutateStore = false
+
+            if RestaurantModuleBootstrap.shared.claimOnce(
+                restaurantId: restaurantId,
+                module: "cleaning-dedupe-areas"
+            ) {
+                let removedAreas = CleaningAreaGrouping.deduplicateInStore(
+                    restaurantId: restaurantId,
+                    areas: dataStore.areas,
+                    tasks: dataStore.tasks,
+                    modelContext: modelContext
+                )
+                let removedTasks = CleaningAreaGrouping.deduplicateTasksInStore(
+                    restaurantId: restaurantId,
+                    tasks: dataStore.tasks,
+                    modelContext: modelContext
+                )
+                didMutateStore = removedAreas > 0 || removedTasks > 0
+            }
+
+            if scopedTasks.isEmpty, !scopedAreas.isEmpty {
+                await vm.service.backfillSeedTasksIfNeeded(
+                    restaurantId: restaurantId,
+                    areas: scopedAreas,
+                    existingTasks: scopedTasks,
+                    user: user,
+                    modelContext: modelContext
+                )
+                didMutateStore = true
+            }
+
+            if didMutateStore {
+                dataStore.reload(context: modelContext, restaurantId: restaurantId, force: true)
+                guard !Task.isCancelled else { return }
+            }
+
+            guard RestaurantModuleBootstrap.shared.claimOnce(
+                restaurantId: restaurantId,
+                module: "cleaning-period-sync"
+            ) else { return }
+
+            await ensureRecordsForCurrentPeriodAsync()
+            guard !Task.isCancelled else { return }
+            dataStore.reload(context: modelContext, restaurantId: restaurantId, force: true)
+        }
     }
 
-    private func ensureRecordsForCurrentPeriod() {
+    private func ensureRecordsForCurrentPeriodAsync() async {
         guard let rid = appState.activeRestaurantId, let user = currentUser else { return }
         var cal = Calendar(identifier: .gregorian)
         cal.locale = Locale(identifier: "it_IT")
@@ -797,18 +874,30 @@ struct CleaningControlView: View {
             calendar: cal,
             modelContext: modelContext
         )
+        await MainThreadYield.betweenFetchPhases()
+
         cleaningBFF.ensureBridgeTemplates(
             restaurantId: rid,
             tasks: scopedTasks,
             user: user,
             modelContext: modelContext
         )
+        await MainThreadYield.betweenFetchPhases()
+
         checklistService.syncScheduledRuns(
             restaurantId: rid,
             user: user,
-            modelContext: modelContext
+            modelContext: modelContext,
+            onlyCleaningBridge: true
         )
-        for task in scopedTasks where task.restaurantId == rid && task.isActive {
+        await MainThreadYield.betweenFetchPhases()
+
+        let activeTasks = scopedTasks.filter { $0.restaurantId == rid && $0.isActive }
+        for (index, task) in activeTasks.enumerated() {
+            if index > 0, index % 4 == 0 {
+                await MainThreadYield.betweenFetchPhases()
+                guard !Task.isCancelled else { return }
+            }
             _ = vm.service.ensureRecordForCurrentPeriod(
                 task: task,
                 restaurantId: rid,
@@ -818,7 +907,13 @@ struct CleaningControlView: View {
                 modelContext: modelContext
             )
         }
-        try? modelContext.save()
+        modelContext.saveSafely(operation: "cleaning-period-records")
+    }
+
+    private func ensureRecordsForCurrentPeriod() {
+        Task { @MainActor in
+            await ensureRecordsForCurrentPeriodAsync()
+        }
     }
 
     private func syncCleaningSchedule() {
@@ -832,8 +927,9 @@ struct CleaningControlView: View {
         checklistService.syncScheduledRuns(
             restaurantId: rid,
             user: user,
-            modelContext: modelContext
+            modelContext: modelContext,
+            onlyCleaningBridge: true
         )
-        try? modelContext.save()
+        dataStore.reload(context: modelContext, restaurantId: rid, force: true)
     }
 }

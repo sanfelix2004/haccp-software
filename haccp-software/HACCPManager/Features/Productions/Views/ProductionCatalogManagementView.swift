@@ -10,11 +10,9 @@ struct ProductionCatalogManagementView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.theme) private var theme
     @EnvironmentObject var appState: AppState
+    @EnvironmentObject private var session: RestaurantSessionContext
 
-    @Query private var users: [LocalUser]
-    @Query private var categories: [ProductionCategory]
-    @Query private var productions: [Production]
-    @Query private var blastRecords: [BlastChillingRecord]
+    @ObservedObject private var dataStore = ModuleStoreRegistry.shared.productionCatalog
 
     @State private var selectedCategoryId: UUID?
     @State private var selectedProduction: Production?
@@ -26,40 +24,24 @@ struct ProductionCatalogManagementView: View {
     @State private var shelfLifeDays = 3
     @State private var errorMessage: String?
     @State private var masterAuth = MasterAuthCoordinator()
+    @State private var presentation = ProductionCatalogPresentation.empty
 
     private let service = BlastChillingService()
-    private let libraryService = ProductionLibraryService()
 
     private var scopedCategories: [ProductionCategory] {
-        guard let rid = appState.activeRestaurantId else { return [] }
-        return categories.filter { $0.restaurantId == rid }.sorted { $0.orderIndex < $1.orderIndex }
+        dataStore.categories
     }
 
     private var scopedProductions: [Production] {
-        guard let rid = appState.activeRestaurantId else { return [] }
-        return productions.filter { $0.restaurantId == rid }
+        dataStore.productions
     }
 
-    private var scopedBlastRecords: [BlastChillingRecord] {
-        guard let rid = appState.activeRestaurantId else { return [] }
-        return blastRecords.filter { $0.restaurantId == rid }
-    }
-
-    private var categoryOrderById: [UUID: Int] {
-        Dictionary(uniqueKeysWithValues: scopedCategories.map { ($0.id, $0.orderIndex) })
-    }
-
-    private var filteredProductions: [Production] {
-        if let selectedCategoryId {
-            return scopedProductions
-                .filter { $0.categoryId == selectedCategoryId }
-                .sorted(by: productionNameSort)
-        }
-        return scopedProductions.sorted(by: productionCategorySort)
+    private var visibleProductions: [Production] {
+        presentation.flatProductions
     }
 
     private var currentUser: LocalUser? {
-        users.first { $0.id == appState.currentUserId }
+        session.currentUser
     }
 
     private var permissions: UserPermissions { currentUser.permissions }
@@ -73,6 +55,9 @@ struct ProductionCatalogManagementView: View {
                     actionTitle: nil
                 ))
                 .padding(theme.spacing.screenPadding)
+            } else if dataStore.isLoading && scopedProductions.isEmpty && scopedCategories.isEmpty {
+                ProgressView("Caricamento catalogo…")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 catalogScroll
             }
@@ -80,8 +65,19 @@ struct ProductionCatalogManagementView: View {
         .background(theme.colorBackground.ignoresSafeArea())
         .navigationTitle(embeddedInSettings ? "" : "Catalogo piatti")
         .haccpControlTint()
-        .onAppear(perform: ensureDefaults)
-        .onChange(of: appState.activeRestaurantId) { _, _ in ensureDefaults() }
+        .moduleScreenLoad(restaurantId: appState.activeRestaurantId) {
+            guard let rid = appState.activeRestaurantId else { return }
+            dataStore.reload(context: modelContext, restaurantId: rid)
+        }
+        .onChange(of: dataStore.dataRevision) { _, _ in
+            rebuildPresentation()
+        }
+        .onChange(of: selectedCategoryId) { _, _ in
+            rebuildPresentation()
+        }
+        .onAppear {
+            rebuildPresentation()
+        }
         .sheet(isPresented: $showAddSheet) {
             productionEditor(title: "Nuovo piatto", production: nil)
         }
@@ -90,7 +86,7 @@ struct ProductionCatalogManagementView: View {
                 productionEditor(title: "Modifica piatto", production: production)
             }
         }
-        .masterAuthCover(coordinator: masterAuth, master: users.first(where: { $0.role == .master }))
+        .masterAuthCover(coordinator: masterAuth, master: session.masterUser)
         .alert("Catalogo piatti", isPresented: Binding(get: { errorMessage != nil }, set: { _ in errorMessage = nil })) {
             Button("OK", role: .cancel) {}
         } message: {
@@ -122,11 +118,11 @@ struct ProductionCatalogManagementView: View {
                             selectedBanner(selected)
                         }
 
-                        Text("\(filteredProductions.count) piatti")
+                        Text("\(visibleProductions.count) piatti")
                             .font(theme.typography.caption)
                             .foregroundStyle(theme.colorTextSecondary)
 
-                        if filteredProductions.isEmpty {
+                        if visibleProductions.isEmpty {
                             DashboardEmptyStateView(state: .init(
                                 title: "Catalogo vuoto",
                                 message: "Aggiungi il primo piatto per questa categoria.",
@@ -136,11 +132,8 @@ struct ProductionCatalogManagementView: View {
                             }
                         } else {
                             ProductionSelectionGridView(
-                                productions: filteredProductions,
-                                categories: scopedCategories,
-                                recentProductionIds: [],
+                                layout: presentation,
                                 selectedProductionId: selectedProduction?.id,
-                                groupsByCategory: selectedCategoryId == nil,
                                 onSelect: { selectedProduction = $0 }
                             )
                         }
@@ -277,6 +270,14 @@ struct ProductionCatalogManagementView: View {
         }
     }
 
+    private func rebuildPresentation() {
+        presentation = ProductionCatalogPresentation.build(
+            categories: scopedCategories,
+            productions: scopedProductions,
+            selectedCategoryId: selectedCategoryId
+        )
+    }
+
     private func requestAdd() {
         masterAuth.request(permission: .manageProductionLibrary, permissions: permissions) {
             newProductionName = ""
@@ -301,16 +302,6 @@ struct ProductionCatalogManagementView: View {
         masterAuth.request(permission: .manageProductionLibrary, permissions: permissions) {
             deleteProduction(production)
         }
-    }
-
-    private func ensureDefaults() {
-        guard let rid = appState.activeRestaurantId else { return }
-        libraryService.ensureDefaults(
-            restaurantId: rid,
-            categories: categories,
-            productions: productions,
-            modelContext: modelContext
-        )
     }
 
     private func saveProduction(_ production: Production?) {
@@ -345,6 +336,9 @@ struct ProductionCatalogManagementView: View {
             showAddSheet = false
             showEditSheet = false
             newProductionName = ""
+            if let rid = appState.activeRestaurantId {
+                dataStore.reload(context: modelContext, restaurantId: rid, force: true)
+            }
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -354,23 +348,14 @@ struct ProductionCatalogManagementView: View {
         do {
             try service.deleteProductionIfUnused(
                 production,
-                records: scopedBlastRecords,
                 modelContext: modelContext
             )
             selectedProduction = nil
+            if let rid = appState.activeRestaurantId {
+                dataStore.reload(context: modelContext, restaurantId: rid, force: true)
+            }
         } catch {
             errorMessage = error.localizedDescription
         }
-    }
-
-    private func productionNameSort(_ lhs: Production, _ rhs: Production) -> Bool {
-        lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
-    }
-
-    private func productionCategorySort(_ lhs: Production, _ rhs: Production) -> Bool {
-        let lhsOrder = categoryOrderById[lhs.categoryId] ?? Int.max
-        let rhsOrder = categoryOrderById[rhs.categoryId] ?? Int.max
-        if lhsOrder != rhsOrder { return lhsOrder < rhsOrder }
-        return productionNameSort(lhs, rhs)
     }
 }

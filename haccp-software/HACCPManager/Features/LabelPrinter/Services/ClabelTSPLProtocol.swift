@@ -1,33 +1,20 @@
 import Foundation
 
-/// TSPL / TSPL2 — protocollo tipico stampanti CLABEL desktop (S1, CT320, ecc.).
+/// TSPL / TSPL2 — protocollo tipico stampanti CLABEL S1 (Bluetooth termica).
 enum ClabelTSPLProtocol {
 
-    static let widthMM = 50
-    static let heightMM = 30
-    static let gapMM = 3
-
-    private static var setupHeader: String {
-        """
-        SET TEAR ON\r\n\
-        SET PEEL OFF\r\n\
-        SET CUTTER OFF\r\n\
-        CODEPAGE 1252\r\n
-        """
-    }
-
-    static func buildBitmapJob(raster: Data, widthBytes: Int, heightDots: Int) -> Data {
+    static func buildBitmapJob(raster: Data, spec: ClabelLabelSpec) -> Data {
         var payload = Data()
         payload.append(ascii(setupHeader))
         payload.append(ascii("""
-        SIZE \(widthMM) mm,\(heightMM) mm\r\n\
-        GAP \(gapMM) mm,0 mm\r\n\
+        SIZE \(spec.widthMM) mm,\(spec.heightMM) mm\r\n\
+        GAP \(spec.gapMM) mm,0 mm\r\n\
         DIRECTION 1,0\r\n\
         REFERENCE 0,0\r\n\
         DENSITY 10\r\n\
         SPEED 4\r\n\
         CLS\r\n\
-        BITMAP 0,0,\(widthBytes),\(heightDots),0,
+        BITMAP 0,0,\(spec.widthBytes),\(spec.heightDots),0,
         """))
         payload.append(raster)
         payload.append(ascii("\r\nPRINT 1,1\r\n"))
@@ -39,93 +26,82 @@ enum ClabelTSPLProtocol {
         settings: LabelPrinterSettings,
         restaurantName: String? = nil
     ) -> Data {
+        let spec = settings.labelSpec
+        let profile = spec.layout
         var data = Data()
         data.append(ascii("""
         SET TEAR ON\r\n\
         SET PEEL OFF\r\n\
         SET CUTTER OFF\r\n\
         CODEPAGE 1252\r\n\
-        SIZE \(widthMM) mm,\(heightMM) mm\r\n\
-        GAP \(gapMM) mm,0 mm\r\n\
+        SIZE \(spec.widthMM) mm,\(spec.heightMM) mm\r\n\
+        GAP \(spec.gapMM) mm,0 mm\r\n\
         DIRECTION 1,0\r\n\
         CLS\r\n
         """))
 
         let payload = LabelQRCodeLayout.payload(for: label, restaurantName: restaurantName)
         let qrCell = settings.showQRCode
-            ? LabelQRCodeLayout.clampedCellSize(settings.qrCellSize, payload: payload, corner: settings.qrCorner)
+            ? LabelQRCodeLayout.clampedCellSize(settings.qrCellSize, payload: payload, settings: settings, corner: settings.qrCorner)
             : settings.qrCellSize
         let textInset = settings.showQRCode
-            ? LabelQRCodeLayout.reservedColumnDots(cellSize: qrCell, payload: payload, corner: settings.qrCorner)
+            ? LabelQRCodeLayout.reservedColumnDots(cellSize: qrCell, payload: payload, settings: settings, corner: settings.qrCorner)
             : 0
-        let textX = settings.qrCorner.reservesLeftColumn ? 12 + textInset : 12
+        let textX = settings.qrCorner.reservesLeftColumn ? profile.tsplTextX + textInset : profile.tsplTextX
 
-        var y = 16
-        if settings.showProductName {
-            data.append(ascii("TEXT \(textX),\(y),\"3\",0,1,1,\"\(tsplEscape(label.productName.uppercased()))\"\r\n"))
-            y += 36
-        }
-        if settings.showLotNumber, let lot = label.lotCode, !lot.isEmpty {
-            data.append(ascii("TEXT \(textX),\(y),\"2\",0,1,1,\"Lotto \(tsplEscape(lot))\"\r\n"))
-            y += 28
-        }
-        if settings.showPrepDate {
-            let d = label.productionDate.formatted(date: .abbreviated, time: .omitted)
-            data.append(ascii("TEXT \(textX),\(y),\"1\",0,1,1,\"Prod. \(tsplEscape(d))\"\r\n"))
-            y += 24
-        }
-        if settings.showExpiryDate {
-            let d = label.expiryDate.formatted(date: .abbreviated, time: .omitted)
-            data.append(ascii("TEXT \(textX),\(y),\"1\",0,1,1,\"Scad. \(tsplEscape(d))\"\r\n"))
-            y += 24
-        }
-        if settings.showOperatorName {
-            data.append(ascii("TEXT \(textX),\(y),\"1\",0,1,1,\"Op. \(tsplEscape(label.createdByNameSnapshot))\"\r\n"))
-            y += 24
-        }
-        if settings.showAllergenWarning, !label.allergenList.isEmpty {
-            let text = label.allergenList.joined(separator: ", ")
-            data.append(ascii("TEXT \(textX),\(y),\"1\",0,1,1,\"All: \(tsplEscape(text))\"\r\n"))
+        var y = 12
+        let step = max(18, profile.tsplDetailYStep - 2)
+        for line in ProductionLabelPrintContent.printLines(for: label, settings: settings, restaurantName: restaurantName) {
+            guard y < spec.heightDots - 20 else { break }
+            let font = line.bold ? profile.tsplProductFont : profile.tsplDetailFont
+            data.append(ascii("TEXT \(textX),\(y),\"\(font)\",0,1,1,\"\(tsplEscape(line.text))\"\r\n"))
+            y += line.bold ? profile.tsplProductYStep : step
         }
 
         if settings.showQRCode {
-            appendNativeQR(
-                to: &data,
-                payload: payload,
-                settings: settings,
-                cell: qrCell
-            )
+            appendNativeQR(to: &data, payload: payload, settings: settings, cell: qrCell, spec: spec)
         }
 
         data.append(ascii("PRINT 1,1\r\n"))
         return data
     }
 
-    static func buildTestJob() -> Data {
-        ascii(setupHeader + """
-        SIZE \(widthMM) mm,\(heightMM) mm\r\n\
-        GAP \(gapMM) mm,0 mm\r\n\
+    static func buildTestJob(spec: ClabelLabelSpec = ClabelLabelDimensions.defaultSpec) -> Data {
+        let qrX = spec.size == .mm40x30 ? 170 : 220
+        return ascii(setupHeader + """
+        SIZE \(spec.widthMM) mm,\(spec.heightMM) mm\r\n\
+        GAP \(spec.gapMM) mm,0 mm\r\n\
         DIRECTION 1,0\r\n\
         CLS\r\n\
-        TEXT 40,80,\"4\",0,1,1,\"HACCP TEST\"\r\n\
-        TEXT 20,140,\"2\",0,1,1,\"CLABEL 50x30\"\r\n\
-        QRCODE 220,40,L,4,A,0,\"HC2|TEST|Prodotto|L001|2026-06-13|2026-06-15\"\r\n\
+        TEXT 12,70,\"3\",0,1,1,\"HACCP TEST\"\r\n\
+        TEXT 12,120,\"2\",0,1,1,\"CLABEL S1 \(spec.widthMM)x\(spec.heightMM)\"\r\n\
+        QRCODE \(qrX),36,L,\(spec.layout.preferredQRCell),A,0,\"HACCP%0AProdotto: Test%0ALotto: L001%0AProd: 10/07/26%0AScad: 12/07/26\"\r\n\
         PRINT 1,1\r\n
         """)
     }
 
-    /// QRCODE nativo TSPL — stampa moduli nitidi, senza bordo nero del bitmap.
+    private static var setupHeader: String {
+        """
+        SET TEAR ON\r\n\
+        SET PEEL OFF\r\n\
+        SET CUTTER OFF\r\n\
+        CODEPAGE 1252\r\n
+        """
+    }
+
     private static func appendNativeQR(
         to data: inout Data,
         payload: String,
         settings: LabelPrinterSettings,
-        cell: Int
+        cell: Int,
+        spec: ClabelLabelSpec
     ) {
         let qrSize = LabelQRCodeLayout.printSizeDots(cellSize: cell, payload: payload)
         let (qx, qy) = settings.qrCorner.origin(
-            labelWidth: ClabelLabelDimensions.widthDots,
-            labelHeight: ClabelLabelDimensions.heightDots,
-            qrBox: qrSize
+            labelWidth: spec.widthDots,
+            labelHeight: spec.heightDots,
+            qrBox: qrSize,
+            margin: spec.layout.qrMarginDots
         )
         data.append(ascii(
             "QRCODE \(qx),\(qy),L,\(cell),A,\(settings.qrRotation.rawValue),\"\(tsplEscape(payload))\"\r\n"

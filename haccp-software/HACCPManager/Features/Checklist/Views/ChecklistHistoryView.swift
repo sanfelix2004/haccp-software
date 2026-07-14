@@ -4,6 +4,7 @@ struct ChecklistHistoryView: View {
     let runs: [ChecklistRun]
     let templates: [ChecklistTemplate]
     @ObservedObject var vm: ChecklistHistoryViewModel
+    var onOpenRun: ((ChecklistRun) -> Void)? = nil
 
     @Environment(\.theme) private var theme
 
@@ -49,12 +50,20 @@ struct ChecklistHistoryView: View {
                 } else {
                     LazyVStack(spacing: 10) {
                         ForEach(filtered) { run in
-                            historyRow(run)
+                            if let onOpenRun {
+                                Button {
+                                    onOpenRun(run)
+                                } label: {
+                                    historyRow(run)
+                                }
+                                .buttonStyle(.plain)
+                            } else {
+                                historyRow(run)
+                            }
                         }
                     }
                 }
             }
-            .padding(theme.spacing.screenPadding)
         }
     }
 

@@ -5,9 +5,7 @@ struct OilControlView: View {
     @Environment(\.modelContext) private var modelContext
     @EnvironmentObject var appState: AppState
     @Query private var users: [LocalUser]
-    @Query private var points: [OilPoint]
-    @Query private var records: [OilControlRecord]
-    @Query private var alerts: [OilControlAlert]
+    @ObservedObject private var dataStore = ModuleStoreRegistry.shared.oilControl
     @StateObject private var vm = OilControlViewModel()
     @State private var masterAuth = MasterAuthCoordinator()
     @State private var pendingMasterAction: MasterAction?
@@ -31,19 +29,19 @@ struct OilControlView: View {
 
     private var scopedPoints: [OilPoint] {
         guard let rid = appState.activeRestaurantId else { return [] }
-        return points
+        return dataStore.points
             .filter { $0.restaurantId == rid && $0.isActive }
             .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
 
     private var scopedRecords: [OilControlRecord] {
         guard let rid = appState.activeRestaurantId else { return [] }
-        return records.filter { $0.restaurantId == rid }.sorted(by: { $0.checkedAt > $1.checkedAt })
+        return dataStore.records.filter { $0.restaurantId == rid }.sorted(by: { $0.checkedAt > $1.checkedAt })
     }
 
     private var scopedAlerts: [OilControlAlert] {
         guard let rid = appState.activeRestaurantId else { return [] }
-        return alerts.filter { $0.restaurantId == rid }
+        return dataStore.alerts.filter { $0.restaurantId == rid }
     }
 
     private var filteredHistory: [OilControlRecord] {
@@ -106,8 +104,13 @@ struct OilControlView: View {
         }
         .background(ThemeManager.shared.colorBackground.ignoresSafeArea())
         .navigationTitle("Controllo olio")
-        .onAppear { ensureDefaults() }
-        .onChange(of: appState.activeRestaurantId) { _, _ in ensureDefaults() }
+        .moduleScreenLoad(restaurantId: appState.activeRestaurantId) {
+            guard let rid = appState.activeRestaurantId else { return }
+            dataStore.reload(context: modelContext, restaurantId: rid)
+            RestaurantModuleBootstrap.shared.runOnce(restaurantId: rid, module: "oil-defaults") {
+                ensureDefaults()
+            }
+        }
         .sheet(isPresented: $vm.showCheckSheet) {
             if let point = vm.selectedPoint,
                let rid = appState.activeRestaurantId,
@@ -272,7 +275,7 @@ struct OilControlView: View {
         vm.service.ensureDefaultPoints(
             restaurantId: rid,
             user: user,
-            existingPoints: points,
+            existingPoints: scopedPoints,
             modelContext: modelContext
         )
     }
@@ -324,7 +327,7 @@ struct OilControlView: View {
                 try vm.service.updatePoint(
                     point,
                     name: vm.newPointName,
-                    existingPoints: points,
+                    existingPoints: scopedPoints,
                     modelContext: modelContext
                 )
             } else {
@@ -332,7 +335,7 @@ struct OilControlView: View {
                     name: vm.newPointName,
                     restaurantId: rid,
                     user: user,
-                    existingPoints: points,
+                    existingPoints: scopedPoints,
                     modelContext: modelContext
                 )
             }

@@ -3,6 +3,7 @@ import SwiftUI
 struct HistoryRecordCard: View, Equatable {
     let entry: HistoryEntry
     var isLastInSection: Bool = false
+    var onPendingClosure: ((UUID) -> Void)? = nil
 
     static func == (lhs: HistoryRecordCard, rhs: HistoryRecordCard) -> Bool {
         lhs.entry == rhs.entry && lhs.isLastInSection == rhs.isLastInSection
@@ -43,14 +44,32 @@ struct HistoryRecordCard: View, Equatable {
     @ViewBuilder
     private var standardCard: some View {
         VStack(alignment: .leading, spacing: 10) {
-            header(showExpandHint: !entry.details.isEmpty)
-            if isExpanded, !entry.details.isEmpty {
+            header(showExpandHint: entry.requiresClosureAction || !entry.details.isEmpty)
+            if entry.requiresClosureAction {
+                Button {
+                    if let recordId = entry.pendingTraceabilityRecordId {
+                        onPendingClosure?(recordId)
+                    }
+                } label: {
+                    Label("Registra usato o scartato", systemImage: "hand.tap.fill")
+                        .font(theme.typography.caption.weight(.semibold))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                }
+                .buttonStyle(.borderedProminent)
+            } else if isExpanded, !entry.details.isEmpty {
                 detailsGrid
                     .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
         .contentShape(Rectangle())
         .onTapGesture {
+            if entry.requiresClosureAction {
+                if let recordId = entry.pendingTraceabilityRecordId {
+                    onPendingClosure?(recordId)
+                }
+                return
+            }
             guard !entry.details.isEmpty else { return }
             withAnimation(.spring(response: 0.28, dampingFraction: 0.86)) {
                 isExpanded.toggle()

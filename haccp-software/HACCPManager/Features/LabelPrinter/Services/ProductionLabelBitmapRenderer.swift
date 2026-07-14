@@ -7,20 +7,24 @@ enum ProductionLabelBitmapRenderer {
         settings: LabelPrinterSettings,
         restaurantName: String? = nil
     ) -> Data {
-        let width = ClabelLabelDimensions.printHeadWidthDots
-        let height = ClabelLabelDimensions.heightDots
-        let widthBytes = ClabelLabelDimensions.widthBytes
+        let spec = settings.labelSpec
+        let profile = spec.layout
+        let width = spec.widthDots
+        let height = spec.heightDots
+        let widthBytes = spec.widthBytes
 
         let payload = LabelQRCodeLayout.payload(for: label, restaurantName: restaurantName)
         let cell = LabelQRCodeLayout.clampedCellSize(
             settings.qrCellSize,
             payload: payload,
+            settings: settings,
             corner: settings.qrCorner
         )
         let qrReserve = settings.showQRCode && settings.qrCorner.reservesHorizontalColumn
             ? CGFloat(LabelQRCodeLayout.reservedColumnDots(
                 cellSize: cell,
                 payload: payload,
+                settings: settings,
                 corner: settings.qrCorner
             ))
             : 0
@@ -31,66 +35,54 @@ enum ProductionLabelBitmapRenderer {
             UIColor.white.setFill()
             ctx.fill(CGRect(x: 0, y: 0, width: width, height: height))
 
-            var y: CGFloat = 8
-            let left: CGFloat = settings.qrCorner.reservesLeftColumn ? 10 + qrReserve : 10
-            let maxTextWidth = CGFloat(width) - left - (settings.qrCorner.reservesRightColumn ? qrReserve : 0) - 6
+            let left: CGFloat = settings.qrCorner.reservesLeftColumn
+                ? profile.contentPadding + qrReserve
+                : profile.contentPadding
+            let maxTextWidth = CGFloat(width) - left
+                - (settings.qrCorner.reservesRightColumn ? qrReserve : 0)
+                - profile.contentPadding
 
-            func draw(_ text: String, font: UIFont, bold: Bool = false) {
-                guard !text.isEmpty else { return }
-                guard y < CGFloat(height) - 6 else { return }
-                let f = bold ? UIFont.boldSystemFont(ofSize: font.pointSize) : font
+            let lines = ProductionLabelPrintContent.fittingPrintLines(
+                for: label,
+                settings: settings,
+                restaurantName: restaurantName,
+                maxHeight: CGFloat(height),
+                maxTextWidth: maxTextWidth
+            )
+
+            var y: CGFloat = profile.contentPadding
+            for line in lines {
+                guard y < CGFloat(height) - profile.contentPadding else { break }
+                let font = line.bold
+                    ? UIFont.boldSystemFont(ofSize: line.fontSize)
+                    : UIFont.systemFont(ofSize: line.fontSize)
                 let attrs: [NSAttributedString.Key: Any] = [
-                    .font: f,
+                    .font: font,
                     .foregroundColor: UIColor.black
                 ]
-                let remainingHeight = CGFloat(height) - y - 4
-                guard remainingHeight > 4 else { return }
+                let remainingHeight = CGFloat(height) - y - profile.contentPadding
+                guard remainingHeight > 4 else { break }
                 let rect = CGRect(x: left, y: y, width: maxTextWidth, height: remainingHeight)
-                let bounding = (text as NSString).boundingRect(
+                let bounding = (line.text as NSString).boundingRect(
                     with: CGSize(width: maxTextWidth, height: remainingHeight),
                     options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine],
                     attributes: attrs,
                     context: nil
                 )
-                (text as NSString).draw(
+                (line.text as NSString).draw(
                     with: rect,
                     options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine],
                     attributes: attrs,
                     context: nil
                 )
-                y += min(max(bounding.height, f.lineHeight), remainingHeight) + 2
-            }
-
-            draw("HACCP", font: .boldSystemFont(ofSize: 9))
-            if settings.showProductName {
-                draw(label.productName.uppercased(), font: .boldSystemFont(ofSize: 14), bold: true)
-            }
-            if settings.showLotNumber, let lot = label.lotCode, !lot.isEmpty {
-                draw("Lotto \(lot)", font: .systemFont(ofSize: 10))
-            }
-            if settings.showPrepDate {
-                let d = label.productionDate.formatted(date: .abbreviated, time: .omitted)
-                draw("Prod. \(d)", font: .systemFont(ofSize: 10))
-            }
-            if settings.showExpiryDate {
-                let d = label.expiryDate.formatted(date: .abbreviated, time: .omitted)
-                draw("Scad. \(d)", font: .systemFont(ofSize: 10))
-            }
-            if settings.showOperatorName {
-                draw("Op. \(label.createdByNameSnapshot)", font: .systemFont(ofSize: 9))
-            }
-            if settings.showAllergenWarning, !label.allergenList.isEmpty {
-                draw("Allergeni: \(label.allergenList.joined(separator: ", "))", font: .systemFont(ofSize: 8))
-            }
-            if let storage = label.storageInstructions, !storage.isEmpty {
-                draw(storage, font: .systemFont(ofSize: 8))
+                y += min(max(bounding.height, font.lineHeight), remainingHeight) + profile.lineGap
             }
 
             if settings.showQRCode,
                let qr = ProductionLabelQRService.image(
                    from: payload,
                    dimension: CGFloat(max(
-                       LabelQRCodeLayout.minPrintDots,
+                       profile.minPrintDots,
                        LabelQRCodeLayout.printSizeDots(cellSize: cell, payload: payload)
                    ))
                ) {

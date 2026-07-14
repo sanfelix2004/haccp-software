@@ -15,23 +15,24 @@ struct TraceabilityFetchedData {
     var defrostRecords: [DefrostRecord] = []
     var lottoFotos: [LottoFoto] = []
     var lottoProductionLinks: [LottoFotoProductionLink] = []
+    var batches: [ProduzioneBatch] = []
+    var ingredientiTracciati: [IngredienteTracciato] = []
 }
 
 enum TraceabilityDataFetcher {
 
-    static func fetch(context: ModelContext, restaurantId: UUID) -> TraceabilityFetchedData {
+    /// Fetch con yield tra le fasi per cedere frame UI durante reload.
+    static func fetchAsync(context: ModelContext, restaurantId: UUID) async -> TraceabilityFetchedData {
         let rid = restaurantId
-
         let recordLimit = PerformanceConfig.traceabilityActiveFetchLimit
-
         var data = TraceabilityFetchedData()
+
         var recordDescriptor = FetchDescriptor<TraceabilityRecord>(
             predicate: #Predicate { $0.restaurantId == rid && !$0.isArchived },
             sortBy: [SortDescriptor(\TraceabilityRecord.createdAt, order: .reverse)]
         )
         recordDescriptor.fetchLimit = recordLimit
         let fetched = (try? context.fetch(recordDescriptor)) ?? []
-        // Esclude batch produzione finiti (restano collegati via produzioneBatchId).
         data.records = fetched.filter { $0.produzioneBatchId == nil }
         var didMigratePartialStatus = false
         for record in data.records where record.productStatusRaw == "PARTIALLY_USED" {
@@ -41,6 +42,7 @@ enum TraceabilityDataFetcher {
         if didMigratePartialStatus {
             context.saveSafely(operation: "traceability-status-migration")
         }
+        await Task.yield()
 
         var productionDescriptor = FetchDescriptor<Production>(
             predicate: #Predicate { $0.restaurantId == rid },
@@ -48,6 +50,24 @@ enum TraceabilityDataFetcher {
         )
         productionDescriptor.fetchLimit = 300
         data.productions = (try? context.fetch(productionDescriptor)) ?? []
+        let productionIds = Set(data.productions.map(\.id))
+
+        var batchDescriptor = FetchDescriptor<ProduzioneBatch>(
+            predicate: #Predicate { $0.restaurantId == rid && !$0.isArchived },
+            sortBy: [SortDescriptor(\ProduzioneBatch.producedAt, order: .reverse)]
+        )
+        batchDescriptor.fetchLimit = 300
+        data.batches = (try? context.fetch(batchDescriptor)) ?? []
+        await Task.yield()
+
+        var trackedDescriptor = FetchDescriptor<IngredienteTracciato>(
+            predicate: #Predicate { $0.restaurantId == rid },
+            sortBy: [SortDescriptor(\IngredienteTracciato.sequenceIndex)]
+        )
+        trackedDescriptor.fetchLimit = 1200
+        let batchIds = Set(data.batches.map(\.id))
+        data.ingredientiTracciati = ((try? context.fetch(trackedDescriptor)) ?? [])
+            .filter { batchIds.contains($0.produzioneBatchId) }
 
         var lottoDescriptor = FetchDescriptor<LottoFoto>(
             predicate: #Predicate { $0.restaurantId == rid && !$0.isArchived },
@@ -56,12 +76,14 @@ enum TraceabilityDataFetcher {
         lottoDescriptor.fetchLimit = recordLimit * 2
         data.lottoFotos = ((try? context.fetch(lottoDescriptor)) ?? []).filter(\.isConfirmed)
 
+        let lottoFotoIds = Set(data.lottoFotos.map(\.id))
         data.lottoProductionLinks = ((try? context.fetch(FetchDescriptor<LottoFotoProductionLink>())) ?? [])
             .filter { link in
-                data.lottoFotos.contains(where: { $0.id == link.lottoFotoId })
+                productionIds.contains(link.productionId) || lottoFotoIds.contains(link.lottoFotoId)
             }
+        await Task.yield()
 
-        let recordIds = Set(data.records.map(\.id))
+        var recordIds = Set(data.records.map(\.id))
 
         var defrostDescriptor = FetchDescriptor<DefrostRecord>(
             predicate: #Predicate { $0.restaurantId == rid && !$0.isArchived },
@@ -70,11 +92,28 @@ enum TraceabilityDataFetcher {
         defrostDescriptor.fetchLimit = 200
         data.defrostRecords = (try? context.fetch(defrostDescriptor)) ?? []
 
-        guard !recordIds.isEmpty else { return data }
-
         var linkDescriptor = FetchDescriptor<TraceabilityLink>()
         linkDescriptor.fetchLimit = recordLimit * 4
-        data.links = ((try? context.fetch(linkDescriptor)) ?? []).filter { recordIds.contains($0.receivedItemId) }
+        data.links = ((try? context.fetch(linkDescriptor)) ?? []).filter { link in
+            recordIds.contains(link.receivedItemId) || productionIds.contains(link.productionId)
+        }
+
+        let linkedRecordIds = Set(data.links.map(\.receivedItemId))
+        let missingRecordIds = linkedRecordIds.subtracting(recordIds)
+        if !missingRecordIds.isEmpty {
+            var supplementalDescriptor = FetchDescriptor<TraceabilityRecord>(
+                predicate: #Predicate { $0.restaurantId == rid && !$0.isArchived },
+                sortBy: [SortDescriptor(\TraceabilityRecord.createdAt, order: .reverse)]
+            )
+            supplementalDescriptor.fetchLimit = recordLimit
+            let supplemental = ((try? context.fetch(supplementalDescriptor)) ?? [])
+                .filter { missingRecordIds.contains($0.id) && $0.produzioneBatchId == nil }
+            data.records.append(contentsOf: supplemental)
+            recordIds.formUnion(supplemental.map(\.id))
+        }
+        await Task.yield()
+
+        guard !recordIds.isEmpty else { return data }
 
         var logDescriptor = FetchDescriptor<TraceabilityLog>(
             sortBy: [SortDescriptor(\TraceabilityLog.timestamp, order: .reverse)]

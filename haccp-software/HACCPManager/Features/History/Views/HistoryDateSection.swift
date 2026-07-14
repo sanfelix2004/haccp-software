@@ -3,6 +3,7 @@ import SwiftUI
 struct HistoryDateSection: View {
     let date: Date
     let entries: [HistoryEntry]
+    var onPendingClosure: ((UUID) -> Void)? = nil
 
     @Environment(\.theme) private var theme
 
@@ -29,7 +30,8 @@ struct HistoryDateSection: View {
             ForEach(Array(entries.enumerated()), id: \.element.id) { index, entry in
                 HistoryRecordCard(
                     entry: entry,
-                    isLastInSection: index == entries.count - 1
+                    isLastInSection: index == entries.count - 1,
+                    onPendingClosure: onPendingClosure
                 )
                 .equatable()
             }

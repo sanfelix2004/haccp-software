@@ -23,6 +23,62 @@ struct DashboardMetrics: Equatable {
 enum DashboardMetricsFetcher {
 
     static func fetch(context: ModelContext, restaurantId: UUID) -> DashboardMetrics {
+        fetchSync(context: context, restaurantId: restaurantId)
+    }
+
+    static func fetchAsync(context: ModelContext, restaurantId: UUID) async -> DashboardMetrics {
+        await MainThreadYield.beforeHeavyWork()
+        var metrics = DashboardMetrics()
+        let limit = PerformanceConfig.dashboardSampleLimit
+
+        metrics.activeAlerts = countActiveAlerts(context, restaurantId: restaurantId, limit: limit)
+        await MainThreadYield.betweenFetchPhases()
+        metrics.temperatureAlerts = countTemperatureAlerts(context, restaurantId: restaurantId, limit: limit)
+        await MainThreadYield.betweenFetchPhases()
+        metrics.openTasks = count(
+            context,
+            restaurantId: restaurantId,
+            limit: limit,
+            type: ChecklistRun.self
+        ) { runs in
+            runs.filter {
+                !$0.isArchived && ($0.status == .notStarted || $0.status == .inProgress || $0.status == .overdue)
+            }.count
+        }
+        await MainThreadYield.betweenFetchPhases()
+        metrics.traceabilityCount = countActive(
+            context,
+            restaurantId: restaurantId,
+            limit: limit,
+            type: TraceabilityRecord.self
+        ) { $0.count }
+        metrics.blastCount = countActive(
+            context,
+            restaurantId: restaurantId,
+            limit: limit,
+            type: BlastChillingRecord.self
+        ) { $0.count }
+        await MainThreadYield.betweenFetchPhases()
+        metrics.incompleteCleaning = countActive(
+            context,
+            restaurantId: restaurantId,
+            limit: limit,
+            type: CleaningRecord.self
+        ) { rows in rows.filter { !$0.completed }.count }
+        metrics.documentItems = {
+            let rid = restaurantId
+            var docDesc = FetchDescriptor<DocumentItem>(
+                predicate: #Predicate { $0.restaurantId == rid }
+            )
+            docDesc.fetchLimit = limit
+            return (try? context.fetch(docDesc))?.count ?? 0
+        }()
+        await MainThreadYield.betweenFetchPhases()
+        metrics.todayRecords = countTodayRecords(context, restaurantId: restaurantId, limit: limit)
+        return metrics
+    }
+
+    private static func fetchSync(context: ModelContext, restaurantId: UUID) -> DashboardMetrics {
         let limit = PerformanceConfig.dashboardSampleLimit
         var metrics = DashboardMetrics()
 

@@ -57,7 +57,10 @@ struct PremiumSidebarView: View {
         }
         .background(sidebarBackground)
         .onChange(of: selectedItem) { _, _ in
-            HapticManager.shared.selection()
+            Task { @MainActor in
+                await Task.yield()
+                HapticManager.shared.selection()
+            }
         }
     }
 

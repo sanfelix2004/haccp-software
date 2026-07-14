@@ -11,7 +11,7 @@ public class SecurityService {
     public var isLocked: Bool = false
     public var lockEndDate: Date? = nil
     
-    private var inactivityTimer: AnyCancellable?
+    private var lockResetTask: Task<Void, Never>?
     private let settings = SettingsStorageService.shared
     
     public init() {}
@@ -34,8 +34,10 @@ public class SecurityService {
         // Lock for 1 minute for now, scalable
         lockEndDate = Date().addingTimeInterval(60)
         
-        // Reset after 1 minute
-        DispatchQueue.main.asyncAfter(deadline: .now() + 60) {
+        lockResetTask?.cancel()
+        lockResetTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 60_000_000_000)
+            guard let self, !Task.isCancelled else { return }
             self.isLocked = false
             self.failedAttempts = 0
         }

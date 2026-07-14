@@ -289,15 +289,16 @@ struct AnalyticsService {
         restaurantId: UUID,
         records: [OilControlRecord],
         period: AnalyticsPeriod,
-        now: Date = Date()
+        now: Date = Date(),
+        haccpSettings: HACCPSettings
     ) -> [AnalyticsLinePoint] {
         let start = period.startDate(now: now)
-        let settings = SettingsStorageService.shared.haccp
+        let polarMaximumLimit = haccpSettings.oilPolarMaximumLimit
         return records
             .filter { $0.restaurantId == restaurantId && $0.checkedAt >= start }
             .compactMap { record -> AnalyticsLinePoint? in
                 guard let value = record.effectivePolarCompoundsValue else { return nil }
-                let critical = value >= settings.oilPolarMaximumLimit
+                let critical = value >= polarMaximumLimit
                 return AnalyticsLinePoint(timestamp: record.checkedAt, value: value, isHighlighted: critical)
             }
             .sorted { $0.timestamp < $1.timestamp }
@@ -417,9 +418,14 @@ struct AnalyticsService {
         }
     }
 
-    func traceabilityKPIs(records: [TraceabilityRecord], restaurantId: UUID, now: Date = Date()) -> [AnalyticsKPI] {
+    func traceabilityKPIs(
+        records: [TraceabilityRecord],
+        restaurantId: UUID,
+        now: Date = Date(),
+        haccpSettings: HACCPSettings
+    ) -> [AnalyticsKPI] {
         let scoped = records.filter { $0.restaurantId == restaurantId && !$0.isArchived }
-        let thresholdDays = SettingsStorageService.shared.haccp.productExpiryThreshold
+        let thresholdDays = haccpSettings.productExpiryThreshold
         let expiringSoon = scoped.filter {
             ProductExpiryEvaluator.isMonitorableExpiring($0, thresholdDays: thresholdDays, now: now)
         }.count

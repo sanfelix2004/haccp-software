@@ -42,7 +42,7 @@ struct SettingsView: View {
                                     .font(.system(size: 44, weight: .black, design: .rounded))
                                     .foregroundColor(ThemeManager.shared.colorTextPrimary)
                                 
-                                Text("Profilo e preferenze per tutti. Sicurezza, ristorante e backup solo per responsabile.")
+                                Text("Profilo, preferenze e notifiche per tutti. Il resto solo per il responsabile.")
                                     .font(.title3)
                                     .foregroundColor(ThemeManager.shared.colorTextSecondary)
                             }
@@ -128,47 +128,48 @@ struct SettingsDetailContainer: View {
     var body: some View {
         VStack(spacing: 0) {
             // Header
-            HStack(spacing: 20) {
+            HStack(spacing: 16) {
                 ZStack {
                     Circle()
                         .fill(ThemeManager.shared.colorPrimary.opacity(0.2))
-                        .frame(width: 54, height: 54)
+                        .frame(width: 48, height: 48)
                     Image(systemName: section.icon)
-                        .font(.title)
+                        .font(.title2)
                         .foregroundColor(ThemeManager.shared.colorPrimary)
                 }
                 
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: 2) {
                     Text(section.rawValue)
-                        .font(.title2)
-                        .fontWeight(.black)
+                        .font(.title3)
+                        .fontWeight(.bold)
                         .foregroundColor(ThemeManager.shared.colorTextPrimary)
                     Text(section.description)
                         .font(.caption)
                         .foregroundColor(ThemeManager.shared.colorTextSecondary)
+                        .lineLimit(2)
                 }
                 
                 Spacer()
                 
-                ModuleHelpButton(help: ModuleHelpLibrary.settings(section), size: 36)
+                ModuleHelpButton(help: ModuleHelpLibrary.settings(section), size: 32)
                 
                 Button(action: onDismiss) {
                     Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 30))
+                        .font(.system(size: 28))
                         .foregroundColor(ThemeManager.shared.colorTextSecondary.opacity(0.6))
                 }
             }
-            .padding(24)
+            .padding(20)
             .background(ThemeManager.shared.colorSurfaceElevated)
             
             Divider().background(ThemeManager.shared.colorDivider)
             
             // Content
             ScrollView {
-                VStack(spacing: 32) {
+                VStack(spacing: 20) {
                     detailView(for: section)
                 }
-                .padding(32)
+                .padding(24)
             }
             .background(ThemeManager.shared.colorSurface)
         }

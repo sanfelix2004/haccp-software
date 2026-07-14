@@ -17,6 +17,52 @@ struct ChecklistFetchedData {
 enum ChecklistDataFetcher {
 
     static func fetch(context: ModelContext, restaurantId: UUID) -> ChecklistFetchedData {
+        fetchSync(context: context, restaurantId: restaurantId)
+    }
+
+    static func fetchAsync(context: ModelContext, restaurantId: UUID) async -> ChecklistFetchedData {
+        let rid = restaurantId
+        var data = ChecklistFetchedData()
+
+        var templateDescriptor = FetchDescriptor<ChecklistTemplate>(
+            predicate: #Predicate { $0.restaurantId == rid },
+            sortBy: [SortDescriptor(\ChecklistTemplate.title)]
+        )
+        templateDescriptor.fetchLimit = PerformanceConfig.checklistTemplateFetchLimit
+        data.templates = (try? context.fetch(templateDescriptor)) ?? []
+        await MainThreadYield.betweenFetchPhases()
+
+        var runDescriptor = FetchDescriptor<ChecklistRun>(
+            predicate: #Predicate { $0.restaurantId == rid && !$0.isArchived },
+            sortBy: [SortDescriptor(\ChecklistRun.startedAt, order: .reverse)]
+        )
+        runDescriptor.fetchLimit = PerformanceConfig.checklistRunFetchLimit
+        data.runs = (try? context.fetch(runDescriptor)) ?? []
+        await MainThreadYield.betweenFetchPhases()
+
+        let runIds = Set(data.runs.map(\.id))
+        data.itemResults = fetchItemResults(context, runIds: runIds)
+        await MainThreadYield.betweenFetchPhases()
+
+        var alertDescriptor = FetchDescriptor<ChecklistAlert>(
+            predicate: #Predicate { $0.restaurantId == rid },
+            sortBy: [SortDescriptor(\ChecklistAlert.createdAt, order: .reverse)]
+        )
+        alertDescriptor.fetchLimit = PerformanceConfig.checklistAlertFetchLimit
+        data.alerts = (try? context.fetch(alertDescriptor)) ?? []
+        await MainThreadYield.betweenFetchPhases()
+
+        var criticalityDescriptor = FetchDescriptor<CleaningCriticality>(
+            predicate: #Predicate { $0.restaurantId == rid },
+            sortBy: [SortDescriptor(\CleaningCriticality.createdAt, order: .reverse)]
+        )
+        criticalityDescriptor.fetchLimit = PerformanceConfig.checklistCleaningCriticalityFetchLimit
+        data.cleaningCriticalities = (try? context.fetch(criticalityDescriptor)) ?? []
+
+        return data
+    }
+
+    private static func fetchSync(context: ModelContext, restaurantId: UUID) -> ChecklistFetchedData {
         let rid = restaurantId
         var data = ChecklistFetchedData()
 

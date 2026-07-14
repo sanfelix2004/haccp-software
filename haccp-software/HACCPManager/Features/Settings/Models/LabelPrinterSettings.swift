@@ -4,7 +4,8 @@ public struct LabelPrinterSettings: Codable {
     var defaultPrinterName: String = ""
     var savedPeripheralIdentifier: String = ""
     var savedPeripheralDisplayName: String = ""
-    var labelSize: String = "50x30 mm"
+    /// Valore enum `40x30` / `50x30` (compatibile con vecchio "50x30 mm").
+    var labelSize: String = ClabelLabelSize.mm50x30.rawValue
     var printEngineRaw: String = ClabelPrintEngine.tsplText.rawValue
     var showProductName: Bool = true
     var showPrepDate: Bool = true
@@ -16,7 +17,7 @@ public struct LabelPrinterSettings: Codable {
     var qrRotationRaw: Int = LabelQRCodeRotation.r0.rawValue
     var qrCornerRaw: String = LabelQRCodeCorner.bottomRight.rawValue
     var qrCellSize: Int = 4 {
-        didSet { qrCellSize = max(3, min(8, qrCellSize)) }
+        didSet { qrCellSize = max(2, min(8, qrCellSize)) }
     }
 
     var printEngine: ClabelPrintEngine {
@@ -30,7 +31,33 @@ public struct LabelPrinterSettings: Codable {
     }
 
     var qrCorner: LabelQRCodeCorner {
-        get { LabelQRCodeCorner(rawValue: qrCornerRaw) ?? .topRight }
+        get { LabelQRCodeCorner(rawValue: qrCornerRaw) ?? .bottomRight }
         set { qrCornerRaw = newValue.rawValue }
+    }
+
+    var clabelSize: ClabelLabelSize {
+        get { ClabelLabelSize.parse(labelSize) ?? .mm50x30 }
+        set {
+            labelSize = newValue.rawValue
+            applyRecommendedLayout(for: newValue)
+        }
+    }
+
+    var labelSpec: ClabelLabelSpec {
+        ClabelLabelSpec(size: clabelSize)
+    }
+
+    var labelSizeDisplay: String {
+        "\(clabelSize.displayName) · CLABEL S1"
+    }
+
+    mutating func applyRecommendedLayout(for size: ClabelLabelSize) {
+        let profile = size.layoutProfile
+        if qrCellSize > profile.preferredQRCell {
+            qrCellSize = profile.preferredQRCell
+        }
+        if size == .mm40x30 {
+            qrCorner = .bottomRight
+        }
     }
 }

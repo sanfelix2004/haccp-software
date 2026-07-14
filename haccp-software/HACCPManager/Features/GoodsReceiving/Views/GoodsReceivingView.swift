@@ -6,10 +6,7 @@ struct GoodsReceivingView: View {
     @Environment(\.theme) private var theme
     @EnvironmentObject var appState: AppState
     @Query private var users: [LocalUser]
-    @Query private var records: [GoodsReceipt]
-    @Query private var suppliers: [Supplier]
-    @Query private var templates: [ProductTemplate]
-    @Query private var productImages: [ProductImage]
+    @ObservedObject private var dataStore = ModuleStoreRegistry.shared.goodsReceiving
     @StateObject private var vm = GoodsReceivingViewModel()
     @State private var presentedSheet: GoodsReceivingSheet?
     @State private var masterAuth = MasterAuthCoordinator()
@@ -20,15 +17,15 @@ struct GoodsReceivingView: View {
 
     private var scopedRecords: [GoodsReceipt] {
         guard let rid = appState.activeRestaurantId else { return [] }
-        return records.filter { $0.restaurantId == rid }.sorted(by: { $0.createdAt > $1.createdAt })
+        return dataStore.records.filter { $0.restaurantId == rid }.sorted(by: { $0.createdAt > $1.createdAt })
     }
     private var scopedSuppliers: [Supplier] {
         guard let rid = appState.activeRestaurantId else { return [] }
-        return suppliers.filter { $0.restaurantId == rid }.sorted(by: { $0.createdAt > $1.createdAt })
+        return dataStore.suppliers.filter { $0.restaurantId == rid }.sorted(by: { $0.createdAt > $1.createdAt })
     }
     private var scopedTemplates: [ProductTemplate] {
         guard let rid = appState.activeRestaurantId else { return [] }
-        return templates.filter { $0.restaurantId == rid }
+        return dataStore.templates.filter { $0.restaurantId == rid }
     }
     private var filteredTemplates: [ProductTemplate] {
         let byCategory = vm.selectedCategory == .all ? scopedTemplates : scopedTemplates.filter { $0.category == vm.selectedCategory }
@@ -160,11 +157,10 @@ struct GoodsReceivingView: View {
         }
         .background(ThemeManager.shared.colorBackground.ignoresSafeArea())
         .navigationTitle("Ricezione merci")
-        .onAppear {
-            bootstrapReceivingSession()
-        }
-        .onChange(of: appState.activeRestaurantId) { _, _ in
-            bootstrapReceivingSession()
+        .moduleScreenLoad(restaurantId: appState.activeRestaurantId) {
+            guard let rid = appState.activeRestaurantId else { return }
+            dataStore.reload(context: modelContext, restaurantId: rid)
+            bootstrapReceivingSession(restaurantId: rid)
         }
         .onChange(of: vm.showIntakeSheet) { _, isPresented in
             if isPresented {
@@ -334,13 +330,14 @@ struct GoodsReceivingView: View {
 
     private func nonCompliancePhoto(for record: GoodsReceipt) -> Data? {
         if let data = record.photoData, !data.isEmpty { return data }
-        let images = productImages.filter { $0.receivedItemId == record.id && $0.type == .nonComplianceRequired }
+        let images = dataStore.productImages.filter { $0.receivedItemId == record.id && $0.type == .nonComplianceRequired }
         return images.sorted { $0.createdAt > $1.createdAt }.first?.imageData
     }
 
-    private func bootstrapReceivingSession() {
-        guard let rid = appState.activeRestaurantId else { return }
-        ProductTemplateSeeder.ensureTemplates(restaurantId: rid, modelContext: modelContext)
+    private func bootstrapReceivingSession(restaurantId rid: UUID) {
+        RestaurantModuleBootstrap.shared.runOnce(restaurantId: rid, module: "goods-templates") {
+            ProductTemplateSeeder.ensureTemplates(restaurantId: rid, modelContext: modelContext)
+        }
         vm.loadMemory(restaurantId: rid)
         vm.selectedSupplier = scopedSuppliers.first(where: { $0.id == vm.lastSupplierId }) ?? scopedSuppliers.first
     }
@@ -368,7 +365,7 @@ struct GoodsReceivingView: View {
     }
 
     private func deleteReceipt(_ receipt: GoodsReceipt) {
-        productImages
+        dataStore.productImages
             .filter { $0.receivedItemId == receipt.id }
             .forEach { modelContext.delete($0) }
         modelContext.delete(receipt)

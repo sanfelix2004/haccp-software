@@ -8,7 +8,7 @@ struct AnalyticsView: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     @StateObject private var vm = AnalyticsViewModel()
-    @StateObject private var dataStore = AnalyticsDataStore()
+    @ObservedObject private var dataStore = ModuleStoreRegistry.shared.analytics
 
     private var contentPadding: CGFloat {
         horizontalSizeClass == .regular
@@ -29,29 +29,29 @@ struct AnalyticsView: View {
                 if let restaurantId = appState.activeRestaurantId {
                     ZStack(alignment: .top) {
                         HACCPAnalyticsSectionsView(
-                            restaurantId: restaurantId,
-                            vm: vm,
-                            checklistRuns: dataStore.checklistRuns,
-                            checklistResults: dataStore.checklistResults,
-                            checklistAlerts: dataStore.checklistAlerts,
-                            temperatureRecords: dataStore.temperatureRecords,
-                            temperatureDevices: dataStore.temperatureDevices,
-                            cleaningRecords: dataStore.cleaningRecords,
-                            cleaningCriticalities: dataStore.cleaningCriticalities,
-                            blastRecords: dataStore.blastRecords,
-                            defrostRecords: dataStore.defrostRecords,
-                            oilRecords: dataStore.oilRecords,
-                            goodsRecords: dataStore.goodsRecords,
-                            traceabilityRecords: dataStore.traceabilityRecords,
-                            labelRecords: dataStore.labelRecords
+                            presentation: dataStore.presentation,
+                            vm: vm
                         )
-                        .id(dataStore.loadGeneration)
-                        .opacity(dataStore.isLoading ? 0.55 : 1)
-                        .allowsHitTesting(!dataStore.isLoading)
+                        .opacity(dataStore.isLoading && !dataStore.presentation.hasAnyData ? 0.55 : 1)
+                        .allowsHitTesting(!(dataStore.isLoading && !dataStore.presentation.hasAnyData))
 
-                        if dataStore.isLoading && dataStore.isEmpty {
+                        if dataStore.isLoading && !dataStore.presentation.hasAnyData {
                             loadingState
                         }
+                    }
+                    .onChange(of: vm.selectedPeriod) { _, _ in
+                        dataStore.rebuildPresentation(
+                            restaurantId: restaurantId,
+                            period: vm.selectedPeriod,
+                            deviceId: vm.selectedDeviceId
+                        )
+                    }
+                    .onChange(of: vm.selectedDeviceId) { _, _ in
+                        dataStore.rebuildPresentation(
+                            restaurantId: restaurantId,
+                            period: vm.selectedPeriod,
+                            deviceId: vm.selectedDeviceId
+                        )
                     }
                 } else {
                     AnalyticsEmptyStateView(
@@ -67,11 +67,22 @@ struct AnalyticsView: View {
         .scrollDismissesKeyboard(.interactively)
         .background(theme.colorBackground.ignoresSafeArea())
         .navigationTitle("Grafici")
-        .task(id: appState.activeRestaurantId) {
-            dataStore.reload(context: modelContext, restaurantId: appState.activeRestaurantId)
+        .moduleScreenLoad(restaurantId: appState.activeRestaurantId) {
+            dataStore.reload(
+                context: modelContext,
+                restaurantId: appState.activeRestaurantId,
+                period: vm.selectedPeriod,
+                deviceId: vm.selectedDeviceId
+            )
         }
         .onReceive(NotificationCenter.default.publisher(for: .kitchenProcessRecordsDidChange)) { _ in
-            dataStore.reload(context: modelContext, restaurantId: appState.activeRestaurantId)
+            dataStore.reload(
+                context: modelContext,
+                restaurantId: appState.activeRestaurantId,
+                period: vm.selectedPeriod,
+                deviceId: vm.selectedDeviceId,
+                force: true
+            )
         }
     }
 

@@ -18,7 +18,7 @@ struct DefrostView: View {
     @Query private var productionLabels: [ProductionLabelRecord]
 
     @StateObject private var vm = DefrostViewModel()
-    @StateObject private var dataStore = DefrostDataStore()
+    @ObservedObject private var dataStore = ModuleStoreRegistry.shared.defrost
 
     @State private var showNewSheet = false
     @State private var recordIdToComplete: UUID?
@@ -74,15 +74,13 @@ struct DefrostView: View {
         }
         .background(theme.colorBackground.ignoresSafeArea())
         .navigationTitle("Decongelamento")
-        .task(id: appState.activeRestaurantId) {
-            dataStore.reload(context: modelContext, restaurantId: appState.activeRestaurantId)
+        .moduleScreenLoad(restaurantId: appState.activeRestaurantId) {
+            guard let rid = appState.activeRestaurantId else { return }
+            ensureTemplates(restaurantId: rid)
+            dataStore.reload(context: modelContext, restaurantId: rid)
         }
         .onReceive(NotificationCenter.default.publisher(for: .kitchenProcessRecordsDidChange)) { _ in
-            reload()
-            defrostManager.refresh(context: modelContext, restaurantId: appState.activeRestaurantId)
-        }
-        .onAppear {
-            ensureTemplates()
+            reload(force: true)
             defrostManager.refresh(context: modelContext, restaurantId: appState.activeRestaurantId)
         }
         .sheet(isPresented: $showNewSheet) {
@@ -357,8 +355,12 @@ struct DefrostView: View {
         }
     }
 
-    private func reload() {
-        dataStore.reload(context: modelContext, restaurantId: appState.activeRestaurantId)
+    private func reload(force: Bool = false) {
+        dataStore.reload(
+            context: modelContext,
+            restaurantId: appState.activeRestaurantId,
+            force: force
+        )
         defrostManager.refresh(context: modelContext, restaurantId: appState.activeRestaurantId)
     }
 
@@ -398,9 +400,10 @@ struct DefrostView: View {
         }
     }
 
-    private func ensureTemplates() {
-        guard let rid = appState.activeRestaurantId else { return }
-        ProductTemplateSeeder.ensureTemplates(restaurantId: rid, modelContext: modelContext)
+    private func ensureTemplates(restaurantId rid: UUID) {
+        RestaurantModuleBootstrap.shared.runOnce(restaurantId: rid, module: "defrost-templates") {
+            ProductTemplateSeeder.ensureTemplates(restaurantId: rid, modelContext: modelContext)
+        }
     }
 
     private func handleLabelSaved(_ record: ProductionLabelRecord, shouldPrint: Bool) {

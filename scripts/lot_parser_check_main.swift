@@ -42,6 +42,30 @@ enum LabelLotSanitizerSelfCheck {
             failures.append("L6036BH099: ripristino L da JSON fallito")
         }
 
+        if LabelLotSanitizer.validateLot("9330B8", rawContext: #"{"raw_stamp_line":"L9330 B8 00:09"}"#) != "L9330B8" {
+            failures.append("L9330B8: ripristino L da riga stampa fallito")
+        }
+
+        if LabelStampLineParser.extractLot(from: "Best before 26NOV 2025 L9330 B8 00:09") != "L9330B8" {
+            failures.append("Estrazione lotto da riga tappo fallita")
+        }
+
+        if LabelStampLineParser.extractLot(from: "30490206AK-25 10:55:36") != "30490206AK-25" {
+            failures.append("Estrazione lotto 30490206AK-25 fallita")
+        }
+
+        if LabelStampLineParser.extractLot(from: "LOT 272019\nSELL BY 09/02") != "272019" {
+            failures.append("Estrazione lotto LOT 272019 fallita")
+        }
+
+        if LabelLotSanitizer.validateLot("SELL") != nil {
+            failures.append("Parola chiave SELL accettata come lotto")
+        }
+
+        if LabelLotSanitizer.validateLot("314902058K-25") != "314902058K-25" {
+            failures.append("Validazione lotto con trattino fallita")
+        }
+
         if LabelLotSanitizer.validateLot("52400Y757") != "52400V757" {
             failures.append("Correzione Y→V non applicata su 52400Y757")
         }

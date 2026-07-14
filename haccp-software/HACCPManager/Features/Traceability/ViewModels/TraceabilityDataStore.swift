@@ -17,18 +17,26 @@ final class TraceabilityDataStore: ObservableObject {
     @Published private(set) var defrostRecords: [DefrostRecord] = []
     @Published private(set) var lottoFotos: [LottoFoto] = []
     @Published private(set) var lottoProductionLinks: [LottoFotoProductionLink] = []
+    @Published private(set) var batches: [ProduzioneBatch] = []
+    @Published private(set) var ingredientiTracciati: [IngredienteTracciato] = []
     @Published private(set) var isLoading = false
     @Published private(set) var loadGeneration = UUID()
 
     private var loadTask: Task<Void, Never>?
     private var reloadGeneration = 0
+    private var reloadPolicy = DataStoreReloadPolicy()
 
-    func reload(context: ModelContext, restaurantId: UUID?) {
+    func reload(context: ModelContext, restaurantId: UUID?, force: Bool = false) {
         loadTask?.cancel()
         guard let restaurantId else {
             clear()
             return
         }
+        guard reloadPolicy.shouldReload(
+            restaurantId: restaurantId,
+            hasData: !records.isEmpty,
+            force: force
+        ) else { return }
 
         let token = MainActorDataLoad.begin(generation: &reloadGeneration)
         isLoading = true
@@ -42,7 +50,11 @@ final class TraceabilityDataStore: ObservableObject {
             guard MainActorDataLoad.isCurrent(generation: token, activeGeneration: reloadGeneration),
                   !Task.isCancelled else { return }
 
-            let data = TraceabilityDataFetcher.fetch(context: context, restaurantId: restaurantId)
+            // Fetch pesante: cede il main thread tra le fasi di lettura SwiftData.
+            let data = await TraceabilityDataFetcher.fetchAsync(
+                context: context,
+                restaurantId: restaurantId
+            )
             guard MainActorDataLoad.isCurrent(generation: token, activeGeneration: reloadGeneration),
                   !Task.isCancelled else { return }
 
@@ -54,11 +66,15 @@ final class TraceabilityDataStore: ObservableObject {
             defrostRecords = data.defrostRecords
             lottoFotos = data.lottoFotos
             lottoProductionLinks = data.lottoProductionLinks
+            batches = data.batches
+            ingredientiTracciati = data.ingredientiTracciati
             loadGeneration = UUID()
+            reloadPolicy.markLoaded(restaurantId: restaurantId)
         }
     }
 
     func clear() {
+        reloadPolicy.invalidate()
         records = []
         productions = []
         links = []
@@ -67,7 +83,14 @@ final class TraceabilityDataStore: ObservableObject {
         defrostRecords = []
         lottoFotos = []
         lottoProductionLinks = []
+        batches = []
+        ingredientiTracciati = []
         isLoading = false
+    }
+
+    func cancelPendingLoad() {
+        loadTask?.cancel()
+        loadTask = nil
     }
 
     deinit {

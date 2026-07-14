@@ -42,7 +42,7 @@ struct SwipeToDeleteRow<Content: View>: View {
 
             content()
                 .offset(x: offset)
-                .gesture(enabled ? swipeGesture : nil)
+                .gesture(enabled ? swipeGesture : nil, including: .subviews)
         }
         .clipShape(RoundedRectangle(cornerRadius: theme.spacing.cornerMedium, style: .continuous))
     }

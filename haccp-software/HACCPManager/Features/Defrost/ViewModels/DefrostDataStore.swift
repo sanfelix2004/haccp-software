@@ -14,16 +14,24 @@ final class DefrostDataStore: ObservableObject {
     @Published private(set) var isLoading = false
 
     private var loadTask: Task<Void, Never>?
+    private var reloadPolicy = DataStoreReloadPolicy()
 
-    func reload(context: ModelContext, restaurantId: UUID?) {
+    func reload(context: ModelContext, restaurantId: UUID?, force: Bool = false) {
         loadTask?.cancel()
         guard let restaurantId else {
             clear()
             return
         }
+        guard reloadPolicy.shouldReload(
+            restaurantId: restaurantId,
+            hasData: !records.isEmpty,
+            force: force
+        ) else { return }
+
         isLoading = true
-        loadTask = Task {
+        loadTask = Task { @MainActor in
             await Task.yield()
+            guard !Task.isCancelled else { return }
             let data = DefrostDataFetcher.fetch(context: context, restaurantId: restaurantId)
             guard !Task.isCancelled else { return }
             records = data.records
@@ -34,6 +42,7 @@ final class DefrostDataStore: ObservableObject {
                 settings: SettingsStorageService.shared.haccp
             )
             isLoading = false
+            reloadPolicy.markLoaded(restaurantId: restaurantId)
         }
     }
 
@@ -42,10 +51,16 @@ final class DefrostDataStore: ObservableObject {
     }
 
     func clear() {
+        reloadPolicy.invalidate()
         records = []
         criticalities = []
         traceabilityRecords = []
         isLoading = false
+    }
+
+    func cancelPendingLoad() {
+        loadTask?.cancel()
+        loadTask = nil
     }
 
     deinit {

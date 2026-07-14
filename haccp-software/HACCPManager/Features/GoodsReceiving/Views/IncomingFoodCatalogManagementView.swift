@@ -8,11 +8,9 @@ struct IncomingFoodCatalogManagementView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.theme) private var theme
     @EnvironmentObject var appState: AppState
+    @EnvironmentObject private var session: RestaurantSessionContext
 
-    @Query private var users: [LocalUser]
-    @Query private var templates: [ProductTemplate]
-    @Query private var receipts: [GoodsReceivingRecord]
-    @Query private var defrostRecords: [DefrostRecord]
+    @ObservedObject private var dataStore = ModuleStoreRegistry.shared.incomingFoodCatalog
 
     @State private var selectedCategory: GoodsCategory = .all
     @State private var selectedTemplate: ProductTemplate?
@@ -23,32 +21,20 @@ struct IncomingFoodCatalogManagementView: View {
     @State private var newCategory: GoodsCategory = .frozenProducts
     @State private var errorMessage: String?
     @State private var masterAuth = MasterAuthCoordinator()
+    @State private var presentation = IncomingFoodCatalogPresentation.empty
 
     private let catalogService = ProductTemplateCatalogService()
 
     private var scopedTemplates: [ProductTemplate] {
-        guard let rid = appState.activeRestaurantId else { return [] }
-        return templates.filter { $0.restaurantId == rid }
+        dataStore.templates
     }
 
-    private var scopedReceipts: [GoodsReceivingRecord] {
-        guard let rid = appState.activeRestaurantId else { return [] }
-        return receipts.filter { $0.restaurantId == rid }
-    }
-
-    private var scopedDefrostRecords: [DefrostRecord] {
-        guard let rid = appState.activeRestaurantId else { return [] }
-        return defrostRecords.filter { $0.restaurantId == rid }
-    }
-
-    private var filteredTemplates: [ProductTemplate] {
-        let base = scopedTemplates.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
-        guard selectedCategory != .all else { return base }
-        return base.filter { $0.category == selectedCategory }
+    private var visibleTemplates: [ProductTemplate] {
+        presentation.flatProducts
     }
 
     private var currentUser: LocalUser? {
-        users.first { $0.id == appState.currentUserId }
+        session.currentUser
     }
 
     private var permissions: UserPermissions { currentUser.permissions }
@@ -62,6 +48,9 @@ struct IncomingFoodCatalogManagementView: View {
                     actionTitle: nil
                 ))
                 .padding(theme.spacing.screenPadding)
+            } else if dataStore.isLoading && scopedTemplates.isEmpty {
+                ProgressView("Caricamento catalogo…")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 catalogScroll
             }
@@ -69,15 +58,26 @@ struct IncomingFoodCatalogManagementView: View {
         .background(theme.colorBackground.ignoresSafeArea())
         .navigationTitle(embeddedInSettings ? "" : "Alimenti in ingresso")
         .haccpControlTint()
-        .onAppear(perform: ensureDefaults)
-        .onChange(of: appState.activeRestaurantId) { _, _ in ensureDefaults() }
+        .moduleScreenLoad(restaurantId: appState.activeRestaurantId) {
+            guard let rid = appState.activeRestaurantId else { return }
+            dataStore.reload(context: modelContext, restaurantId: rid)
+        }
+        .onChange(of: dataStore.dataRevision) { _, _ in
+            rebuildPresentation()
+        }
+        .onChange(of: selectedCategory) { _, _ in
+            rebuildPresentation()
+        }
+        .onAppear {
+            rebuildPresentation()
+        }
         .sheet(isPresented: $showAddSheet) { templateEditor(title: "Nuovo alimento", template: nil) }
         .sheet(isPresented: $showEditSheet) {
             if let template = templateToEdit {
                 templateEditor(title: "Modifica alimento", template: template)
             }
         }
-        .masterAuthCover(coordinator: masterAuth, master: users.first(where: { $0.role == .master }))
+        .masterAuthCover(coordinator: masterAuth, master: session.masterUser)
         .alert("Alimenti in ingresso", isPresented: Binding(get: { errorMessage != nil }, set: { _ in errorMessage = nil })) {
             Button("OK", role: .cancel) {}
         } message: {
@@ -109,11 +109,11 @@ struct IncomingFoodCatalogManagementView: View {
                             selectedBanner(selected)
                         }
 
-                        Text("\(filteredTemplates.count) alimenti")
+                        Text("\(visibleTemplates.count) alimenti")
                             .font(theme.typography.caption)
                             .foregroundStyle(theme.colorTextSecondary)
 
-                        if filteredTemplates.isEmpty {
+                        if visibleTemplates.isEmpty {
                             DashboardEmptyStateView(state: .init(
                                 title: "Catalogo vuoto",
                                 message: "Aggiungi il primo alimento per questa categoria.",
@@ -123,10 +123,8 @@ struct IncomingFoodCatalogManagementView: View {
                             }
                         } else {
                             ProductSelectionGridView(
-                                products: filteredTemplates,
-                                recentProductIds: [],
+                                layout: presentation,
                                 selectedProductId: selectedTemplate?.id,
-                                groupsByCategory: selectedCategory == .all,
                                 onSelect: { selectedTemplate = $0 }
                             )
                         }
@@ -232,6 +230,13 @@ struct IncomingFoodCatalogManagementView: View {
         }
     }
 
+    private func rebuildPresentation() {
+        presentation = IncomingFoodCatalogPresentation.build(
+            templates: scopedTemplates,
+            selectedCategory: selectedCategory
+        )
+    }
+
     private func requestAdd() {
         masterAuth.request(permission: .manageIncomingFoodCatalog, permissions: permissions) {
             newName = ""
@@ -255,10 +260,6 @@ struct IncomingFoodCatalogManagementView: View {
         }
     }
 
-    private func ensureDefaults() {
-        guard let rid = appState.activeRestaurantId else { return }
-        ProductTemplateSeeder.ensureTemplates(restaurantId: rid, modelContext: modelContext)
-    }
 
     private func saveTemplate(_ template: ProductTemplate?) {
         guard let rid = appState.activeRestaurantId else { return }
@@ -287,9 +288,9 @@ struct IncomingFoodCatalogManagementView: View {
                     shelfLifeDays: nil
                 )
             }
-            showAddSheet = false
             showEditSheet = false
             newName = ""
+            dataStore.reload(context: modelContext, restaurantId: rid, force: true)
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -299,11 +300,10 @@ struct IncomingFoodCatalogManagementView: View {
         do {
             try catalogService.deleteTemplateIfUnused(
                 template,
-                receipts: scopedReceipts,
-                defrostRecords: scopedDefrostRecords,
                 modelContext: modelContext
             )
             selectedTemplate = nil
+            dataStore.reload(context: modelContext, restaurantId: appState.activeRestaurantId, force: true)
         } catch {
             errorMessage = error.localizedDescription
         }

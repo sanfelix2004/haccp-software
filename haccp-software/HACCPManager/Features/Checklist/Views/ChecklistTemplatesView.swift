@@ -91,7 +91,6 @@ struct ChecklistTemplatesView: View {
                     }
                 }
             }
-            .padding(theme.spacing.screenPadding)
         }
     }
 }

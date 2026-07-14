@@ -5,6 +5,8 @@ enum GroqLabelResponseParser {
     struct Parsed: Sendable {
         var lot: String?
         var expiry: Date?
+        var expiryKind: String?
+        var modelConfidence: String?
         var rawPayload: String
         var audit: [String]
 
@@ -14,9 +16,24 @@ enum GroqLabelResponseParser {
             Parsed(
                 lot: preferredLot(lot, other.lot),
                 expiry: preferredExpiry(expiry, other.expiry),
+                expiryKind: expiryKind ?? other.expiryKind,
+                modelConfidence: preferredModelConfidence(modelConfidence, other.modelConfidence),
                 rawPayload: mergedPayload(rawPayload, other.rawPayload),
                 audit: audit + other.audit
             )
+        }
+
+        private func preferredModelConfidence(_ a: String?, _ b: String?) -> String? {
+            rank(a) >= rank(b) ? (a ?? b) : (b ?? a)
+        }
+
+        private func rank(_ value: String?) -> Int {
+            switch value?.lowercased() {
+            case "high", "alta": return 3
+            case "medium", "media": return 2
+            case "low", "bassa": return 1
+            default: return 0
+            }
         }
 
         private func preferredLot(_ a: String?, _ b: String?) -> String? {
@@ -26,6 +43,10 @@ enum GroqLabelResponseParser {
             let issuesB = GroqLabelValidator.issues(lot: b, expiry: expiry, rawContext: rawPayload)
             if issuesA.contains(.lotLooksLikeDate) && !issuesB.contains(.lotLooksLikeDate) { return b }
             if issuesB.contains(.lotLooksLikeDate) && !issuesA.contains(.lotLooksLikeDate) { return a }
+            if issuesA.contains(.lotMissingLeadingLetter) && !issuesB.contains(.lotMissingLeadingLetter) { return b }
+            if issuesB.contains(.lotMissingLeadingLetter) && !issuesA.contains(.lotMissingLeadingLetter) { return a }
+            if a.hasPrefix("L"), !b.hasPrefix("L"), b.caseInsensitiveCompare(String(a.dropFirst())) == .orderedSame { return a }
+            if b.hasPrefix("L"), !a.hasPrefix("L"), a.caseInsensitiveCompare(String(b.dropFirst())) == .orderedSame { return b }
             return a.count >= b.count ? a : b
         }
 
@@ -54,15 +75,49 @@ enum GroqLabelResponseParser {
         var lot: String?
         var expiry: Date?
         var expiryRaw: String?
+        var expiryKind: String?
+        var modelConfidence: String?
+        var rawStampLine: String?
 
         if let dict = jsonDictionary(from: payload) {
-            lot = extractLot(from: dict)
-            expiryRaw = extractExpiryRaw(from: dict)
+            let lotFound = boolValue(dict["lotto_found"])
+                ?? boolValue(dict["lotto_trovato"])
+            let expiryFound = boolValue(dict["expiration_found"])
+                ?? boolValue(dict["scadenza_trovata"])
+
+            rawStampLine = stringValue(dict["raw_stamp_line"])
+                ?? stringValue(dict["riga_stampa"])
+
+            if lotFound != false {
+                lot = extractLot(from: dict)
+            } else {
+                audit.append("Model: lotto_found=false")
+            }
+
+            if expiryFound != false {
+                expiryRaw = extractExpiryRaw(from: dict)
+            } else {
+                audit.append("Model: expiration_found=false")
+            }
+
+            expiryKind = stringValue(dict["expiration_type"])
+                ?? stringValue(dict["tipo_scadenza"])
+            modelConfidence = stringValue(dict["confidence_score"])
+                ?? stringValue(dict["confidenza_estrazione"])
         }
 
         if lot == nil {
             lot = extractLotRegex(from: payload)
             if lot != nil { audit.append("Lotto da estrazione JSON parziale") }
+        }
+
+        let sanitizerContext = [payload, rawStampLine ?? ""].filter { !$0.isEmpty }.joined(separator: "\n")
+        if let rawStampLine, let stampLot = LabelStampLineParser.extractLot(from: rawStampLine) {
+            lot = lot.map { preferredStandaloneLot($0, stampLot) } ?? stampLot
+            audit.append("Lotto da riga stampa verbatim")
+        } else if let stampLot = LabelStampLineParser.extractLot(from: sanitizerContext) {
+            lot = lot.map { preferredStandaloneLot($0, stampLot) } ?? stampLot
+            audit.append("Lotto da pattern riga stampa")
         }
 
         if let expiryRaw, !expiryRaw.isEmpty {
@@ -75,11 +130,11 @@ enum GroqLabelResponseParser {
             }
         }
 
-        lot = lot.flatMap { LabelLotSanitizer.validateLot($0, rawContext: payload) }
+        lot = lot.flatMap { LabelLotSanitizer.validateLot($0, rawContext: sanitizerContext) }
 
         var validatedExpiry: Date? = expiry
         if let candidate = validatedExpiry {
-            if GroqLabelValidator.issues(lot: lot, expiry: candidate, rawContext: payload)
+            if GroqLabelValidator.issues(lot: lot, expiry: candidate, rawContext: sanitizerContext)
                 .contains(.expiryLooksLikeProductionTime) {
                 validatedExpiry = nil
                 audit.append("Scadenza scartata: probabile orario produzione")
@@ -99,8 +154,21 @@ enum GroqLabelResponseParser {
         } else {
             audit.append("Scadenza non trovata o non valida")
         }
+        if let expiryKind, !expiryKind.isEmpty {
+            audit.append("Tipo scadenza: \(expiryKind)")
+        }
+        if let modelConfidence, !modelConfidence.isEmpty {
+            audit.append("Confidenza modello: \(modelConfidence)")
+        }
 
-        return Parsed(lot: lot, expiry: expiry, rawPayload: payload, audit: audit)
+        return Parsed(
+            lot: lot,
+            expiry: expiry,
+            expiryKind: expiryKind,
+            modelConfidence: modelConfidence,
+            rawPayload: payload,
+            audit: audit
+        )
     }
 
     static func confidence(for parsed: Parsed) -> Double {
@@ -116,10 +184,21 @@ enum GroqLabelResponseParser {
         case (false, true): score = 0.68
         case (false, false): score = 0
         }
+        switch parsed.modelConfidence?.lowercased() {
+        case "high", "alta":
+            score = max(score, 0.90)
+        case "medium", "media":
+            score = min(score, 0.82)
+        case "low", "bassa":
+            score = min(score, 0.65)
+        default:
+            break
+        }
         if issues.contains(.lotLooksLikeDate) { score -= 0.35 }
         if issues.contains(.lotLooksLikeBarcode) { score -= 0.30 }
         if issues.contains(.expiryUnreasonable) { score -= 0.25 }
         if issues.contains(.expiryLooksLikeProductionTime) { score -= 0.40 }
+        if issues.contains(.lotMissingLeadingLetter) { score -= 0.30 }
         if issues.contains(.lotConflictsWithExpiry) { score -= 0.20 }
         return max(0, min(1, score))
     }
@@ -144,7 +223,8 @@ enum GroqLabelResponseParser {
         "lotto", "l", "lot", "lotcode", "lot_code", "batch", "partita", "codice", "codice_lotto"
     ]
     private static let expiryKeys = [
-        "scadenza", "e", "exp", "expiry", "expirydate", "expiry_date", "tmc", "data", "data_scadenza"
+        "expiration_date", "scadenza", "e", "exp", "expiry", "expirydate", "expiry_date",
+        "tmc", "data", "data_scadenza"
     ]
 
     private static func extractLot(from dict: [String: Any]) -> String? {
@@ -174,6 +254,20 @@ enum GroqLabelResponseParser {
         }
         if let n = value as? NSNumber {
             return n.stringValue
+        }
+        return nil
+    }
+
+    private static func boolValue(_ value: Any?) -> Bool? {
+        guard let value else { return nil }
+        if let flag = value as? Bool { return flag }
+        if let number = value as? NSNumber { return number.boolValue }
+        if let text = value as? String {
+            switch text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+            case "true", "1", "yes", "si", "sì": return true
+            case "false", "0", "no": return false
+            default: return nil
+            }
         }
         return nil
     }
@@ -213,6 +307,14 @@ enum GroqLabelResponseParser {
             if LabelLotSanitizer.validateLot(candidate) != nil { return candidate }
         }
         return nil
+    }
+
+    private static func preferredStandaloneLot(_ a: String, _ b: String) -> String {
+        if LabelLotSanitizer.validateLot(a) == nil { return b }
+        if LabelLotSanitizer.validateLot(b) == nil { return a }
+        if a.hasPrefix("L"), !b.hasPrefix("L"), b.caseInsensitiveCompare(String(a.dropFirst())) == .orderedSame { return a }
+        if b.hasPrefix("L"), !a.hasPrefix("L"), a.caseInsensitiveCompare(String(b.dropFirst())) == .orderedSame { return b }
+        return a.count >= b.count ? a : b
     }
 
     private static func formatItalian(_ date: Date) -> String {

@@ -29,15 +29,15 @@ enum SettingsSection: String, CaseIterable, Identifiable {
 
     var description: String {
         switch self {
-        case .profile: return "Profilo, PIN e collegamento iCloud per i documenti."
-        case .appearance: return "Temi premium, layout e modalità cucina."
-        case .security: return "Protezione app e biometria."
-        case .restaurant: return "Dati del locale e logo aziendale."
-        case .haccp: return "Range temperature e soglie critiche."
-        case .notifications: return "Avvisi e promemoria checklist."
-        case .data: return "Uso memoria e reset sistema."
-        case .printer: return "Configura stampanti per etichette."
-        case .info: return "Versioni e note legali."
+        case .profile: return "Nome, PIN e iCloud."
+        case .appearance: return "Tema e modalità cucina."
+        case .security: return "PIN, biometria e blocco."
+        case .restaurant: return "Dati locale e logo."
+        case .haccp: return "Temperature e soglie."
+        case .notifications: return "Avvisi e promemoria."
+        case .data: return "Spazio e backup."
+        case .printer: return "Etichette Bluetooth."
+        case .info: return "Versione e documenti legali."
         }
     }
 

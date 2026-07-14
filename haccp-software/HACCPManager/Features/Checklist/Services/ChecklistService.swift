@@ -275,12 +275,13 @@ final class ChecklistService {
         user: LocalUser,
         run: ChecklistRun,
         restaurantId: UUID,
-        modelContext: ModelContext
+        modelContext: ModelContext,
+        requiresNoteIfFailed: Bool? = nil
     ) throws {
         let trimmedNote = note?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let itemTemplates = (try? modelContext.fetch(FetchDescriptor<ChecklistItemTemplate>())) ?? []
-        let itemTemplate = itemTemplates.first { $0.id == itemResult.itemTemplateId }
-        let requiresNote = itemTemplate?.requiresNoteIfFailed ?? true
+        let requiresNote = requiresNoteIfFailed
+            ?? itemTemplate(for: itemResult.itemTemplateId, modelContext: modelContext)?.requiresNoteIfFailed
+            ?? true
 
         if result == .fail, requiresNote, trimmedNote.isEmpty {
             throw ChecklistServiceError.noteRequiredForFailure
@@ -292,8 +293,7 @@ final class ChecklistService {
         itemResult.completedAt = Date()
         itemResult.completedByUserId = user.id
 
-        let results = (try? modelContext.fetch(FetchDescriptor<ChecklistItemResult>())) ?? []
-        let scopedResults = results.filter { $0.checklistRunId == run.id }
+        let scopedResults = itemResults(for: run.id, modelContext: modelContext)
         let completedCount = scopedResults.filter { $0.result != .pending }.count
         run.progressPercentage = scopedResults.isEmpty ? 0 : (Double(completedCount) / Double(scopedResults.count)) * 100
         if completedCount == 0 {
@@ -337,7 +337,9 @@ final class ChecklistService {
             )
         }
 
-        try modelContext.save()
+        guard modelContext.saveSafely(operation: "checklist-item-result") else {
+            throw SwiftDataOperationError.saveFailed("checklist-item-result")
+        }
     }
 
     /// Completamento inline pulizie: un tap segna l'unica voce come OK e chiude il run.
@@ -374,10 +376,73 @@ final class ChecklistService {
         )
     }
 
+    /// Completamento bulk pulizie per macro area: segna tutti i task aperti nell'elenco.
+    @discardableResult
+    func completeAllCleaningRuns(
+        runs: [ChecklistRun],
+        user: LocalUser,
+        restaurantId: UUID,
+        modelContext: ModelContext
+    ) throws -> Int {
+        var count = 0
+        for run in runs where run.status != .completed {
+            try inlineCompleteCleaningRun(
+                run: run,
+                user: user,
+                restaurantId: restaurantId,
+                modelContext: modelContext
+            )
+            count += 1
+        }
+        return count
+    }
+
+    /// Completamento bulk checklist operative per macro area (tutte le voci OK).
+    @discardableResult
+    func completeAllChecklistRuns(
+        runs: [ChecklistRun],
+        user: LocalUser,
+        restaurantId: UUID,
+        modelContext: ModelContext
+    ) throws -> Int {
+        var count = 0
+        for run in runs where run.status != .completed && run.status != .failed {
+            if itemResults(for: run.id, modelContext: modelContext).isEmpty {
+                seedItemResults(for: run, templateId: run.templateId, modelContext: modelContext)
+            }
+            guard run.progressPercentage < 100 else { continue }
+            try markAllItemsPass(
+                run: run,
+                user: user,
+                restaurantId: restaurantId,
+                modelContext: modelContext
+            )
+            count += 1
+        }
+        return count
+    }
+
     private func itemResults(for runId: UUID, modelContext: ModelContext) -> [ChecklistItemResult] {
-        ((try? modelContext.fetch(FetchDescriptor<ChecklistItemResult>())) ?? [])
-            .filter { $0.checklistRunId == runId }
-            .sorted { $0.orderIndex < $1.orderIndex }
+        var descriptor = FetchDescriptor<ChecklistItemResult>(
+            predicate: #Predicate { $0.checklistRunId == runId },
+            sortBy: [SortDescriptor(\ChecklistItemResult.orderIndex)]
+        )
+        return (try? modelContext.fetch(descriptor)) ?? []
+    }
+
+    private func itemTemplate(for id: UUID, modelContext: ModelContext) -> ChecklistItemTemplate? {
+        var descriptor = FetchDescriptor<ChecklistItemTemplate>(
+            predicate: #Predicate { $0.id == id }
+        )
+        descriptor.fetchLimit = 1
+        return (try? modelContext.fetch(descriptor))?.first
+    }
+
+    private func activeAlerts(for runId: UUID, modelContext: ModelContext) -> [ChecklistAlert] {
+        var descriptor = FetchDescriptor<ChecklistAlert>(
+            predicate: #Predicate { $0.checklistRunId == runId && $0.isActive }
+        )
+        return (try? modelContext.fetch(descriptor)) ?? []
     }
 
     private func upsertFailureAlert(
@@ -388,7 +453,7 @@ final class ChecklistService {
         user: LocalUser,
         modelContext: ModelContext
     ) {
-        let alerts = (try? modelContext.fetch(FetchDescriptor<ChecklistAlert>())) ?? []
+        let alerts = activeAlerts(for: run.id, modelContext: modelContext)
         let message = failureAlertMessage(title: itemResult.titleSnapshot, note: note)
         if let existing = alerts.first(where: {
             $0.checklistRunId == run.id
@@ -424,8 +489,8 @@ final class ChecklistService {
         user: LocalUser,
         modelContext: ModelContext
     ) {
-        let alerts = (try? modelContext.fetch(FetchDescriptor<ChecklistAlert>())) ?? []
-        for alert in alerts where alert.checklistRunId == run.id && alert.isActive {
+        let alerts = activeAlerts(for: run.id, modelContext: modelContext)
+        for alert in alerts {
             guard alert.itemResultId == itemResult.id || matchesLegacyFailureAlert(alert, itemResult: itemResult) else {
                 continue
             }
@@ -455,9 +520,7 @@ final class ChecklistService {
         restaurantId: UUID,
         modelContext: ModelContext
     ) throws {
-        let results = ((try? modelContext.fetch(FetchDescriptor<ChecklistItemResult>())) ?? [])
-            .filter { $0.checklistRunId == run.id }
-            .sorted { $0.orderIndex < $1.orderIndex }
+        let results = itemResults(for: run.id, modelContext: modelContext)
 
         let now = Date()
         for itemResult in results where itemResult.result != .pass {
@@ -483,7 +546,9 @@ final class ChecklistService {
             details: run.templateTitleSnapshot,
             modelContext: modelContext
         )
-        try modelContext.save()
+        guard modelContext.saveSafely(operation: "checklist-bulk-pass") else {
+            throw SwiftDataOperationError.saveFailed("checklist-bulk-pass")
+        }
         syncChecklistNotifications(restaurantId: restaurantId, modelContext: modelContext)
     }
 
@@ -690,11 +755,28 @@ final class ChecklistService {
         restaurantId: UUID,
         user: LocalUser?,
         modelContext: ModelContext,
+        onlyCleaningBridge: Bool = false,
         now: Date = Date()
     ) {
-        let templates = ((try? modelContext.fetch(FetchDescriptor<ChecklistTemplate>())) ?? [])
-            .filter { $0.restaurantId == restaurantId && $0.isActive && !$0.isSuggestedLibrary }
-        let allRuns = (try? modelContext.fetch(FetchDescriptor<ChecklistRun>())) ?? []
+        let rid = restaurantId
+        var templateDescriptor = FetchDescriptor<ChecklistTemplate>(
+            predicate: #Predicate {
+                $0.restaurantId == rid && $0.isActive && !$0.isSuggestedLibrary
+            },
+            sortBy: [SortDescriptor(\ChecklistTemplate.title)]
+        )
+        templateDescriptor.fetchLimit = PerformanceConfig.checklistTemplateFetchLimit
+        var templates = (try? modelContext.fetch(templateDescriptor)) ?? []
+        if onlyCleaningBridge {
+            templates = templates.filter { $0.isCleaningBridge || $0.category == .cleaning }
+        }
+
+        var runDescriptor = FetchDescriptor<ChecklistRun>(
+            predicate: #Predicate { $0.restaurantId == rid && !$0.isArchived },
+            sortBy: [SortDescriptor(\ChecklistRun.createdAt, order: .reverse)]
+        )
+        runDescriptor.fetchLimit = PerformanceConfig.checklistRunFetchLimit
+        let allRuns = (try? modelContext.fetch(runDescriptor)) ?? []
 
         for template in templates {
             guard let dueForCycle = dueDateForTemplateCycle(template: template, now: now) else {
@@ -839,9 +921,9 @@ final class ChecklistService {
 
     /// Chiude automaticamente gli avvisi «in ritardo» quando la checklist non è più aperta.
     private func deactivateOverdueAlerts(for run: ChecklistRun, modelContext: ModelContext) {
-        let alerts = (try? modelContext.fetch(FetchDescriptor<ChecklistAlert>())) ?? []
+        let alerts = activeAlerts(for: run.id, modelContext: modelContext)
         let now = Date()
-        for alert in alerts where alert.checklistRunId == run.id && alert.isActive && alert.message.contains("in ritardo") {
+        for alert in alerts where alert.message.contains("in ritardo") {
             alert.isActive = false
             alert.status = .resolved
             alert.resolvedAt = now

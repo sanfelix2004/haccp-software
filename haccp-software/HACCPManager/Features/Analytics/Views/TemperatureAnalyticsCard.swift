@@ -4,7 +4,7 @@ import Charts
 struct TemperatureAnalyticsCard: View {
     let points: [TemperatureChartPoint]
     let kpis: [AnalyticsKPI]
-    let devices: [TemperatureDevice]
+    let devices: [AnalyticsTemperatureDeviceOption]
     @Binding var selectedDeviceId: UUID?
     @Binding var selectedPeriod: AnalyticsPeriod
 

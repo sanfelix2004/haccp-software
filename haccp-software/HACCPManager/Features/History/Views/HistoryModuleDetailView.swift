@@ -1,12 +1,22 @@
 import SwiftUI
+import SwiftData
 
 struct HistoryModuleDetailView: View {
     let module: HistoryModule
     let entries: [HistoryEntry]
+    var onDataChanged: (() -> Void)? = nil
 
     @Environment(\.theme) private var theme
+    @Environment(\.modelContext) private var modelContext
+    @EnvironmentObject private var appState: AppState
+    @Query private var users: [LocalUser]
     @StateObject private var vm = HistoryModuleDetailViewModel()
     @State private var visibleCount = PerformanceConfig.historyPageSize
+    @State private var withdrawRecord: TraceabilityRecord?
+
+    private var currentUser: LocalUser? {
+        users.first { $0.id == appState.currentUserId }
+    }
 
     private var filteredEntries: [HistoryEntry] {
         vm.filtered(entries: entries).sorted { $0.date > $1.date }
@@ -64,6 +74,36 @@ struct HistoryModuleDetailView: View {
         .onChange(of: vm.appliedFilter) { _, _ in
             visibleCount = PerformanceConfig.historyPageSize
         }
+        .sheet(item: $withdrawRecord) { record in
+            if let user = currentUser {
+                TraceabilityWithdrawSheet(
+                    record: record,
+                    user: user,
+                    onSaved: {
+                        withdrawRecord = nil
+                        onDataChanged?()
+                    },
+                    onCancel: { withdrawRecord = nil }
+                )
+            }
+        }
+    }
+
+    private func openPendingClosure(recordId: UUID) {
+        let targetId = recordId
+        var descriptor = FetchDescriptor<TraceabilityRecord>(
+            predicate: #Predicate<TraceabilityRecord> { record in
+                record.id == targetId
+            }
+        )
+        descriptor.fetchLimit = 1
+        guard let record = (try? modelContext.fetch(descriptor))?.first else { return }
+        withdrawRecord = record
+    }
+
+    private func handlePendingClosure(recordId: UUID) {
+        guard module == .expiryControl else { return }
+        openPendingClosure(recordId: recordId)
     }
 
     private var moduleHeader: some View {
@@ -124,7 +164,11 @@ struct HistoryModuleDetailView: View {
                 .foregroundStyle(theme.colorTextPrimary)
 
             ForEach(groupedEntries, id: \.date) { group in
-                HistoryDateSection(date: group.date, entries: group.entries)
+                HistoryDateSection(
+                    date: group.date,
+                    entries: group.entries,
+                    onPendingClosure: handlePendingClosure
+                )
             }
         }
     }

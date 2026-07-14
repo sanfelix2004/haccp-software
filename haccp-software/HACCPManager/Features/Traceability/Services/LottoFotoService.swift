@@ -151,10 +151,20 @@ struct LottoFotoService {
         )
     }
 
-    /// Analisi lotto in background (Groq Vision — Llama 4 Maverick).
+    /// Analisi lotto in background (OCR locale + Groq in parallelo).
     func extractLot(from photoData: Data) async throws -> ProductionLotCaptureOutcome {
         guard !photoData.isEmpty else { throw LabelLotError.invalidImage }
         return try await capturePipeline.process(photoData: photoData, expectedIngredientNames: [])
+    }
+
+    func extractLotGroqOnly(from photoData: Data) async throws -> ProductionLotCaptureOutcome {
+        guard !photoData.isEmpty else { throw LabelLotError.invalidImage }
+        return try await capturePipeline.processGroqOnly(photoData: photoData, expectedIngredientNames: [])
+    }
+
+    func extractLotLocalPreview(from photoData: Data) async -> ProductionLotCaptureOutcome? {
+        guard !photoData.isEmpty else { return nil }
+        return await capturePipeline.processLocalPreview(photoData: photoData)
     }
 
     /// Elabora foto in modo sincrono (legacy / test).
