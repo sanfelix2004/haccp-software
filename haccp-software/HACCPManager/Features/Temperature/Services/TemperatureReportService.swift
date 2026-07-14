@@ -254,7 +254,7 @@ final class TemperatureReportService {
             record.status.rawValue,
             record.measuredByName,
             DateFormatter.localizedString(from: record.measuredAt, dateStyle: .short, timeStyle: .short),
-            record.correctiveAction?.isEmpty == false ? record.correctiveAction! : "-"
+            record.correctiveAction.flatMap { $0.isEmpty ? nil : $0 } ?? "-"
         ]
 
         var x = frame.minX

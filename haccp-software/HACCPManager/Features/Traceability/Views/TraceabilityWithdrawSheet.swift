@@ -15,7 +15,7 @@ struct TraceabilityWithdrawSheet: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
 
-    @State private var kind: TraceabilityWithdrawalKind = .scartato
+    @State private var kind: TraceabilityWithdrawalKind = .ritirato
     @State private var note = ""
     @State private var errorMessage: String?
     @State private var isSubmitting = false
@@ -60,7 +60,7 @@ struct TraceabilityWithdrawSheet: View {
                         .lineLimit(2...4)
                 }
             }
-            .navigationTitle("Ritiro / scarto")
+            .navigationTitle("Usato / scarto")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -75,7 +75,7 @@ struct TraceabilityWithdrawSheet: View {
                         .disabled(isSubmitting || !record.canBeWithdrawn)
                 }
             }
-            .alert("Ritiro / scarto", isPresented: Binding(
+            .alert("Usato / scarto", isPresented: Binding(
                 get: { errorMessage != nil },
                 set: { if !$0 { errorMessage = nil } }
             )) {

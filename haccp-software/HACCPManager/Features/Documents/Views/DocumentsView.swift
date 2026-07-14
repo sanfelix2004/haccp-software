@@ -11,7 +11,7 @@ struct DocumentsView: View {
     @Query private var restaurants: [Restaurant]
 
     @StateObject private var vm = DocumentsViewModel()
-    @StateObject private var dataStore = DocumentsDataStore()
+    @ObservedObject private var dataStore = ModuleStoreRegistry.shared.documents
     @ObservedObject private var iCloudSync = ICloudDocumentSyncService.shared
     @State private var isSyncingICloud = false
     @State private var documentPreviewItem: DocumentPreviewSheetItem?
@@ -208,10 +208,9 @@ struct DocumentsView: View {
             Task { @MainActor in
                 await Task.yield()
                 DocumentArchivePurgeService.consumeMarkerAndPurgeIfNeeded(modelContext: modelContext)
-                refreshArchiveLight()
             }
         }
-        .task(id: appState.activeRestaurantId) {
+        .moduleScreenLoad(restaurantId: appState.activeRestaurantId) {
             reloadDocumentsData()
         }
         .onReceive(NotificationCenter.default.publisher(for: .kitchenProcessRecordsDidChange)) { _ in
@@ -219,7 +218,7 @@ struct DocumentsView: View {
         }
         .onChange(of: appState.activeRestaurantId) { _, _ in
             vm.selectedFolderId = nil
-            refreshArchiveLight()
+            reloadDocumentsData()
         }
         .onChange(of: dataStore.items.count) { _, _ in
             rebuildFolderMetrics()
@@ -399,7 +398,7 @@ struct DocumentsView: View {
                 restaurant: restaurant,
                 user: currentUser,
                 in: modelContext,
-                force: true
+                force: false
             )
             dataStore.reloadSynchronously(context: modelContext, restaurantId: restaurant.id)
             rebuildFolderMetrics()

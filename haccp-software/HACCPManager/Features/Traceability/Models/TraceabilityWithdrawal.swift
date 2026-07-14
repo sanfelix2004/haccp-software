@@ -12,14 +12,14 @@ enum TraceabilityWithdrawalKind: String, CaseIterable, Identifiable, Codable {
 
     var label: String {
         switch self {
-        case .ritirato: return "Ritirato"
+        case .ritirato: return "Usato"
         case .scartato: return "Scartato"
         }
     }
 
     var subtitle: String {
         switch self {
-        case .ritirato: return "Prodotto rimosso dalle scorte operative"
+        case .ritirato: return "Prodotto utilizzato in cucina"
         case .scartato: return "Prodotto eliminato / non utilizzabile"
         }
     }

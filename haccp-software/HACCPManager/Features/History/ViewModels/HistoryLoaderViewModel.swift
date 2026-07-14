@@ -16,14 +16,21 @@ final class HistoryLoaderViewModel: ObservableObject {
     private let service = HistoryService()
     private var loadTask: Task<Void, Never>?
     private var reloadGeneration = 0
+    private var reloadPolicy = DataStoreReloadPolicy()
 
-    func reload(context: ModelContext, restaurantId: UUID?) {
+    func reload(context: ModelContext, restaurantId: UUID?, force: Bool = false) {
         loadTask?.cancel()
         guard let restaurantId else {
             entries = []
             isLoading = false
+            reloadPolicy.invalidate()
             return
         }
+        guard reloadPolicy.shouldReload(
+            restaurantId: restaurantId,
+            hasData: !entries.isEmpty,
+            force: force
+        ) else { return }
 
         let token = MainActorDataLoad.begin(generation: &reloadGeneration)
         isLoading = true
@@ -41,6 +48,10 @@ final class HistoryLoaderViewModel: ObservableObject {
                   !Task.isCancelled else { return }
 
             let data = HistoryDataFetcher.fetch(context: context, restaurantId: restaurantId)
+            guard MainActorDataLoad.isCurrent(generation: token, activeGeneration: reloadGeneration),
+                  !Task.isCancelled else { return }
+
+            await Task.yield()
             guard MainActorDataLoad.isCurrent(generation: token, activeGeneration: reloadGeneration),
                   !Task.isCancelled else { return }
 
@@ -68,7 +79,13 @@ final class HistoryLoaderViewModel: ObservableObject {
                   !Task.isCancelled,
                   loadToken == publishedToken else { return }
             entries = built
+            reloadPolicy.markLoaded(restaurantId: restaurantId)
         }
+    }
+
+    func cancelPendingLoad() {
+        loadTask?.cancel()
+        loadTask = nil
     }
 
     deinit {

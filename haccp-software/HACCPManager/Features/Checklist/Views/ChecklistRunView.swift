@@ -215,35 +215,43 @@ struct ChecklistRunView: View {
 
     private func bulkPassAll() {
         guard let currentUser else { return }
-        do {
-            try service.markAllItemsPass(
-                run: run,
-                user: currentUser,
-                restaurantId: run.restaurantId,
-                modelContext: modelContext
-            )
-            HapticManager.shared.notification(.success)
-        } catch {
-            vm.completionError = "Compilazione rapida non riuscita."
+        Task { @MainActor in
+            await Task.yield()
+            do {
+                try service.markAllItemsPass(
+                    run: run,
+                    user: currentUser,
+                    restaurantId: run.restaurantId,
+                    modelContext: modelContext
+                )
+                HapticManager.shared.notification(.success)
+            } catch {
+                vm.completionError = "Compilazione rapida non riuscita."
+            }
         }
     }
 
     private func save(result: ChecklistItemResult, value: ChecklistItemResultValue, note: String?) {
         guard let currentUser else { return }
-        do {
-            try service.updateItemResult(
-                itemResult: result,
-                result: value,
-                note: note,
-                user: currentUser,
-                run: run,
-                restaurantId: run.restaurantId,
-                modelContext: modelContext
-            )
-        } catch let error as ChecklistServiceError {
-            vm.completionError = error.localizedDescription
-        } catch {
-            vm.completionError = "Salvataggio non riuscito."
+        let needsNote = requiresNote(for: result)
+        Task { @MainActor in
+            await Task.yield()
+            do {
+                try service.updateItemResult(
+                    itemResult: result,
+                    result: value,
+                    note: note,
+                    user: currentUser,
+                    run: run,
+                    restaurantId: run.restaurantId,
+                    modelContext: modelContext,
+                    requiresNoteIfFailed: needsNote
+                )
+            } catch let error as ChecklistServiceError {
+                vm.completionError = error.localizedDescription
+            } catch {
+                vm.completionError = "Salvataggio non riuscito."
+            }
         }
     }
 }
@@ -333,6 +341,7 @@ struct ChecklistRunItemCard: View {
             } else {
                 TextField("Nota opzionale", text: $note)
                     .textFieldStyle(.roundedBorder)
+                    .onSubmit { persistIfReady() }
             }
 
             if needsNoteBeforeSave {
@@ -369,7 +378,7 @@ struct ChecklistRunItemCard: View {
             persistIfReady()
         }
         .onChange(of: note) { _, _ in
-            guard initialized else { return }
+            guard initialized, selectedValue == .fail else { return }
             persistIfReady()
         }
     }
@@ -390,6 +399,12 @@ struct ChecklistRunItemCard: View {
 
     private func persistIfReady() {
         if selectedValue == .fail, requiresNoteIfFailed, trimmedNote.isEmpty {
+            return
+        }
+        guard selectedValue != .pending else { return }
+        let savedNote = result.note ?? ""
+        let currentNote = trimmedNote
+        if selectedValue == result.result, currentNote == savedNote.trimmingCharacters(in: .whitespacesAndNewlines) {
             return
         }
         onSave(selectedValue, trimmedNote.isEmpty ? nil : trimmedNote)

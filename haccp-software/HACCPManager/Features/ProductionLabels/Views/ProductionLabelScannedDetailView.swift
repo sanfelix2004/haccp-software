@@ -15,7 +15,7 @@ struct ProductionLabelScannedDetailView: View {
                 VStack(spacing: theme.spacing.sectionSpacing) {
                     if showsOfflineBanner {
                         DashboardCardView(title: "Lettura QR", subtitle: "Da qualsiasi dispositivo") {
-                            Text("Tutte le informazioni utili sono nel codice QR. Non serve che l’etichetta sia nell’archivio di questo dispositivo.")
+                            Text("Il QR contiene tutte le informazioni in italiano. Su iPad apri la scheda completa; su un telefono senza app usa la fotocamera — vedrai subito prodotto, lotto, scadenze e allergeni.")
                                 .font(theme.typography.subheadline)
                                 .foregroundStyle(theme.colorTextSecondary)
                         }

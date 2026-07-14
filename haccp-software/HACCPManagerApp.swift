@@ -15,6 +15,8 @@ struct HACCPManagerApp: App {
     private var container: ModelContainer
     
     init() {
+        CoreDataLoggingSuppressor.apply()
+
         // Tema/layout da UserDefaults prima del primo frame (evita flash nero).
         ThemeManager.shared.loadSavedTheme()
 
@@ -109,26 +111,35 @@ struct HACCPManagerApp: App {
         }
         .modelContainer(container)
         .onChange(of: scenePhase) { _, newPhase in
-            guard newPhase == .active || newPhase == .background else { return }
+            guard newPhase == .active else { return }
             let context = container.mainContext
-            Task { @MainActor in
-                var descriptor = FetchDescriptor<TraceabilityRecord>(
-                    predicate: #Predicate { !$0.isArchived },
-                    sortBy: [SortDescriptor(\TraceabilityRecord.expiryDate)]
-                )
-                descriptor.fetchLimit = 2_000
-                if let activeRecords = try? context.fetch(descriptor) {
-                    _ = TraceabilityExpiryService().refreshStatuses(records: activeRecords, modelContext: context)
-                }
-                if newPhase == .active {
-                    DocumentArchivePurgeService.consumeMarkerAndPurgeIfNeeded(modelContext: context)
-                    SchedulingToChecklistMigrationService.migrateIfNeeded(modelContext: context)
-                    if let restaurantId = appState.activeRestaurantId {
-                        await DataArchiveService.runIfNeeded(modelContainer: container, restaurantId: restaurantId)
+            let restaurantId = appState.activeRestaurantId
+            Task(priority: .utility) { @MainActor in
+                await MainThreadYield.beforeHeavyWork()
+                guard !Task.isCancelled else { return }
+
+                if let restaurantId {
+                    var descriptor = FetchDescriptor<TraceabilityRecord>(
+                        predicate: #Predicate { record in
+                            record.restaurantId == restaurantId && !record.isArchived
+                        },
+                        sortBy: [SortDescriptor(\TraceabilityRecord.expiryDate)]
+                    )
+                    descriptor.fetchLimit = PerformanceConfig.traceabilityActiveFetchLimit
+                    if let activeRecords = try? context.fetch(descriptor) {
+                        await MainThreadYield.betweenFetchPhases()
+                        _ = TraceabilityExpiryService().refreshStatuses(records: activeRecords, modelContext: context)
                     }
-                    ClabelPrinterManager.shared.reconnectIfSaved()
-                    await tickMonthlyArchive(modelContext: context)
                 }
+
+                DocumentArchivePurgeService.consumeMarkerAndPurgeIfNeeded(modelContext: context)
+                await MainThreadYield.betweenFetchPhases()
+                SchedulingToChecklistMigrationService.migrateIfNeeded(modelContext: context)
+                if let restaurantId {
+                    await DataArchiveService.runIfNeeded(modelContainer: container, restaurantId: restaurantId)
+                }
+                ClabelPrinterManager.shared.reconnectIfSaved()
+                await tickMonthlyArchive(modelContext: context)
             }
         }
     }

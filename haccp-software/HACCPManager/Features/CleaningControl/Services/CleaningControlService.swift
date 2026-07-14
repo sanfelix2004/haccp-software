@@ -159,7 +159,83 @@ struct CleaningControlService {
                 record.notes = record.notes ?? "Ciclo non completato"
             }
         }
-        try? modelContext.save()
+    }
+
+    /// Seed aree/task demo — una sola save, con yield tra le fasi.
+    func ensureInitialTemplatesAsync(
+        restaurantId: UUID,
+        user: LocalUser,
+        existingAreas: [CleaningArea],
+        modelContext: ModelContext
+    ) async {
+        let scopedExisting = existingAreas.filter { $0.restaurantId == restaurantId }
+        guard scopedExisting.isEmpty else { return }
+
+        var createdAreas: [String: CleaningArea] = [:]
+        for (areaName, _) in Self.seedData {
+            let area = CleaningArea(
+                restaurantId: restaurantId,
+                name: areaName,
+                createdByUserId: user.id,
+                createdByNameSnapshot: user.name
+            )
+            modelContext.insert(area)
+            createdAreas[areaName] = area
+        }
+        await Task.yield()
+
+        for (areaName, tasks) in Self.seedData {
+            guard let area = createdAreas[areaName] else { continue }
+            for task in tasks {
+                let task = CleaningTask(
+                    restaurantId: restaurantId,
+                    areaId: area.id,
+                    areaNameSnapshot: area.name,
+                    title: task.title,
+                    frequency: task.frequency,
+                    createdByUserId: user.id,
+                    createdByNameSnapshot: user.name
+                )
+                modelContext.insert(task)
+            }
+        }
+        modelContext.saveSafely(operation: "cleaning-seed")
+    }
+
+    /// Ricrea i task seed se le aree esistono ma i task sono assenti (es. dopo dedupe o migrazione).
+    func backfillSeedTasksIfNeeded(
+        restaurantId: UUID,
+        areas: [CleaningArea],
+        existingTasks: [CleaningTask],
+        user: LocalUser,
+        modelContext: ModelContext
+    ) async {
+        let scopedTasks = existingTasks.filter { $0.restaurantId == restaurantId && $0.isActive }
+        guard scopedTasks.isEmpty else { return }
+
+        let areaByName = Dictionary(
+            uniqueKeysWithValues: CleaningAreaGrouping.uniqueByName(areas)
+                .map { (CleaningAreaGrouping.normalizeName($0.name), $0) }
+        )
+        guard !areaByName.isEmpty else { return }
+
+        for (areaName, seedTasks) in Self.seedData {
+            guard let area = areaByName[CleaningAreaGrouping.normalizeName(areaName)] else { continue }
+            for seed in seedTasks {
+                let task = CleaningTask(
+                    restaurantId: restaurantId,
+                    areaId: area.id,
+                    areaNameSnapshot: area.name,
+                    title: seed.title,
+                    frequency: seed.frequency,
+                    createdByUserId: user.id,
+                    createdByNameSnapshot: user.name
+                )
+                modelContext.insert(task)
+            }
+        }
+        await Task.yield()
+        modelContext.saveSafely(operation: "cleaning-backfill-tasks")
     }
 
     func buildTaskCards(

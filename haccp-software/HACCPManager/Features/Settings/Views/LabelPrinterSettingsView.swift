@@ -8,8 +8,9 @@ struct LabelPrinterSettingsView: View {
 
     var body: some View {
         @Bindable var storage = storage
-        VStack(spacing: 24) {
+        VStack(spacing: 20) {
             connectionCard
+            labelSizeSection
             discoveryCard
             labelFieldsSection
             qrCodeSection
@@ -37,224 +38,171 @@ struct LabelPrinterSettingsView: View {
     // MARK: - Connessione
 
     private var connectionCard: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack {
-                Image(systemName: "printer.fill")
-                    .font(.title2)
-                    .foregroundStyle(statusColor)
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Stampante CLABEL")
-                        .font(.headline)
-                    Text(statusText)
-                        .font(.caption)
-                        .foregroundStyle(ThemeManager.shared.colorTextSecondary)
-                }
-                Spacer()
-                Circle()
-                    .fill(statusColor)
-                    .frame(width: 10, height: 10)
-            }
-
-            if let name = printerManager.connectedDeviceName, printerManager.isConnected {
+        SettingsPanelCard(title: "Stampante CLABEL S1", caption: statusText) {
+            VStack(alignment: .leading, spacing: 14) {
                 HStack {
-                    Text("Collegata a")
-                        .font(.subheadline)
-                        .foregroundStyle(ThemeManager.shared.colorTextSecondary)
+                    Circle()
+                        .fill(statusColor)
+                        .frame(width: 10, height: 10)
+                    if let name = printerManager.connectedDeviceName, printerManager.isConnected {
+                        Text("Collegata a \(name)")
+                            .font(.subheadline.weight(.semibold))
+                    } else if !storage.printer.savedPeripheralDisplayName.isEmpty {
+                        Text("Salvata: \(storage.printer.savedPeripheralDisplayName)")
+                            .font(.subheadline)
+                    } else {
+                        Text(storage.printer.labelSizeDisplay)
+                            .font(.caption)
+                            .foregroundStyle(ThemeManager.shared.colorTextSecondary)
+                    }
                     Spacer()
-                    Text(name)
-                        .font(.subheadline.weight(.semibold))
                 }
-            } else if !storage.printer.savedPeripheralDisplayName.isEmpty {
-                HStack {
-                    Text("Salvata")
-                        .font(.subheadline)
-                        .foregroundStyle(ThemeManager.shared.colorTextSecondary)
-                    Spacer()
-                    Text(storage.printer.savedPeripheralDisplayName)
-                        .font(.subheadline.weight(.semibold))
-                }
-            }
 
-            Text("Etichette \(storage.printer.labelSize) · Bluetooth")
-                .font(.caption2)
-                .foregroundStyle(ThemeManager.shared.colorTextSecondary)
-
-            if let channel = printerManager.connectedWriteChannel, printerManager.isConnected {
-                Text("Canale: \(channel)")
-                    .font(.caption2)
-                    .foregroundStyle(ThemeManager.shared.colorTextSecondary)
-            }
-
-            if let ok = printerManager.lastSuccessMessage {
-                Text(ok)
-                    .font(.caption)
-                    .foregroundStyle(ThemeManager.shared.colorSuccess)
-            }
-
-            protocolPicker
-
-            HStack(spacing: 12) {
-                if printerManager.isReadyToPrint {
-                    Button("Disconnetti") {
-                        printerManager.disconnect()
-                    }
-                    .buttonStyle(.bordered)
-
-                    Button {
-                        Task { await runTestPrint() }
-                    } label: {
-                        if isPrintingTest {
-                            ProgressView()
-                        } else {
-                            Text("Stampa prova")
-                        }
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(isPrintingTest || isRunningDiagnostics)
-
-                    Button {
-                        Task { await runDiagnostics() }
-                    } label: {
-                        if isRunningDiagnostics {
-                            ProgressView()
-                        } else {
-                            Text("Diagnostica")
-                        }
-                    }
-                    .buttonStyle(.bordered)
-                    .disabled(isPrintingTest || isRunningDiagnostics)
-                } else if printerManager.isConnected {
-                    Text("Connessione in corso… attendi il canale di stampa.")
+                if let ok = printerManager.lastSuccessMessage {
+                    Text(ok)
                         .font(.caption)
-                        .foregroundStyle(ThemeManager.shared.colorWarning)
-                } else if printerManager.savedPeripheralUUID != nil {
-                    Button("Riconnetti") {
-                        printerManager.reconnectIfSaved()
-                    }
-                    .buttonStyle(.borderedProminent)
+                        .foregroundStyle(ThemeManager.shared.colorSuccess)
                 }
 
-                if printerManager.savedPeripheralUUID != nil {
-                    Button("Dimentica", role: .destructive) {
-                        printerManager.forgetSavedPrinter()
+                HStack(spacing: 10) {
+                    if printerManager.isReadyToPrint {
+                        Button("Disconnetti") { printerManager.disconnect() }
+                            .buttonStyle(.bordered)
+                        Button { Task { await runTestPrint() } } label: {
+                            if isPrintingTest { ProgressView() } else { Text("Prova") }
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(isPrintingTest || isRunningDiagnostics)
+                    } else if printerManager.isConnected {
+                        Text("Connessione in corso…")
+                            .font(.caption)
+                            .foregroundStyle(ThemeManager.shared.colorWarning)
+                    } else if printerManager.savedPeripheralUUID != nil {
+                        Button("Riconnetti") { printerManager.reconnectIfSaved() }
+                            .buttonStyle(.borderedProminent)
                     }
-                    .buttonStyle(.bordered)
+
+                    if printerManager.savedPeripheralUUID != nil {
+                        Button("Dimentica", role: .destructive) { printerManager.forgetSavedPrinter() }
+                            .buttonStyle(.bordered)
+                    }
+                }
+
+                SettingsExpandableCard(title: "Protocollo stampa", caption: "Solo se la prova non funziona") {
+                    protocolPickerContent
                 }
             }
         }
-        .padding()
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(ThemeManager.shared.colorSurface)
-        .cornerRadius(20)
     }
 
     // MARK: - Ricerca dispositivi
 
     private var discoveryCard: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack {
-                Text("Dispositivi Bluetooth vicini")
-                    .font(.headline)
-                Spacer()
-                if printerManager.connectionState == .scanning {
-                    ProgressView()
-                        .scaleEffect(0.85)
-                }
-            }
-
-            Text("Accendi la stampante CLABEL e selezionala dall'elenco. Non serve conoscere il nome esatto.")
-                .font(.caption)
-                .foregroundStyle(ThemeManager.shared.colorTextSecondary)
-
-            Button {
-                if printerManager.connectionState == .scanning {
-                    printerManager.stopScanning()
-                } else {
-                    printerManager.startScanning()
-                }
-            } label: {
-                Text(printerManager.connectionState == .scanning ? "Ferma ricerca" : "Cerca dispositivi...")
-                    .fontWeight(.bold)
+        SettingsPanelCard(title: "Dispositivi vicini", caption: "Accendi la stampante e avvia la ricerca.") {
+            VStack(alignment: .leading, spacing: 12) {
+                Button {
+                    if printerManager.connectionState == .scanning {
+                        printerManager.stopScanning()
+                    } else {
+                        printerManager.startScanning()
+                    }
+                } label: {
+                    HStack {
+                        if printerManager.connectionState == .scanning {
+                            ProgressView().scaleEffect(0.85)
+                        }
+                        Text(printerManager.connectionState == .scanning ? "Ferma ricerca" : "Cerca dispositivi")
+                            .fontWeight(.semibold)
+                    }
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 12)
-                    .background(ThemeManager.shared.colorDivider)
+                    .background(ThemeManager.shared.colorSurfaceElevated)
                     .cornerRadius(10)
-            }
+                }
 
-            if printerManager.discoveredDevices.isEmpty {
-                Text(printerManager.connectionState == .scanning
-                     ? "Ricerca in corso… avvicina la stampante."
-                     : "Nessun dispositivo trovato. Avvia la ricerca con la stampante accesa.")
-                    .font(.caption)
-                    .foregroundStyle(ThemeManager.shared.colorTextSecondary)
-                    .frame(maxWidth: .infinity, alignment: .center)
-                    .padding(.vertical, 8)
-            } else {
-                VStack(spacing: 0) {
-                    ForEach(printerManager.discoveredDevices) { device in
-                        Button {
-                            printerManager.connect(to: device.id)
-                        } label: {
-                            HStack(spacing: 12) {
-                                Image(systemName: "dot.radiowaves.left.and.right")
-                                    .foregroundStyle(ThemeManager.shared.colorPrimary)
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(device.displayName)
-                                        .font(.subheadline.weight(.semibold))
-                                        .foregroundStyle(ThemeManager.shared.colorTextPrimary)
-                                    Text("Segnale \(device.signalDescription) · \(device.rssi) dBm")
-                                        .font(.caption2)
-                                        .foregroundStyle(ThemeManager.shared.colorTextSecondary)
-                                }
-                                Spacer()
-                                if printerManager.savedPeripheralUUID == device.id {
-                                    Image(systemName: "checkmark.circle.fill")
-                                        .foregroundStyle(ThemeManager.shared.colorSuccess)
-                                }
-                                if printerManager.connectionState == .connecting,
-                                   printerManager.savedPeripheralUUID == device.id {
-                                    ProgressView()
-                                } else {
+                if printerManager.discoveredDevices.isEmpty {
+                    Text(printerManager.connectionState == .scanning
+                         ? "Ricerca in corso…"
+                         : "Nessun dispositivo. Avvia la ricerca.")
+                        .font(.caption)
+                        .foregroundStyle(ThemeManager.shared.colorTextSecondary)
+                        .frame(maxWidth: .infinity, alignment: .center)
+                } else {
+                    VStack(spacing: 0) {
+                        ForEach(printerManager.discoveredDevices) { device in
+                            Button { printerManager.connect(to: device.id) } label: {
+                                HStack(spacing: 10) {
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(device.displayName)
+                                            .font(.subheadline.weight(.semibold))
+                                            .foregroundStyle(ThemeManager.shared.colorTextPrimary)
+                                        Text(device.signalDescription)
+                                            .font(.caption2)
+                                            .foregroundStyle(ThemeManager.shared.colorTextSecondary)
+                                    }
+                                    Spacer()
+                                    if printerManager.savedPeripheralUUID == device.id {
+                                        Image(systemName: "checkmark.circle.fill")
+                                            .foregroundStyle(ThemeManager.shared.colorSuccess)
+                                    }
                                     Image(systemName: "chevron.right")
                                         .font(.caption.weight(.bold))
                                         .foregroundStyle(ThemeManager.shared.colorTextSecondary)
                                 }
+                                .padding(.vertical, 10)
                             }
-                            .padding(.vertical, 12)
-                            .padding(.horizontal, 4)
-                        }
-                        if device.id != printerManager.discoveredDevices.last?.id {
-                            Divider()
+                            if device.id != printerManager.discoveredDevices.last?.id {
+                                Divider()
+                            }
                         }
                     }
                 }
             }
         }
-        .padding()
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(ThemeManager.shared.colorSurface)
-        .cornerRadius(20)
+    }
+
+    private var labelSizeSection: some View {
+        @Bindable var storage = storage
+        return SettingsPanelCard(
+            title: "Formato rotolo",
+            caption: "Seleziona il rotolo montato sulla stampante. Il layout si adatta automaticamente."
+        ) {
+            Picker("Rotolo", selection: Binding(
+                get: { storage.printer.clabelSize },
+                set: { newSize in
+                    storage.printer.clabelSize = newSize
+                    storage.saveAll()
+                }
+            )) {
+                ForEach(ClabelLabelSize.allCases) { size in
+                    Text(size.displayName).tag(size)
+                }
+            }
+            .pickerStyle(.segmented)
+
+            Text(storage.printer.clabelSize.usageHint)
+                .font(.caption)
+                .foregroundStyle(ThemeManager.shared.colorTextSecondary)
+
+            Text("Campi inclusi: prodotto, lotto, date, operatore, allergeni e QR tracciabilità.")
+                .font(.caption2)
+                .foregroundStyle(ThemeManager.shared.colorTextSecondary)
+        }
     }
 
     private var labelFieldsSection: some View {
         @Bindable var storage = storage
-        return VStack(alignment: .leading, spacing: 20) {
-            Text("Campi Etichetta Standard")
-                .font(.headline)
-
-            Group {
-                Toggle("Nome Prodotto", isOn: $storage.printer.showProductName)
-                Toggle("Data Preparazione", isOn: $storage.printer.showPrepDate)
-                Toggle("Data Scadenza", isOn: $storage.printer.showExpiryDate)
-                Toggle("Lotto Produzione", isOn: $storage.printer.showLotNumber)
-                Toggle("Nome Operatore", isOn: $storage.printer.showOperatorName)
-                Toggle("Avvisi Allergeni", isOn: $storage.printer.showAllergenWarning)
+        return SettingsPanelCard(title: "Campi etichetta") {
+            VStack(alignment: .leading, spacing: 10) {
+                Toggle("Nome prodotto", isOn: $storage.printer.showProductName)
+                Toggle("Data preparazione", isOn: $storage.printer.showPrepDate)
+                Toggle("Data scadenza", isOn: $storage.printer.showExpiryDate)
+                Toggle("Lotto", isOn: $storage.printer.showLotNumber)
+                Toggle("Operatore", isOn: $storage.printer.showOperatorName)
+                Toggle("Allergeni", isOn: $storage.printer.showAllergenWarning)
             }
-            .foregroundStyle(ThemeManager.shared.colorTextPrimary)
+            .font(.subheadline)
         }
-        .padding()
-        .background(ThemeManager.shared.colorSurface)
-        .cornerRadius(16)
         .onChange(of: storage.printer.showProductName) { storage.saveAll() }
         .onChange(of: storage.printer.showPrepDate) { storage.saveAll() }
         .onChange(of: storage.printer.showExpiryDate) { storage.saveAll() }
@@ -265,70 +213,65 @@ struct LabelPrinterSettingsView: View {
 
     private var qrCodeSection: some View {
         @Bindable var storage = storage
-        return VStack(alignment: .leading, spacing: 20) {
-            Text("Codice QR")
-                .font(.headline)
+        return SettingsPanelCard(title: "Codice QR", caption: "Testo in italiano, leggibile anche dalla fotocamera del telefono") {
+            VStack(alignment: .leading, spacing: 12) {
+                Toggle("Mostra QR su etichetta", isOn: $storage.printer.showQRCode)
 
-            Toggle("Mostra QR su etichetta", isOn: $storage.printer.showQRCode)
+                if storage.printer.showQRCode {
+                    SettingsExpandableCard(title: "Posizione e dimensione QR", caption: "Predefiniti per \(storage.printer.clabelSize.displayName)") {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Picker("Rotazione", selection: $storage.printer.qrRotationRaw) {
+                                ForEach(LabelQRCodeRotation.allCases) { rotation in
+                                    Text(rotation.label).tag(rotation.rawValue)
+                                }
+                            }
+                            .pickerStyle(.segmented)
 
-            if storage.printer.showQRCode {
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("Rotazione")
-                        .font(.subheadline.weight(.semibold))
-                    Picker("Rotazione QR", selection: $storage.printer.qrRotationRaw) {
-                        ForEach(LabelQRCodeRotation.allCases) { rotation in
-                            Text(rotation.label).tag(rotation.rawValue)
+                            Picker("Posizione", selection: $storage.printer.qrCornerRaw) {
+                                ForEach(LabelQRCodeCorner.allCases) { corner in
+                                    Text(corner.label).tag(corner.rawValue)
+                                }
+                            }
+                            .pickerStyle(.menu)
+
+                            Stepper(value: $storage.printer.qrCellSize, in: 2...8) {
+                                Text("Moduli: \(storage.printer.qrCellSize)")
+                                    .font(.subheadline)
+                            }
                         }
                     }
-                    .pickerStyle(.segmented)
-
-                    Text("Posizione")
-                        .font(.subheadline.weight(.semibold))
-                    Picker("Posizione QR", selection: $storage.printer.qrCornerRaw) {
-                        ForEach(LabelQRCodeCorner.allCases) { corner in
-                            Text(corner.label).tag(corner.rawValue)
-                        }
-                    }
-                    .pickerStyle(.menu)
-
-                    Stepper(
-                        value: $storage.printer.qrCellSize,
-                        in: 2...8,
-                        step: 1
-                    ) {
-                        Text("Dimensione moduli: \(storage.printer.qrCellSize)")
-                            .font(.subheadline)
-                    }
-
-                    Text("Scansiona il QR da Etichette di produzione per aprire subito prodotto, lotto e scadenza. QR compatto HC1 per stampa 50×30.")
-                        .font(.caption2)
-                        .foregroundStyle(ThemeManager.shared.colorTextSecondary)
                 }
             }
         }
-        .padding()
-        .background(ThemeManager.shared.colorSurface)
-        .cornerRadius(16)
         .onChange(of: storage.printer.showQRCode) { storage.saveAll() }
         .onChange(of: storage.printer.qrRotationRaw) { storage.saveAll() }
         .onChange(of: storage.printer.qrCornerRaw) { storage.saveAll() }
         .onChange(of: storage.printer.qrCellSize) { storage.saveAll() }
     }
 
-    private var protocolPicker: some View {
+    private var protocolPickerContent: some View {
         @Bindable var storage = storage
         return VStack(alignment: .leading, spacing: 8) {
-            Text("Protocollo stampa")
-                .font(.subheadline.weight(.semibold))
             Picker("Protocollo", selection: $storage.printer.printEngineRaw) {
                 ForEach(ClabelPrintEngine.allCases) { engine in
                     Text(engine.label).tag(engine.rawValue)
                 }
             }
             .pickerStyle(.menu)
-            Text("Se non stampa: prova «TSPL (testo)», poi «TSPL (immagine)». Usa «Stampa prova» dopo ogni cambio.")
+            Text("Prova «TSPL (testo)» se la stampa fallisce.")
                 .font(.caption2)
                 .foregroundStyle(ThemeManager.shared.colorTextSecondary)
+            Button {
+                Task { await runDiagnostics() }
+            } label: {
+                if isRunningDiagnostics {
+                    ProgressView()
+                } else {
+                    Text("Diagnostica stampa")
+                }
+            }
+            .buttonStyle(.bordered)
+            .disabled(isPrintingTest || isRunningDiagnostics)
         }
         .onChange(of: storage.printer.printEngineRaw) { storage.saveAll() }
     }

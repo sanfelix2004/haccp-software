@@ -173,13 +173,13 @@ struct ExpiryControlView: View {
     @Environment(\.theme) private var theme
     @Environment(\.modelContext) private var modelContext
     @EnvironmentObject var appState: AppState
-    @Query private var allRecords: [TraceabilityRecord]
-    @Query private var lottoFotos: [LottoFoto]
     @Query private var users: [LocalUser]
+
+    @ObservedObject private var dataStore = ModuleStoreRegistry.shared.expiryControl
 
     @State private var searchText: String = ""
     @State private var category: GoodsCategory = .all
-    @State private var filter: ExpiryFilter = .all
+    @State private var filter: ExpiryFilter = .alerts
     @State private var selectedTab: ExpiryControlTab = .pantry
     @State private var withdrawRecord: TraceabilityRecord?
     @State private var recordPendingArchive: TraceabilityRecord?
@@ -193,7 +193,7 @@ struct ExpiryControlView: View {
     }
 
     private var lottoById: [UUID: LottoFoto] {
-        Dictionary(lottoFotos.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        HACCPSafeParse.dictionary(dataStore.lottoFotos.map { ($0.id, $0) })
     }
 
     private func expirySourceLabel(for record: TraceabilityRecord) -> String? {
@@ -204,7 +204,7 @@ struct ExpiryControlView: View {
 
     private var scoped: [TraceabilityRecord] {
         guard let rid = appState.activeRestaurantId else { return [] }
-        return allRecords.filter {
+        return dataStore.records.filter {
             $0.restaurantId == rid && TraceabilityRecordSupport.isExpiryMonitored($0)
         }
     }
@@ -262,7 +262,8 @@ struct ExpiryControlView: View {
         ProductExpiryEvaluator.fefoSorted(
             tabScoped.filter { record in
                 ProductExpiryEvaluator.needsExpiryAttention(record, thresholdDays: soonThresholdDays)
-            }
+            },
+            soonThresholdDays: soonThresholdDays
         )
     }
 
@@ -300,7 +301,7 @@ struct ExpiryControlView: View {
 
                 return true
             }
-        return ProductExpiryEvaluator.fefoSorted(filtered)
+        return ProductExpiryEvaluator.fefoSorted(filtered, soonThresholdDays: soonThresholdDays)
     }
 
     private var currentUser: LocalUser? {
@@ -449,6 +450,12 @@ struct ExpiryControlView: View {
             }
         }
         .task(id: appState.activeRestaurantId) {
+            guard let rid = appState.activeRestaurantId else { return }
+            await Task.yield()
+            dataStore.reload(context: modelContext, restaurantId: rid)
+            refreshExpiredStatuses()
+        }
+        .onChange(of: dataStore.loadGeneration) { _, _ in
             refreshExpiredStatuses()
         }
     }

@@ -29,12 +29,15 @@ struct HistoryEntry: Identifiable, Equatable {
     let hasCriticality: Bool
     /// Se valorizzato, la card mostra il piatto con alimenti espandibili.
     var traceabilityIngredients: [HistoryTraceabilityIngredient]? = nil
+    /// Lotto scaduto in attesa di chiusura operatore (usato/scartato).
+    var pendingTraceabilityRecordId: UUID? = nil
 
     static func == (lhs: HistoryEntry, rhs: HistoryEntry) -> Bool {
         lhs.id == rhs.id
             && lhs.status == rhs.status
             && lhs.hasCriticality == rhs.hasCriticality
             && lhs.traceabilityIngredients == rhs.traceabilityIngredients
+            && lhs.pendingTraceabilityRecordId == rhs.pendingTraceabilityRecordId
             && lhs.details.count == rhs.details.count
     }
 

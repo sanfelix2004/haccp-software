@@ -40,17 +40,14 @@ struct ProductionLotCaptureOutcome: Sendable {
     }
 }
 
-/// Pipeline unica: Foto → Groq Vision → lotto + scadenza.
+/// Pipeline unica: Foto → OCR locale + Groq in parallelo → lotto + scadenza.
 struct ProductionLotCapturePipeline {
-    private let labelExtractor: any LabelLotExtractorProtocol
+    private let labelExtractor: ResilientLabelLotExtractor
 
-    init(labelExtractor: (any LabelLotExtractorProtocol)? = nil) {
-        if let labelExtractor {
-            self.labelExtractor = labelExtractor
-        } else {
-            let key = SettingsStorageService.shared.haccp.groqApiKey ?? ""
-            self.labelExtractor = GroqLotExtractor(apiKey: key)
-        }
+    init(labelExtractor: ResilientLabelLotExtractor? = nil) {
+        self.labelExtractor = labelExtractor ?? ResilientLabelLotExtractor(
+            resolvedKeys: GroqApiKeyService.resolvedKeys()
+        )
     }
 
     func process(
@@ -61,7 +58,35 @@ struct ProductionLotCapturePipeline {
             from: photoData,
             expectedIngredients: expectedIngredientNames
         )
-        return ProductionLotCaptureOutcome(
+        return mapOutcome(result)
+    }
+
+    func processGroqOnly(
+        photoData: Data,
+        expectedIngredientNames: [String]
+    ) async throws -> ProductionLotCaptureOutcome {
+        let groq = GroqLotExtractor(resolvedKeys: GroqApiKeyService.resolvedKeys())
+        let result = try await groq.analyzeLabel(
+            from: photoData,
+            expectedIngredients: expectedIngredientNames
+        )
+        return mapOutcome(result)
+    }
+
+    /// Anteprima OCR on-device — aggiorna l'UI in ~2s mentre Groq lavora in background.
+    func processLocalPreview(
+        photoData: Data
+    ) async -> ProductionLotCaptureOutcome? {
+        guard let result = await labelExtractor.analyzeLabelLocally(from: photoData) else { return nil }
+        guard result.extractedLotCode != nil || result.extractedExpiryDate != nil else { return nil }
+        return mapOutcome(result, notePrefix: "Anteprima locale")
+    }
+
+    private func mapOutcome(
+        _ result: LabelLotExtractionResult,
+        notePrefix: String? = nil
+    ) -> ProductionLotCaptureOutcome {
+        var outcome = ProductionLotCaptureOutcome(
             rawText: result.rawText,
             lotCode: result.extractedLotCode?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty,
             ingredientName: result.extractedIngredient?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty,
@@ -70,6 +95,18 @@ struct ProductionLotCapturePipeline {
             lotParseAudit: result.auditLines,
             analysisNote: analysisNote(for: result)
         )
+        if let notePrefix, outcome.analysisNote == nil {
+            outcome = ProductionLotCaptureOutcome(
+                rawText: outcome.rawText,
+                lotCode: outcome.lotCode,
+                ingredientName: outcome.ingredientName,
+                expiryDate: outcome.expiryDate,
+                confidence: outcome.confidence,
+                lotParseAudit: outcome.lotParseAudit,
+                analysisNote: notePrefix
+            )
+        }
+        return outcome
     }
 
     private func analysisNote(for result: LabelLotExtractionResult) -> String? {

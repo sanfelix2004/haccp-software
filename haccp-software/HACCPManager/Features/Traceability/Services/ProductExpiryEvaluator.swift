@@ -147,38 +147,82 @@ enum ProductExpiryEvaluator {
 
     // MARK: - FEFO (First Expired, First Out)
 
-    /// Ordina per scadenza crescente — il primo che scade è il primo ad uscire.
+    /// Ordina per urgenza operativa, poi per scadenza crescente (FEFO).
     static func fefoSorted(
         _ records: [TraceabilityRecord],
-        now: Date = Date()
+        now: Date = Date(),
+        soonThresholdDays: Int = HACCPSettings().productExpiryThreshold,
+        calendar: Calendar = .current
     ) -> [TraceabilityRecord] {
-        records.sorted { fefoCompare($0, $1, now: now) }
+        records.sorted {
+            fefoCompare($0, $1, now: now, soonThresholdDays: soonThresholdDays, calendar: calendar)
+        }
     }
 
-    /// Confronto FEFO: attivi prima dei chiusi; poi data scadenza ascendente.
+    /// Confronto FEFO: attivi prima dei chiusi; poi urgenza; poi data scadenza ascendente.
     static func fefoCompare(
         _ lhs: TraceabilityRecord,
         _ rhs: TraceabilityRecord,
-        now: Date = Date()
+        now: Date = Date(),
+        soonThresholdDays: Int = HACCPSettings().productExpiryThreshold,
+        calendar: Calendar = .current
     ) -> Bool {
         let lhsClosed = lhs.productStatus == .used || lhs.productStatus == .rejected
         let rhsClosed = rhs.productStatus == .used || rhs.productStatus == .rejected
         if lhsClosed != rhsClosed { return !lhsClosed }
 
-        let lhsUrgency = urgencyRank(for: lhs, now: now)
-        let rhsUrgency = urgencyRank(for: rhs, now: now)
-        if lhsUrgency != rhsUrgency { return lhsUrgency < rhsUrgency }
+        let lhsRank = expiryPriority(
+            for: lhs,
+            now: now,
+            soonThresholdDays: soonThresholdDays,
+            calendar: calendar
+        )
+        let rhsRank = expiryPriority(
+            for: rhs,
+            now: now,
+            soonThresholdDays: soonThresholdDays,
+            calendar: calendar
+        )
+        if lhsRank != rhsRank { return lhsRank < rhsRank }
+
+        if lhs.isNonCompliant != rhs.isNonCompliant { return lhs.isNonCompliant }
 
         let lhsDate = lhs.expiryDate ?? .distantFuture
         let rhsDate = rhs.expiryDate ?? .distantFuture
         if lhsDate != rhsDate { return lhsDate < rhsDate }
+
+        if lhs.receivedAt != rhs.receivedAt { return lhs.receivedAt < rhs.receivedAt }
+
         return lhs.productName.localizedCaseInsensitiveCompare(rhs.productName) == .orderedAscending
     }
 
-    private static func urgencyRank(for record: TraceabilityRecord, now: Date) -> Int {
-        guard let expiry = record.expiryDate else { return 90 }
-        if isExpiredByDate(expiry, now: now) { return 0 }
-        if isDueToday(expiry, now: now) { return 1 }
-        return 10
+    /// Priorità ascendente: 0 = massima urgenza.
+    private static func expiryPriority(
+        for record: TraceabilityRecord,
+        now: Date,
+        soonThresholdDays: Int,
+        calendar: Calendar
+    ) -> Int {
+        switch record.productStatus {
+        case .used: return 100
+        case .rejected: return 101
+        case .expired: return 0
+        case .available:
+            break
+        }
+
+        if let cat = GoodsCategory(rawValue: record.categoryRaw ?? ""),
+           (cat == .frozen || cat == .frozenProducts),
+           record.expiryDate == nil {
+            return 50
+        }
+
+        guard let expiry = record.expiryDate else { return 60 }
+
+        let days = daysUntilExpiry(expiry, now: now, calendar: calendar)
+        if days < 0 { return 0 }
+        if days == 0 { return 10 }
+        if days <= soonThresholdDays { return 20 }
+        return 40
     }
 }

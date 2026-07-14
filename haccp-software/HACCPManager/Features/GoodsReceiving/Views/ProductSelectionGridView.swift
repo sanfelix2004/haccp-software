@@ -1,47 +1,25 @@
 import SwiftUI
 
 struct ProductSelectionGridView: View {
-    let products: [ProductTemplate]
-    let recentProductIds: [UUID]
+    let layout: IncomingFoodCatalogPresentation
     let selectedProductId: UUID?
-    /// Raggruppa per categoria merceologica (es. Refrigerati, Secchi…).
-    var groupsByCategory: Bool = true
     let onSelect: (ProductTemplate) -> Void
 
     @Environment(\.theme) private var theme
 
-    private var categorySections: [(category: GoodsCategory, products: [ProductTemplate])] {
-        GoodsCategory.allCases
-            .filter { $0 != .all }
-            .compactMap { category in
-                let items = sortedProducts.filter { $0.category == category }
-                guard !items.isEmpty else { return nil }
-                return (category, items)
-            }
-    }
-
-    private var sortedProducts: [ProductTemplate] {
-        products.sorted { lhs, rhs in
-            let lhsRecent = recentProductIds.firstIndex(of: lhs.id) ?? Int.max
-            let rhsRecent = recentProductIds.firstIndex(of: rhs.id) ?? Int.max
-            if lhsRecent != rhsRecent { return lhsRecent < rhsRecent }
-            return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
-        }
-    }
-
     var body: some View {
         Group {
-            if groupsByCategory, categorySections.count > 1 {
+            if layout.usesSectionHeaders {
                 sectionedGrid
             } else {
-                flatGrid(products: sortedProducts)
+                flatGrid(products: layout.flatProducts)
             }
         }
     }
 
     private var sectionedGrid: some View {
-        VStack(alignment: .leading, spacing: theme.spacing.lg) {
-            ForEach(categorySections, id: \.category) { section in
+        LazyVStack(alignment: .leading, spacing: theme.spacing.lg) {
+            ForEach(layout.sections) { section in
                 VStack(alignment: .leading, spacing: theme.spacing.sm) {
                     HStack(spacing: 8) {
                         Text(section.category.rawValue)
@@ -64,12 +42,12 @@ struct ProductSelectionGridView: View {
     private func flatGrid(products: [ProductTemplate]) -> some View {
         LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 10)], spacing: 10) {
             ForEach(products) { product in
-                productCard(product)
+                productCard(product, showsCategory: layout.showsCategoryOnCard)
             }
         }
     }
 
-    private func productCard(_ product: ProductTemplate) -> some View {
+    private func productCard(_ product: ProductTemplate, showsCategory: Bool) -> some View {
         let isSelected = selectedProductId == product.id
 
         return Button {
@@ -87,13 +65,11 @@ struct ProductSelectionGridView: View {
                             .foregroundStyle(theme.colorPrimary)
                     }
                 }
-                HStack(spacing: 6) {
-                    if !groupsByCategory || categorySections.count <= 1 {
-                        Text(product.category.rawValue)
-                            .font(theme.typography.caption2)
-                            .foregroundStyle(theme.colorTextSecondary)
-                            .lineLimit(1)
-                    }
+                if showsCategory {
+                    Text(product.category.rawValue)
+                        .font(theme.typography.caption2)
+                        .foregroundStyle(theme.colorTextSecondary)
+                        .lineLimit(1)
                 }
             }
             .frame(maxWidth: .infinity, minHeight: 80, alignment: .topLeading)
@@ -109,5 +85,30 @@ struct ProductSelectionGridView: View {
             .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         }
         .buttonStyle(PremiumPressButtonStyle())
+    }
+}
+
+extension ProductSelectionGridView {
+    init(
+        products: [ProductTemplate],
+        recentProductIds: [UUID] = [],
+        selectedProductId: UUID?,
+        groupsByCategory: Bool = true,
+        onSelect: @escaping (ProductTemplate) -> Void
+    ) {
+        let sorted = products.sorted { lhs, rhs in
+            let lhsRecent = recentProductIds.firstIndex(of: lhs.id) ?? Int.max
+            let rhsRecent = recentProductIds.firstIndex(of: rhs.id) ?? Int.max
+            if lhsRecent != rhsRecent { return lhsRecent < rhsRecent }
+            return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
+        }
+        self.init(
+            layout: IncomingFoodCatalogPresentation.build(
+                templates: sorted,
+                selectedCategory: groupsByCategory ? .all : .all
+            ),
+            selectedProductId: selectedProductId,
+            onSelect: onSelect
+        )
     }
 }

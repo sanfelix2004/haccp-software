@@ -5,19 +5,19 @@ import SwiftData
 // MARK: - Filtri hub
 
 enum TraceabilityHubFilter: String, CaseIterable, Identifiable {
-    case all = "Tutti"
+    case today = "Oggi"
     case unlinked = "Da associare"
     case critical = "Non conformi"
-    case today = "Oggi"
+    case all = "Tutti"
 
     var id: String { rawValue }
 
     var icon: String {
         switch self {
-        case .all: return "square.grid.2x2"
+        case .today: return "calendar"
         case .unlinked: return "link.badge.plus"
         case .critical: return "exclamationmark.triangle.fill"
-        case .today: return "calendar"
+        case .all: return "square.grid.2x2"
         }
     }
 }
@@ -39,7 +39,8 @@ struct TraceabilityOpenSession: Identifiable, Equatable {
 
 struct TraceabilityArchiveIngredientItem: Identifiable, Equatable {
     let id: UUID
-    let recordId: UUID
+    /// Lotto tracciabilità collegato; `nil` se l'ingrediente proviene solo da batch produzione.
+    let recordId: UUID?
     let name: String
     let lotCode: String
     let supplier: String
@@ -68,6 +69,9 @@ struct TraceabilityHubContext {
     private let lottoFotoById: [UUID: LottoFoto]
     private let lottoLinksByFotoId: [UUID: [LottoFotoProductionLink]]
     private let recordsById: [UUID: TraceabilityRecord]
+    private let recordByLottoFotoId: [UUID: TraceabilityRecord]
+    private let batches: [ProduzioneBatch]
+    private let ingredientiTracciati: [IngredienteTracciato]
 
     init(store: TraceabilityDataStore) {
         self.init(
@@ -75,6 +79,8 @@ struct TraceabilityHubContext {
             productions: store.productions,
             links: store.links,
             lottoProductionLinks: store.lottoProductionLinks,
+            batches: store.batches,
+            ingredientiTracciati: store.ingredientiTracciati,
             logs: store.logs,
             images: store.images,
             lottoFotos: store.lottoFotos,
@@ -87,22 +93,38 @@ struct TraceabilityHubContext {
         productions: [Production],
         links: [TraceabilityLink],
         lottoProductionLinks: [LottoFotoProductionLink],
+        batches: [ProduzioneBatch] = [],
+        ingredientiTracciati: [IngredienteTracciato] = [],
         logs: [TraceabilityLog] = [],
         images: [ProductImage] = [],
         lottoFotos: [LottoFoto] = [],
         defrostRecords: [DefrostRecord] = []
     ) {
-        productionsById = Dictionary(productions.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-        recordsById = Dictionary(records.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-        lottoFotoById = Dictionary(lottoFotos.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        productionsById = HACCPSafeParse.dictionary(productions.map { ($0.id, $0) })
+        recordsById = HACCPSafeParse.dictionary(records.map { ($0.id, $0) })
+        lottoFotoById = HACCPSafeParse.dictionary(lottoFotos.map { ($0.id, $0) })
+        var recordByLotto: [UUID: TraceabilityRecord] = [:]
+        for record in records {
+            if let lottoId = record.lottoFotoId {
+                recordByLotto[lottoId] = record
+            }
+        }
+        recordByLottoFotoId = recordByLotto
         var lottoLinkMap: [UUID: [LottoFotoProductionLink]] = [:]
         for link in lottoProductionLinks {
             lottoLinkMap[link.lottoFotoId, default: []].append(link)
         }
         lottoLinksByFotoId = lottoLinkMap
+        self.batches = batches.filter { !$0.isArchived }
+        self.ingredientiTracciati = ingredientiTracciati
         var prodMap: [UUID: Set<UUID>] = [:]
         for link in links {
             prodMap[link.receivedItemId, default: []].insert(link.productionId)
+        }
+        for lottoLink in lottoProductionLinks {
+            if let record = recordByLottoFotoId[lottoLink.lottoFotoId] {
+                prodMap[record.id, default: []].insert(lottoLink.productionId)
+            }
         }
         productionIdsByRecord = prodMap
 
@@ -279,41 +301,43 @@ struct TraceabilityHubContext {
         searchText: String
     ) -> [TraceabilityProductionArchiveGroup] {
         let tokens = TraceabilityArchiveSearch.tokens(from: searchText)
-        let filtered = filteredRecords(records, filter: filter, searchText: searchText)
-        let linked = filtered.filter { !(productionIdsByRecord[$0.id]?.isEmpty ?? true) }
-        guard !linked.isEmpty else { return [] }
+        guard filter != .unlinked else { return [] }
 
-        struct GroupKey: Hashable {
-            let productionId: UUID
-            let batchId: UUID?
-        }
-
-        var buckets: [GroupKey: [TraceabilityRecord]] = [:]
-        for record in linked {
-            let productionIds = productionIdsByRecord[record.id] ?? []
-            for productionId in productionIds {
-                let batchId = batchId(for: record, productionId: productionId)
-                let key = GroupKey(productionId: productionId, batchId: batchId)
-                buckets[key, default: []].append(record)
+        var buckets: [UUID: [TraceabilityRecord]] = [:]
+        for record in records where record.isIncomingIngredientLot {
+            for productionId in productionIdsByRecord[record.id] ?? [] {
+                buckets[productionId, default: []].append(record)
             }
         }
 
-        var groups = buckets.compactMap { key, bucketRecords -> TraceabilityProductionArchiveGroup? in
-            guard let production = productionsById[key.productionId] else { return nil }
+        var groups = buckets.compactMap { productionId, bucketRecords -> TraceabilityProductionArchiveGroup? in
+            guard let production = productionsById[productionId] else { return nil }
             let uniqueRecords = Dictionary(grouping: bucketRecords, by: \.id).compactMap(\.value.first)
-            let ingredients = uniqueRecords
+            var ingredients = uniqueRecords
                 .map { archiveIngredient(for: $0) }
-                .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
-            let registeredAt = ingredients.map(\.receivedAt).max() ?? Date()
-            let groupId = key.batchId.map { "\(key.productionId.uuidString)-\($0.uuidString)" }
-                ?? "\(key.productionId.uuidString)-legacy"
+            ingredients.append(contentsOf: trackedIngredients(forProductionId: productionId))
+            ingredients.sort { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+            guard !ingredients.isEmpty else { return nil }
+
+            let latestBatch = batches
+                .filter { $0.productionId == productionId }
+                .max(by: { $0.producedAt < $1.producedAt })
+
             return TraceabilityProductionArchiveGroup(
-                id: groupId,
-                productionId: key.productionId,
+                id: productionId.uuidString,
+                productionId: productionId,
                 productionName: production.name,
-                batchId: key.batchId,
-                registeredAt: registeredAt,
+                batchId: latestBatch?.id,
+                registeredAt: ingredients.map(\.receivedAt).max() ?? latestBatch?.producedAt ?? Date(),
                 ingredients: ingredients
+            )
+        }
+
+        groups = groups.filter { group in
+            archiveGroupMatchesFilter(
+                group,
+                ingredientRecords: ingredientRecords(for: group, in: records),
+                filter: filter
             )
         }
 
@@ -357,7 +381,22 @@ struct TraceabilityHubContext {
         searchText: String
     ) -> [TraceabilityRecord] {
         filteredRecords(records, filter: filter, searchText: searchText)
-            .filter { $0.isIncomingIngredientLot && (productionIdsByRecord[$0.id]?.isEmpty ?? true) }
+            .filter {
+                $0.isIncomingIngredientLot
+                    && isActionable($0)
+                    && (productionIdsByRecord[$0.id]?.isEmpty ?? true)
+            }
+            .sorted { $0.receivedAt > $1.receivedAt }
+    }
+
+    func criticalRecords(
+        records: [TraceabilityRecord],
+        filter: TraceabilityHubFilter,
+        searchText: String
+    ) -> [TraceabilityRecord] {
+        filteredRecords(records, filter: filter, searchText: searchText)
+            .filter { $0.isNonCompliant || $0.productStatus == .rejected }
+            .sorted { $0.receivedAt > $1.receivedAt }
     }
 
     func image(forRecordId recordId: UUID) -> UIImage? {
@@ -452,10 +491,54 @@ struct TraceabilityHubContext {
         return TraceabilityArchiveSearch.matchesAllTokens(tokens, in: fields)
     }
 
-    private func batchId(for record: TraceabilityRecord, productionId: UUID) -> UUID? {
-        guard let lottoId = record.lottoFotoId,
-              let links = lottoLinksByFotoId[lottoId] else { return nil }
-        return links.first { $0.productionId == productionId }?.produzioneBatchId
+    private func ingredientRecords(
+        for group: TraceabilityProductionArchiveGroup,
+        in allRecords: [TraceabilityRecord]
+    ) -> [TraceabilityRecord] {
+        let ids = Set(group.ingredients.compactMap(\.recordId))
+        return allRecords.filter { ids.contains($0.id) }
+    }
+
+    private func trackedIngredients(
+        forProductionId productionId: UUID
+    ) -> [TraceabilityArchiveIngredientItem] {
+        let productionBatchIds = Set(batches.filter { $0.productionId == productionId }.map(\.id))
+        return ingredientiTracciati
+            .filter { productionBatchIds.contains($0.produzioneBatchId) }
+            .compactMap { tracked -> TraceabilityArchiveIngredientItem? in
+                let lot = tracked.lotCodeExtracted?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                guard !lot.isEmpty else { return nil }
+                let name = tracked.ingredientNameAssigned
+                    ?? tracked.ingredientNameHint
+                    ?? "Alimento"
+                return TraceabilityArchiveIngredientItem(
+                    id: tracked.id,
+                    recordId: nil,
+                    name: name,
+                    lotCode: lot,
+                    supplier: "Produzione",
+                    receivedAt: tracked.lotRegisteredAt ?? tracked.createdAt
+                )
+            }
+    }
+
+    private func archiveGroupMatchesFilter(
+        _ group: TraceabilityProductionArchiveGroup,
+        ingredientRecords: [TraceabilityRecord],
+        filter: TraceabilityHubFilter
+    ) -> Bool {
+        switch filter {
+        case .all:
+            return true
+        case .unlinked:
+            return false
+        case .today:
+            if Calendar.current.isDateInToday(group.registeredAt) { return true }
+            if group.ingredients.contains(where: { Calendar.current.isDateInToday($0.receivedAt) }) { return true }
+            return ingredientRecords.contains { Calendar.current.isDateInToday($0.createdAt) }
+        case .critical:
+            return ingredientRecords.contains { $0.isNonCompliant || $0.productStatus == .rejected }
+        }
     }
 
     private func archiveIngredient(for record: TraceabilityRecord) -> TraceabilityArchiveIngredientItem {

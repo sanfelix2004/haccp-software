@@ -43,6 +43,12 @@ final class ICloudDocumentSyncService: ObservableObject, ICloudDocumentSyncServi
         }
     }
 
+    deinit {
+        if let observer = ubiquityObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
+    }
+
     func refreshConnectionDiagnostics() {
         publishConnectionDiagnostics()
     }

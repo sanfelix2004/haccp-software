@@ -1,66 +1,26 @@
 import SwiftUI
 
 struct ProductionSelectionGridView: View {
-    let productions: [Production]
-    var categories: [ProductionCategory] = []
-    let recentProductionIds: [UUID]
+    let layout: ProductionCatalogPresentation
     let selectedProductionId: UUID?
-    /// Raggruppa per categoria menu (es. Antipasti, Primi…).
-    var groupsByCategory: Bool = true
     var showsShelfLife: Bool = false
     let onSelect: (Production) -> Void
 
     @Environment(\.theme) private var theme
 
-    private var categorySections: [(id: UUID, name: String, orderIndex: Int, productions: [Production])] {
-        let orderedCategories: [(id: UUID, name: String, orderIndex: Int)]
-        if categories.isEmpty {
-            orderedCategories = derivedCategories
-        } else {
-            orderedCategories = categories
-                .sorted { $0.orderIndex < $1.orderIndex }
-                .map { ($0.id, $0.name, $0.orderIndex) }
-        }
-
-        return orderedCategories.compactMap { category in
-            let items = sortedProductions.filter { $0.categoryId == category.id }
-            guard !items.isEmpty else { return nil }
-            return (category.id, category.name, category.orderIndex, items)
-        }
-    }
-
-    private var derivedCategories: [(id: UUID, name: String, orderIndex: Int)] {
-        var seen = Set<UUID>()
-        var result: [(id: UUID, name: String, orderIndex: Int)] = []
-        for production in sortedProductions {
-            guard seen.insert(production.categoryId).inserted else { continue }
-            result.append((production.categoryId, production.categoryNameSnapshot, result.count))
-        }
-        return result
-    }
-
-    private var sortedProductions: [Production] {
-        productions.sorted { lhs, rhs in
-            let lhsRecent = recentProductionIds.firstIndex(of: lhs.id) ?? Int.max
-            let rhsRecent = recentProductionIds.firstIndex(of: rhs.id) ?? Int.max
-            if lhsRecent != rhsRecent { return lhsRecent < rhsRecent }
-            return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
-        }
-    }
-
     var body: some View {
         Group {
-            if groupsByCategory, categorySections.count > 1 {
+            if layout.usesSectionHeaders {
                 sectionedGrid
             } else {
-                flatGrid(productions: sortedProductions)
+                flatGrid(productions: layout.flatProductions)
             }
         }
     }
 
     private var sectionedGrid: some View {
-        VStack(alignment: .leading, spacing: theme.spacing.lg) {
-            ForEach(categorySections, id: \.id) { section in
+        LazyVStack(alignment: .leading, spacing: theme.spacing.lg) {
+            ForEach(layout.sections) { section in
                 VStack(alignment: .leading, spacing: theme.spacing.sm) {
                     HStack(spacing: 8) {
                         Text(section.name)
@@ -83,12 +43,12 @@ struct ProductionSelectionGridView: View {
     private func flatGrid(productions: [Production]) -> some View {
         LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 10)], spacing: 10) {
             ForEach(productions) { production in
-                productionCard(production)
+                productionCard(production, showsCategory: layout.showsCategoryOnCard)
             }
         }
     }
 
-    private func productionCard(_ production: Production) -> some View {
+    private func productionCard(_ production: Production, showsCategory: Bool) -> some View {
         let isSelected = selectedProductionId == production.id
 
         return Button {
@@ -107,7 +67,7 @@ struct ProductionSelectionGridView: View {
                     }
                 }
                 HStack(spacing: 6) {
-                    if !groupsByCategory || categorySections.count <= 1 {
+                    if showsCategory {
                         Text(production.categoryNameSnapshot)
                             .font(theme.typography.caption2)
                             .foregroundStyle(theme.colorTextSecondary)
@@ -134,5 +94,36 @@ struct ProductionSelectionGridView: View {
             .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         }
         .buttonStyle(PremiumPressButtonStyle())
+    }
+}
+
+extension ProductionSelectionGridView {
+    /// Compatibilità schermate che passano array grezzi (es. Abbattimento).
+    init(
+        productions: [Production],
+        categories: [ProductionCategory] = [],
+        recentProductionIds: [UUID] = [],
+        selectedProductionId: UUID?,
+        groupsByCategory: Bool = false,
+        showsShelfLife: Bool = false,
+        onSelect: @escaping (Production) -> Void
+    ) {
+        let sorted = productions.sorted { lhs, rhs in
+            let lhsRecent = recentProductionIds.firstIndex(of: lhs.id) ?? Int.max
+            let rhsRecent = recentProductionIds.firstIndex(of: rhs.id) ?? Int.max
+            if lhsRecent != rhsRecent { return lhsRecent < rhsRecent }
+            return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
+        }
+        self.init(
+            layout: ProductionCatalogPresentation.build(
+                categories: categories,
+                productions: sorted,
+                selectedCategoryId: nil,
+                forceFlat: !groupsByCategory
+            ),
+            selectedProductionId: selectedProductionId,
+            showsShelfLife: showsShelfLife,
+            onSelect: onSelect
+        )
     }
 }

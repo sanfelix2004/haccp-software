@@ -15,13 +15,19 @@ final class DocumentsDataStore: ObservableObject {
 
     private var loadTask: Task<Void, Never>?
     private var reloadGeneration = 0
+    private var reloadPolicy = DataStoreReloadPolicy()
 
-    func reload(context: ModelContext, restaurantId: UUID?) {
+    func reload(context: ModelContext, restaurantId: UUID?, force: Bool = false) {
         loadTask?.cancel()
         guard let restaurantId else {
             clear()
             return
         }
+        guard reloadPolicy.shouldReload(
+            restaurantId: restaurantId,
+            hasData: !folders.isEmpty || !items.isEmpty,
+            force: force
+        ) else { return }
 
         let token = MainActorDataLoad.begin(generation: &reloadGeneration)
         isLoading = true
@@ -41,6 +47,7 @@ final class DocumentsDataStore: ObservableObject {
 
             folders = data.folders
             items = data.items
+            reloadPolicy.markLoaded(restaurantId: restaurantId)
         }
     }
 
@@ -51,12 +58,19 @@ final class DocumentsDataStore: ObservableObject {
         folders = data.folders
         items = data.items
         isLoading = false
+        reloadPolicy.markLoaded(restaurantId: restaurantId)
     }
 
     func clear() {
+        reloadPolicy.invalidate()
         folders = []
         items = []
         isLoading = false
+    }
+
+    func cancelPendingLoad() {
+        loadTask?.cancel()
+        loadTask = nil
     }
 
     deinit {

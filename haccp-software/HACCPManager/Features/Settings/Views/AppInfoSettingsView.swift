@@ -2,62 +2,48 @@ import SwiftUI
 
 struct AppInfoSettingsView: View {
     @State private var presentedDocument: SettingsLegalDocument?
+    @Environment(\.theme) private var theme
 
     var body: some View {
-        VStack(spacing: 32) {
-
-            VStack(spacing: 16) {
+        VStack(spacing: theme.spacing.lg) {
+            VStack(spacing: 12) {
                 Image(systemName: "app.fill")
-                    .font(.system(size: 44))
-                    .foregroundStyle(ThemeManager.shared.colorTextOnPrimary)
-                    .frame(width: 80, height: 80).background(Color.red)
-                    .cornerRadius(18)
+                    .font(.system(size: 36))
+                    .foregroundStyle(theme.colorTextOnPrimary)
+                    .frame(width: 72, height: 72)
+                    .background(theme.colorPrimary)
+                    .cornerRadius(16)
 
-                VStack(spacing: 4) {
-                    Text(AppVersionService.appName)
-                        .font(.title2)
-                        .fontWeight(.black)
-                    Text(AppVersionService.currentVersion)
-                        .font(.caption)
-                        .foregroundStyle(ThemeManager.shared.colorTextSecondary)
-                }
-            }
-
-            VStack(alignment: .leading, spacing: 20) {
-                ForEach(SettingsLegalDocument.allCases) { document in
-                    InfoLinkRow(
-                        title: document.title,
-                        subtitle: document.subtitle,
-                        icon: document.icon
-                    ) {
-                        presentedDocument = document
-                    }
-                    if document != SettingsLegalDocument.allCases.last {
-                        Divider().background(ThemeManager.shared.colorDivider)
-                    }
-                }
-            }
-            .padding()
-            .background(ThemeManager.shared.colorSurface)
-            .cornerRadius(16)
-
-            VStack(alignment: .leading, spacing: 12) {
-                Text("DOCUMENTAZIONE")
-                    .font(.caption2)
-                    .fontWeight(.black)
-                    .foregroundColor(.red)
-
-                Text("Conformità e privacy")
-                    .font(.headline)
-
-                Text("Documenti aggiornati al \(LegalConstants.lastUpdated). L'App tratta i dati HACCP principalmente sul dispositivo. Consulta Informativa Privacy, Cookie e Tecnologie e Note Legali per gli obblighi GDPR e HACCP applicabili al tuo locale.")
+                Text(AppVersionService.appName)
+                    .font(.title3.weight(.bold))
+                Text(AppVersionService.currentVersion)
                     .font(.caption)
-                    .foregroundStyle(ThemeManager.shared.colorTextSecondary)
-                    .lineSpacing(4)
+                    .foregroundStyle(theme.colorTextSecondary)
             }
-            .padding()
-            .background(ThemeManager.shared.colorSurface)
-            .cornerRadius(16)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 8)
+
+            SettingsPanelCard(title: "Documenti legali") {
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(SettingsLegalDocument.allCases) { document in
+                        InfoLinkRow(
+                            title: document.title,
+                            subtitle: document.subtitle,
+                            icon: document.icon
+                        ) {
+                            presentedDocument = document
+                        }
+                        if document != SettingsLegalDocument.allCases.last {
+                            Divider().padding(.vertical, 4)
+                        }
+                    }
+                }
+            }
+
+            Text("Dati HACCP sul dispositivo. Documenti aggiornati al \(LegalConstants.lastUpdated).")
+                .font(.caption)
+                .foregroundStyle(theme.colorTextSecondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
         .sheet(item: $presentedDocument) { document in
             SettingsLegalDocumentSheet(document: document)
@@ -73,10 +59,10 @@ struct InfoLinkRow: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 16) {
+            HStack(spacing: 14) {
                 Image(systemName: icon)
                     .foregroundStyle(ThemeManager.shared.colorTextSecondary)
-                    .frame(width: 24)
+                    .frame(width: 22)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title)
                         .foregroundStyle(ThemeManager.shared.colorTextPrimary)
@@ -91,6 +77,7 @@ struct InfoLinkRow: View {
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(ThemeManager.shared.colorTextSecondary)
             }
+            .padding(.vertical, 6)
         }
         .buttonStyle(.plain)
     }

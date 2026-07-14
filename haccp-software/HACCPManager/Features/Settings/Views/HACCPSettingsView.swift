@@ -2,214 +2,180 @@ import SwiftUI
 
 struct HACCPSettingsView: View {
     var storage = SettingsStorageService.shared
-    
+    @Environment(\.theme) private var theme
+
     var body: some View {
         @Bindable var storage = storage
-        VStack(spacing: 32) {
-            
-            // Temperature Grids
-            VStack(alignment: .leading, spacing: 24) {
-                Text("Range Temperature")
-                    .font(.headline)
-                    .foregroundStyle(ThemeManager.shared.colorTextPrimary)
-                
-                HStack(spacing: 20) {
-                    TempConfigBox(title: "Frigo (Min)", value: $storage.haccp.fridgeMinTemp, unit: "°C")
-                    TempConfigBox(title: "Frigo (Max)", value: $storage.haccp.fridgeMaxTemp, unit: "°C")
-                }
+        VStack(spacing: theme.spacing.lg) {
+            HACCPTemperatureSection(storage: storage)
+            HACCPOilSection(storage: storage)
+            HACCPDefrostSection(storage: storage)
+            HACCPOperativitySection(storage: storage)
+            HACCPGroqSection(storage: storage)
+        }
+    }
+}
 
-                HStack(spacing: 20) {
-                    TempConfigBox(title: "Freezer (Min)", value: $storage.haccp.freezerMinTemp, unit: "°C")
-                    TempConfigBox(title: "Freezer (Max)", value: $storage.haccp.freezerMaxTemp, unit: "°C")
-                }
-                
-                HStack(spacing: 20) {
-                    TempConfigBox(title: "Abbattitore", value: $storage.haccp.blastChillerTemp, unit: "°C")
-                    TempConfigBox(title: "Frequenza", value: Binding(get: { Double(storage.haccp.tempCheckFrequency) }, set: { storage.haccp.tempCheckFrequency = Int($0) }), unit: "h")
-                }
+private struct HACCPTemperatureSection: View {
+    @Bindable var storage: SettingsStorageService
 
-                TempConfigBox(
-                    title: "Warning Threshold",
+    var body: some View {
+        SettingsPanelCard(title: "Temperature", caption: "Range consentiti e frequenza controlli.") {
+            VStack(spacing: 12) {
+                SettingsCompactNumberRow(title: "Frigo min", value: $storage.haccp.fridgeMinTemp, unit: "°C")
+                SettingsCompactNumberRow(title: "Frigo max", value: $storage.haccp.fridgeMaxTemp, unit: "°C")
+                SettingsCompactNumberRow(title: "Freezer min", value: $storage.haccp.freezerMinTemp, unit: "°C")
+                SettingsCompactNumberRow(title: "Freezer max", value: $storage.haccp.freezerMaxTemp, unit: "°C")
+                SettingsCompactNumberRow(title: "Abbattitore", value: $storage.haccp.blastChillerTemp, unit: "°C")
+                SettingsCompactNumberRow(
+                    title: "Soglia avviso",
                     value: Binding(
                         get: { storage.haccp.warningThreshold ?? 0.8 },
                         set: { storage.haccp.warningThreshold = $0 }
                     ),
                     unit: "°C"
                 )
+                SettingsCompactStepperRow(
+                    title: "Controlli ogni",
+                    value: $storage.haccp.tempCheckFrequency,
+                    range: 1...24,
+                    unit: "h"
+                )
             }
-            .padding()
-            .background(ThemeManager.shared.colorSurface)
-            .cornerRadius(16)
+        }
+        .onChange(of: storage.haccp.fridgeMinTemp) { storage.saveAll() }
+        .onChange(of: storage.haccp.fridgeMaxTemp) { storage.saveAll() }
+        .onChange(of: storage.haccp.freezerMinTemp) { storage.saveAll() }
+        .onChange(of: storage.haccp.freezerMaxTemp) { storage.saveAll() }
+        .onChange(of: storage.haccp.blastChillerTemp) { storage.saveAll() }
+        .onChange(of: storage.haccp.tempCheckFrequency) { storage.saveAll() }
+        .onChange(of: storage.haccp.warningThreshold) { storage.saveAll() }
+    }
+}
 
-            VStack(alignment: .leading, spacing: 20) {
-                Text("Controllo olio")
-                    .font(.headline)
-                    .foregroundStyle(ThemeManager.shared.colorTextPrimary)
+private struct HACCPOilSection: View {
+    @Bindable var storage: SettingsStorageService
+    @Environment(\.theme) private var theme
 
-                HStack(spacing: 20) {
-                    TempConfigBox(title: "Limite attenzione", value: $storage.haccp.oilPolarAttentionLimit, unit: "%")
-                    TempConfigBox(title: "Limite massimo", value: $storage.haccp.oilPolarMaximumLimit, unit: "%")
-                }
-
-                Toggle("Foto obbligatoria per non conformità olio", isOn: $storage.haccp.oilNonCompliancePhotoRequired)
-                    .foregroundStyle(ThemeManager.shared.colorTextPrimary)
+    var body: some View {
+        SettingsPanelCard(title: "Olio", caption: "Soglie polarità e foto in non conformità.") {
+            VStack(spacing: 12) {
+                SettingsCompactNumberRow(title: "Attenzione", value: $storage.haccp.oilPolarAttentionLimit, unit: "%")
+                SettingsCompactNumberRow(title: "Massimo", value: $storage.haccp.oilPolarMaximumLimit, unit: "%")
+                Toggle("Foto obbligatoria se non conforme", isOn: $storage.haccp.oilNonCompliancePhotoRequired)
+                    .font(theme.typography.subheadline)
             }
-            .padding()
-            .background(ThemeManager.shared.colorSurface)
-            .cornerRadius(16)
-            
-            VStack(alignment: .leading, spacing: 20) {
-                Text("Decongelamento")
-                    .font(.headline)
-                    .foregroundStyle(ThemeManager.shared.colorTextPrimary)
+        }
+        .onChange(of: storage.haccp.oilPolarAttentionLimit) { storage.saveAll() }
+        .onChange(of: storage.haccp.oilPolarMaximumLimit) { storage.saveAll() }
+        .onChange(of: storage.haccp.oilNonCompliancePhotoRequired) { storage.saveAll() }
+    }
+}
 
-                Text("Durata massima consigliata per metodo. Oltre questa soglia il processo passa a «In ritardo».")
-                    .font(.caption)
-                    .foregroundStyle(ThemeManager.shared.colorTextSecondary)
+private struct HACCPDefrostSection: View {
+    @Bindable var storage: SettingsStorageService
 
-                DefrostDurationStepper(
+    var body: some View {
+        SettingsExpandableCard(title: "Scongelamento", caption: "Tempi consigliati per metodo") {
+            VStack(spacing: 12) {
+                SettingsCompactStepperRow(
                     title: DefrostMethod.frigorifero.label,
                     value: $storage.haccp.defrostFridgeRecommendedHours,
-                    range: 6...72
+                    range: 6...72,
+                    unit: "h"
                 )
-                DefrostDurationStepper(
+                SettingsCompactStepperRow(
                     title: DefrostMethod.temperaturaControllata.label,
                     value: $storage.haccp.defrostControlledTempRecommendedHours,
-                    range: 2...48
+                    range: 2...48,
+                    unit: "h"
                 )
-                DefrostDurationStepper(
+                SettingsCompactStepperRow(
                     title: DefrostMethod.acquaFredda.label,
                     value: $storage.haccp.defrostColdWaterRecommendedHours,
-                    range: 1...12
+                    range: 1...12,
+                    unit: "h"
                 )
-                DefrostDurationStepper(
+                SettingsCompactStepperRow(
                     title: DefrostMethod.fornoMicroonde.label,
                     value: $storage.haccp.defrostMicrowaveRecommendedHours,
-                    range: 1...8
+                    range: 1...8,
+                    unit: "h"
                 )
-                DefrostDurationStepper(
+                SettingsCompactStepperRow(
                     title: DefrostMethod.altro.label,
                     value: $storage.haccp.defrostOtherRecommendedHours,
-                    range: 6...72
+                    range: 6...72,
+                    unit: "h"
                 )
             }
-            .padding()
-            .background(ThemeManager.shared.colorSurface)
-            .cornerRadius(16)
-            .onChange(of: storage.haccp.defrostFridgeRecommendedHours) { storage.saveAll() }
-            .onChange(of: storage.haccp.defrostControlledTempRecommendedHours) { storage.saveAll() }
-            .onChange(of: storage.haccp.defrostColdWaterRecommendedHours) { storage.saveAll() }
-            .onChange(of: storage.haccp.defrostMicrowaveRecommendedHours) { storage.saveAll() }
-            .onChange(of: storage.haccp.defrostOtherRecommendedHours) { storage.saveAll() }
-
-            VStack(alignment: .leading, spacing: 20) {
-                Text("Operatività")
-                    .font(.headline)
-                    .foregroundStyle(ThemeManager.shared.colorTextPrimary)
-                
-                Stepper(value: $storage.haccp.productExpiryThreshold, in: 1...15) {
-                    HStack {
-                        Image(systemName: "clock.badge.exclamationmark")
-                            .foregroundStyle(ThemeManager.shared.colorWarning)
-                        Text("Soglia Scadenza: \(storage.haccp.productExpiryThreshold) giorni")
-                            .foregroundStyle(ThemeManager.shared.colorTextPrimary)
-                    }
-                }
-
-                Toggle("Codice lotto obbligatorio in tracciabilità", isOn: $storage.haccp.lotEntryMandatory)
-                    .foregroundStyle(ThemeManager.shared.colorTextPrimary)
-                
-                Stepper(value: $storage.haccp.storageDurationYears, in: 1...10) {
-                    HStack {
-                        Image(systemName: "archivebox.fill")
-                            .foregroundColor(.blue)
-                        Text("Conservazione Dati: \(storage.haccp.storageDurationYears) anni")
-                            .foregroundStyle(ThemeManager.shared.colorTextPrimary)
-                    }
-                }
-            }
-            .padding()
-            .background(ThemeManager.shared.colorSurface)
-            .cornerRadius(16)
-
-            VStack(alignment: .leading, spacing: 20) {
-                Text("Lettura lotti (Groq AI)")
-                    .font(.headline)
-                    .foregroundStyle(ThemeManager.shared.colorTextPrimary)
-
-                Text("Chiave API Groq per leggere lotto e scadenza dalle foto etichetta (solo Groq AI — Llama 4 Maverick, immagine 768px). Crea la chiave su console.groq.com.")
-                    .font(.caption)
-                    .foregroundStyle(ThemeManager.shared.colorTextSecondary)
-
-                SecureField("Chiave API Groq", text: Binding(
-                    get: { storage.haccp.groqApiKey ?? "" },
-                    set: { storage.haccp.groqApiKey = $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0 }
-                ))
-                .textFieldStyle(.roundedBorder)
-            }
-            .padding()
-            .background(ThemeManager.shared.colorSurface)
-            .cornerRadius(16)
-            .onChange(of: storage.haccp.fridgeMinTemp) { storage.saveAll() }
-            .onChange(of: storage.haccp.fridgeMaxTemp) { storage.saveAll() }
-            .onChange(of: storage.haccp.freezerMinTemp) { storage.saveAll() }
-            .onChange(of: storage.haccp.freezerMaxTemp) { storage.saveAll() }
-            .onChange(of: storage.haccp.blastChillerTemp) { storage.saveAll() }
-            .onChange(of: storage.haccp.tempCheckFrequency) { storage.saveAll() }
-            .onChange(of: storage.haccp.warningThreshold) { storage.saveAll() }
-            .onChange(of: storage.haccp.productExpiryThreshold) { storage.saveAll() }
-            .onChange(of: storage.haccp.lotEntryMandatory) { storage.saveAll() }
-            .onChange(of: storage.haccp.storageDurationYears) { storage.saveAll() }
-            .onChange(of: storage.haccp.oilPolarAttentionLimit) { storage.saveAll() }
-            .onChange(of: storage.haccp.oilPolarMaximumLimit) { storage.saveAll() }
-            .onChange(of: storage.haccp.oilNonCompliancePhotoRequired) { storage.saveAll() }
-            .onChange(of: storage.haccp.groqApiKey) { storage.saveAll() }
         }
+        .onChange(of: storage.haccp.defrostFridgeRecommendedHours) { storage.saveAll() }
+        .onChange(of: storage.haccp.defrostControlledTempRecommendedHours) { storage.saveAll() }
+        .onChange(of: storage.haccp.defrostColdWaterRecommendedHours) { storage.saveAll() }
+        .onChange(of: storage.haccp.defrostMicrowaveRecommendedHours) { storage.saveAll() }
+        .onChange(of: storage.haccp.defrostOtherRecommendedHours) { storage.saveAll() }
     }
 }
 
-struct DefrostDurationStepper: View {
-    let title: String
-    @Binding var value: Int
-    let range: ClosedRange<Int>
+private struct HACCPOperativitySection: View {
+    @Bindable var storage: SettingsStorageService
+    @Environment(\.theme) private var theme
 
     var body: some View {
-        Stepper(value: $value, in: range) {
-            HStack {
-                Image(systemName: "snowflake")
-                    .foregroundStyle(ThemeManager.shared.colorPrimary)
-                Text("\(title): \(value) h")
-                    .foregroundStyle(ThemeManager.shared.colorTextPrimary)
+        SettingsPanelCard(title: "Operatività") {
+            VStack(spacing: 12) {
+                SettingsCompactStepperRow(
+                    title: "Avviso scadenze",
+                    value: $storage.haccp.productExpiryThreshold,
+                    range: 1...15,
+                    unit: "gg"
+                )
+                Toggle("Lotto obbligatorio in tracciabilità", isOn: $storage.haccp.lotEntryMandatory)
+                    .font(theme.typography.subheadline)
+                SettingsCompactStepperRow(
+                    title: "Conservazione dati",
+                    value: $storage.haccp.storageDurationYears,
+                    range: 1...10,
+                    unit: "anni"
+                )
             }
         }
+        .onChange(of: storage.haccp.productExpiryThreshold) { storage.saveAll() }
+        .onChange(of: storage.haccp.lotEntryMandatory) { storage.saveAll() }
+        .onChange(of: storage.haccp.storageDurationYears) { storage.saveAll() }
     }
 }
 
-struct TempConfigBox: View {
-    let title: String
-    @Binding var value: Double
-    let unit: String
-    
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(title)
-                .font(.caption2)
-                .fontWeight(.bold)
-                .foregroundStyle(ThemeManager.shared.colorTextSecondary)
-            
-            HStack {
-                TextField("", value: $value, format: .number)
-                    .keyboardType(.decimalPad)
-                    .font(.title3)
-                    .fontWeight(.bold)
-                    .foregroundStyle(ThemeManager.shared.colorTextPrimary)
-                Text(unit)
-                    .foregroundStyle(ThemeManager.shared.colorTextSecondary)
+private struct HACCPGroqSection: View {
+    @Bindable var storage: SettingsStorageService
+    @Environment(\.theme) private var theme
+
+    private var groqKeyBinding: Binding<String> {
+        Binding(
+            get: { storage.haccp.groqApiKey ?? "" },
+            set: {
+                let trimmed = $0.trimmingCharacters(in: .whitespacesAndNewlines)
+                storage.haccp.groqApiKey = trimmed.isEmpty ? nil : trimmed
             }
-            .padding()
-            .background(ThemeManager.shared.colorSurfaceElevated)
-            .cornerRadius(12)
+        )
+    }
+
+    var body: some View {
+        SettingsExpandableCard(title: "Lettura lotti AI", caption: "Chiave Groq opzionale per OCR etichette") {
+            VStack(alignment: .leading, spacing: 12) {
+                if GroqApiKeyService.bundledFallbackKey() != nil {
+                    Label("Chiave di riserva attiva", systemImage: "checkmark.shield.fill")
+                        .font(theme.typography.caption)
+                        .foregroundStyle(theme.colorSuccess)
+                }
+                Text("Crea o aggiorna la chiave su console.groq.com.")
+                    .font(theme.typography.caption)
+                    .foregroundStyle(theme.colorTextSecondary)
+                SecureField("Chiave API Groq", text: groqKeyBinding)
+                    .textFieldStyle(.roundedBorder)
+            }
         }
-        .frame(maxWidth: .infinity)
+        .onChange(of: storage.haccp.groqApiKey) { storage.saveAll() }
     }
 }

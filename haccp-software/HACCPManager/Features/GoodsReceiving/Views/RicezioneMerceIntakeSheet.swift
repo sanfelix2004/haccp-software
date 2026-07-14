@@ -1,7 +1,7 @@
 import SwiftUI
 import SwiftData
 
-/// Registrazione semplificata: fornitore + alimento in ingresso; tracciabilità lotto opzionale; foto in caso di anomalia.
+/// Registrazione semplificata: fornitore + alimento in ingresso; foto solo in caso di anomalia.
 struct RicezioneMerceIntakeSheet: View {
     let restaurantId: UUID
     let supplier: Supplier
@@ -21,47 +21,10 @@ struct RicezioneMerceIntakeSheet: View {
     @State private var anomalyPhotos: [Data] = []
     @State private var errorMessage: String?
     @State private var isSaving = false
-    @State private var cameraSheet: IntakeCameraSheet?
+    @State private var showAnomalyCamera = false
     @StateObject private var anomalyCamera = FinalizeReceiptCameraViewModel()
-    @StateObject private var labelCamera = FinalizeReceiptCameraViewModel()
-
-    @State private var pendingCapture: PendingLottoCapture?
-    @State private var manualLotCode = ""
-    @State private var expiryDate = Date()
-    @State private var expiryFromLabel = false
-    @State private var expiryUserEdited = false
-    @State private var showExpiredProductAlert = false
-    @State private var acceptedDespiteExpired = false
 
     private let service = RicezioneMerceService()
-    private let lottoService = LottoFotoService()
-
-    private var lotTraceInput: RicezioneLotTraceInput? {
-        guard !hasAnomaly else { return nil }
-        var input = RicezioneLotTraceInput(
-            pendingCapture: pendingCapture,
-            manualLotCode: manualLotCode,
-            expiryDate: resolvedExpiryDate,
-            expiryFromLabel: expiryFromLabel,
-            expiryUserEdited: expiryUserEdited,
-            acceptedDespiteExpired: acceptedDespiteExpired
-        )
-        return input.hasLotOrExpiry ? input : nil
-    }
-
-    private var resolvedExpiryDate: Date? {
-        if expiryUserEdited || expiryFromLabel || pendingCapture?.expiryFromLabel == true {
-            return expiryDate
-        }
-        return pendingCapture?.labelExpiryDate
-    }
-
-    private var isExpiryReadAsExpired: Bool {
-        guard let date = resolvedExpiryDate else { return false }
-        return ProductExpiryEvaluator.isExpiredByDate(date)
-            && (expiryFromLabel || pendingCapture?.expiryFromLabel == true)
-            && !expiryUserEdited
-    }
 
     var body: some View {
         NavigationStack {
@@ -71,10 +34,6 @@ struct RicezioneMerceIntakeSheet: View {
                     LabeledContent("Fornitore", value: supplier.name)
                     LabeledContent("Alimento in ingresso", value: product.name)
                     LabeledContent("Categoria", value: product.category.rawValue)
-                }
-
-                if !hasAnomaly {
-                    lotTraceSection
                 }
 
                 Section {
@@ -99,9 +58,9 @@ struct RicezioneMerceIntakeSheet: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button(isSaving ? "Salvo…" : "Salva") {
-                        attemptSave()
+                        Task { await save() }
                     }
-                    .disabled(isSaving || pendingCapture?.isLotExtracting == true)
+                    .disabled(isSaving)
                 }
             }
             .alert("Ricezione merci", isPresented: Binding(get: { errorMessage != nil }, set: { _ in errorMessage = nil })) {
@@ -109,102 +68,9 @@ struct RicezioneMerceIntakeSheet: View {
             } message: {
                 Text(errorMessage ?? "")
             }
-            .alert("Prodotto scaduto", isPresented: $showExpiredProductAlert) {
-                Button("Annulla", role: .cancel) {}
-                Button("Accetta comunque", role: .destructive) {
-                    acceptedDespiteExpired = true
-                    Task { await save() }
-                }
-            } message: {
-                Text("La scadenza letta è antecedente a oggi. Conferma solo se hai verificato e accetti la merce.")
+            .fullScreenCover(isPresented: $showAnomalyCamera) {
+                anomalyCameraSheet
             }
-            .fullScreenCover(item: $cameraSheet) { sheet in
-                receiptCameraSheet(for: sheet)
-            }
-        }
-    }
-
-    private enum IntakeCameraSheet: Identifiable {
-        case anomaly
-        case label
-
-        var id: String {
-            switch self {
-            case .anomaly: return "anomaly"
-            case .label: return "label"
-            }
-        }
-
-        var title: String {
-            switch self {
-            case .anomaly: return "Foto anomalia"
-            case .label: return "Foto etichetta"
-            }
-        }
-    }
-
-    @ViewBuilder
-    private var lotTraceSection: some View {
-        Section {
-            if let pending = pendingCapture, let preview = HACCPZoomablePhotoThumbnail(data: pending.photoData, size: 72, zoomTitle: "Etichetta") {
-                HStack {
-                    preview
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Etichetta acquisita")
-                            .font(theme.typography.caption.weight(.semibold))
-                        if pending.isLotExtracting {
-                            Text("Lettura AI in corso…")
-                                .font(.caption2)
-                                .foregroundStyle(theme.colorTextSecondary)
-                        }
-                    }
-                    Spacer()
-                    Button("Rifai") {
-                        pendingCapture = nil
-                        manualLotCode = ""
-                        expiryFromLabel = false
-                        expiryUserEdited = false
-                    }
-                    .font(.caption)
-                }
-            } else {
-                Button {
-                    cameraSheet = .label
-                } label: {
-                    Label("Scatta etichetta lotto", systemImage: "camera.viewfinder")
-                }
-            }
-
-            TextField("Codice lotto (opzionale)", text: $manualLotCode)
-                .textInputAutocapitalization(.characters)
-                .autocorrectionDisabled()
-                .onChange(of: manualLotCode) { _, newValue in
-                    if var pending = pendingCapture {
-                        pending.lotDraft = newValue
-                        pendingCapture = pending
-                    }
-                }
-
-            DatePicker("Scadenza (opzionale)", selection: $expiryDate, displayedComponents: .date)
-                .onChange(of: expiryDate) { _, _ in
-                    expiryUserEdited = true
-                    expiryFromLabel = false
-                }
-
-            if isExpiryReadAsExpired {
-                Label("Scadenza letta: prodotto scaduto", systemImage: "exclamationmark.octagon.fill")
-                    .font(.caption)
-                    .foregroundStyle(theme.colorError)
-            } else if expiryFromLabel, let confidence = pendingCapture?.ocrConfidence,
-                      confidence < GroqLotExtractor.manualVerificationThreshold {
-                Label("Verifica lotto e scadenza letti dall'etichetta", systemImage: "exclamationmark.triangle.fill")
-                    .font(.caption)
-                    .foregroundStyle(theme.colorWarning)
-            }
-        } header: {
-            Text("Tracciabilità lotto")
-        } footer: {
-            Text("Consigliato per collegare la ricezione a Controllo scadenze e Tracciabilità. Puoi anche inserire lotto e scadenza a mano.")
         }
     }
 
@@ -223,7 +89,7 @@ struct RicezioneMerceIntakeSheet: View {
 
             if anomalyPhotos.isEmpty {
                 Button {
-                    cameraSheet = .anomaly
+                    showAnomalyCamera = true
                 } label: {
                     Label("Scatta foto anomalia", systemImage: "camera.fill")
                 }
@@ -236,7 +102,7 @@ struct RicezioneMerceIntakeSheet: View {
                             }
                         }
                         Button {
-                            cameraSheet = .anomaly
+                            showAnomalyCamera = true
                         } label: {
                             VStack {
                                 Image(systemName: "plus.circle.fill")
@@ -251,80 +117,31 @@ struct RicezioneMerceIntakeSheet: View {
         }
     }
 
-    @ViewBuilder
-    private func receiptCameraSheet(for sheet: IntakeCameraSheet) -> some View {
-        let camera = sheet == .anomaly ? anomalyCamera : labelCamera
+    private var anomalyCameraSheet: some View {
         NavigationStack {
             VStack(spacing: 16) {
-                FinalizeCameraSessionPreview(session: camera.session, cameraViewModel: camera)
+                FinalizeCameraSessionPreview(session: anomalyCamera.session, cameraViewModel: anomalyCamera)
                     .frame(height: 320)
                     .clipShape(RoundedRectangle(cornerRadius: 12))
-                Button("Scatta") { camera.capturePhoto() }
+                Button("Scatta") { anomalyCamera.capturePhoto() }
                     .buttonStyle(.borderedProminent)
             }
             .padding()
-            .navigationTitle(sheet.title)
+            .navigationTitle("Foto anomalia")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Chiudi") { cameraSheet = nil }
+                    Button("Chiudi") { showAnomalyCamera = false }
                 }
             }
-            .onAppear { camera.start() }
-            .onDisappear { camera.stop() }
-            .onReceive(camera.$capturedPhotoData) { data in
+            .onAppear { anomalyCamera.start() }
+            .onDisappear { anomalyCamera.stop() }
+            .onReceive(anomalyCamera.$capturedPhotoData) { data in
                 guard let data, !data.isEmpty else { return }
-                camera.resetCaptureBuffer()
-                cameraSheet = nil
-                switch sheet {
-                case .anomaly:
-                    anomalyPhotos.append(data)
-                case .label:
-                    beginLabelExtraction(from: data)
-                }
+                anomalyCamera.resetCaptureBuffer()
+                showAnomalyCamera = false
+                anomalyPhotos.append(data)
             }
         }
-    }
-
-    private func beginLabelExtraction(from photoData: Data) {
-        var pending = lottoService.makePendingCapture(photoData: photoData)
-        pendingCapture = pending
-        manualLotCode = pending.lotDraft
-        Task {
-            do {
-                let outcome = try await lottoService.extractLot(from: photoData)
-                pending.lotDraft = outcome.lotCode ?? pending.lotDraft
-                pending.testoLottoOCR = outcome.lotCode
-                pending.ocrRawText = outcome.rawText.nilIfEmpty
-                pending.ocrConfidence = outcome.confidence
-                pending.labelExpiryDate = outcome.expiryDate
-                pending.expiryFromLabel = outcome.isExpiryFromLabel
-                pending.isLotExtracting = false
-                await MainActor.run {
-                    pendingCapture = pending
-                    manualLotCode = pending.lotDraft
-                    if let labelExpiry = outcome.expiryDate {
-                        expiryDate = labelExpiry
-                        expiryFromLabel = outcome.isExpiryFromLabel
-                        expiryUserEdited = false
-                    }
-                }
-            } catch {
-                await MainActor.run {
-                    pending.isLotExtracting = false
-                    pending.lotExtractionError = error.localizedDescription
-                    pendingCapture = pending
-                    errorMessage = error.localizedDescription
-                }
-            }
-        }
-    }
-
-    private func attemptSave() {
-        if isExpiryReadAsExpired, !acceptedDespiteExpired {
-            showExpiredProductAlert = true
-            return
-        }
-        Task { await save() }
     }
 
     @MainActor
@@ -341,8 +158,6 @@ struct RicezioneMerceIntakeSheet: View {
                 anomalyDescription: anomalyDescription,
                 anomalyPhotos: anomalyPhotos,
                 anomalyAction: anomalyAction,
-                lotTrace: lotTraceInput,
-                acceptedDespiteExpired: acceptedDespiteExpired,
                 user: user,
                 modelContext: modelContext
             )
@@ -352,8 +167,4 @@ struct RicezioneMerceIntakeSheet: View {
             errorMessage = error.localizedDescription
         }
     }
-}
-
-private extension String {
-    var nilIfEmpty: String? { isEmpty ? nil : self }
 }

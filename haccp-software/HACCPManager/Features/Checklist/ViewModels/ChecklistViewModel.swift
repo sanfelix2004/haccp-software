@@ -38,8 +38,8 @@ final class ChecklistViewModel: ObservableObject {
 }
 
 enum ChecklistTab: String, CaseIterable, Identifiable {
-    case dashboard = "Oggi"
     case templates = "Modelli"
+    case dashboard = "Oggi"
     case history = "Storico"
     case alerts = "Criticità"
 

@@ -5,17 +5,24 @@ struct TraceabilityView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.theme) private var theme
     @EnvironmentObject var appState: AppState
+    @EnvironmentObject private var session: RestaurantSessionContext
 
-    @Query private var users: [LocalUser]
-    @Query private var restaurants: [Restaurant]
-    @Query private var productionLabels: [ProductionLabelRecord]
-    @Query private var categories: [ProductionCategory]
-
-    @StateObject private var dataStore = TraceabilityDataStore()
+    @ObservedObject private var dataStore = ModuleStoreRegistry.shared.traceability
 
     @State private var searchText = ""
-    @State private var selectedFilter: TraceabilityHubFilter = .all
+    @State private var selectedFilter: TraceabilityHubFilter = .today
+    @State private var expandedArchiveGroupIds: Set<String> = []
     @State private var displayLimit = 40
+    @State private var auxiliaryCategories: [ProductionCategory] = []
+    @State private var auxiliaryLabels: [ProductionLabelRecord] = []
+    @State private var hubContext = TraceabilityHubContext(
+        records: [],
+        productions: [],
+        links: [],
+        lottoProductionLinks: []
+    )
+    @State private var hubSnapshot = TraceabilityHubSnapshot.empty
+    @State private var auxiliaryLoadTask: Task<Void, Never>?
 
     @State private var showLotCapture = false
     @State private var resumeSessionId: UUID?
@@ -40,49 +47,58 @@ struct TraceabilityView: View {
     private let labelService = ProductionLabelsService()
     private let lottoService = LottoFotoService()
 
-    private var hubContext: TraceabilityHubContext {
-        TraceabilityHubContext(store: dataStore)
+    private func toggleArchiveGroup(_ groupId: String) {
+        if expandedArchiveGroupIds.contains(groupId) {
+            expandedArchiveGroupIds.remove(groupId)
+        } else {
+            expandedArchiveGroupIds.insert(groupId)
+        }
+    }
+
+    private func rebuildHubSnapshot() {
+        hubSnapshot = TraceabilityHubSnapshotBuilder.build(
+            context: hubContext,
+            records: dataStore.records,
+            filter: selectedFilter,
+            searchText: searchText
+        )
+    }
+
+    private func rebuildHubContext() {
+        hubContext = TraceabilityHubContext(store: dataStore)
+        rebuildHubSnapshot()
     }
 
     private var metrics: TraceabilityHubMetrics {
-        hubContext.metrics(for: dataStore.records)
+        hubSnapshot.metrics
     }
 
     private var filteredRecords: [TraceabilityRecord] {
-        hubContext.filteredRecords(dataStore.records, filter: selectedFilter, searchText: searchText)
+        hubSnapshot.filteredRecords
     }
 
     private var productionArchiveGroups: [TraceabilityProductionArchiveGroup] {
-        hubContext.productionArchiveGroups(
-            records: dataStore.records,
-            filter: selectedFilter,
-            searchText: searchText
-        )
+        hubSnapshot.productionGroups
     }
 
     private var unlinkedRecords: [TraceabilityRecord] {
-        hubContext.unlinkedRecords(
-            records: dataStore.records,
-            filter: selectedFilter,
-            searchText: searchText
-        )
+        hubSnapshot.unlinkedRecords
     }
 
     private var productionSearchSuggestions: [String] {
-        var seen = Set<String>()
-        return hubContext
-            .productionArchiveGroups(records: dataStore.records, filter: .all, searchText: "")
-            .compactMap { group -> String? in
-                let name = group.productionName.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !name.isEmpty, seen.insert(name.lowercased()).inserted else { return nil }
-                return name
-            }
-            .prefix(12)
-            .map { $0 }
+        hubSnapshot.productionSuggestions
     }
 
     private var visibleProductionGroups: [TraceabilityProductionArchiveGroup] {
         Array(productionArchiveGroups.prefix(displayLimit))
+    }
+
+    private var criticalRecords: [TraceabilityRecord] {
+        hubSnapshot.criticalRecords
+    }
+
+    private var visibleCriticalRecords: [TraceabilityRecord] {
+        Array(criticalRecords.prefix(displayLimit))
     }
 
     private var visibleUnlinkedRecords: [TraceabilityRecord] {
@@ -90,22 +106,19 @@ struct TraceabilityView: View {
     }
 
     private var currentUser: LocalUser? {
-        users.first { $0.id == appState.currentUserId }
+        session.currentUser
     }
 
     private var activeRestaurant: Restaurant? {
-        guard let rid = appState.activeRestaurantId else { return nil }
-        return restaurants.first { $0.id == rid }
+        session.activeRestaurant
     }
 
     private var scopedLabels: [ProductionLabelRecord] {
-        guard let rid = appState.activeRestaurantId else { return [] }
-        return productionLabels.filter { $0.restaurantId == rid }
+        auxiliaryLabels
     }
 
     private var scopedCategories: [ProductionCategory] {
-        guard let rid = appState.activeRestaurantId else { return [] }
-        return categories.filter { $0.restaurantId == rid }.sorted { $0.orderIndex < $1.orderIndex }
+        auxiliaryCategories
     }
 
     private var permissions: UserPermissions { currentUser?.permissions ?? UserPermissions(role: .viewer) }
@@ -130,8 +143,11 @@ struct TraceabilityView: View {
         .background(theme.colorBackground.ignoresSafeArea())
         .navigationTitle("Tracciabilità")
         .haccpControlTint()
-        .task(id: appState.activeRestaurantId) {
+        .moduleScreenLoad(restaurantId: appState.activeRestaurantId) {
             reloadAll()
+        }
+        .onChange(of: dataStore.loadGeneration) { _, _ in
+            rebuildHubContext()
         }
         .alert("Tracciabilità", isPresented: Binding(get: { errorMessage != nil }, set: { _ in errorMessage = nil })) {
             Button("OK", role: .cancel) {}
@@ -160,7 +176,7 @@ struct TraceabilityView: View {
         }
         .masterAuthCover(
             coordinator: masterAuth,
-            master: users.first(where: { $0.role == .master })
+            master: session.masterUser
         )
     }
 
@@ -209,8 +225,17 @@ struct TraceabilityView: View {
                     selectedFilter: $selectedFilter,
                     productionSuggestions: productionSearchSuggestions
                 )
-                .onChange(of: searchText) { _, _ in displayLimit = 40 }
-                .onChange(of: selectedFilter) { _, _ in displayLimit = 40 }
+                .onChange(of: searchText) { _, _ in
+                    displayLimit = 40
+                    rebuildHubSnapshot()
+                    if !searchText.isEmpty {
+                        expandedArchiveGroupIds = Set(hubSnapshot.productionGroups.map(\.id))
+                    }
+                }
+                .onChange(of: selectedFilter) { _, _ in
+                    displayLimit = 40
+                    rebuildHubSnapshot()
+                }
 
                 recordsSection
             }
@@ -222,13 +247,13 @@ struct TraceabilityView: View {
     private var metricsGrid: some View {
         LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
             TraceabilityMetricTile(
-                title: "Totale lotti",
-                value: "\(metrics.total)",
-                subtitle: "In archivio",
-                icon: "archivebox.fill",
-                accent: theme.colorPrimary,
-                isActive: selectedFilter == .all
-            ) { selectedFilter = .all }
+                title: "Oggi",
+                value: "\(metrics.todayCount)",
+                subtitle: "Registrati oggi",
+                icon: "calendar",
+                accent: theme.colorWarning,
+                isActive: selectedFilter == .today
+            ) { selectedFilter = .today }
 
             TraceabilityMetricTile(
                 title: "Da associare",
@@ -240,15 +265,6 @@ struct TraceabilityView: View {
             ) { selectedFilter = .unlinked }
 
             TraceabilityMetricTile(
-                title: "Oggi",
-                value: "\(metrics.todayCount)",
-                subtitle: "Registrati oggi",
-                icon: "calendar",
-                accent: theme.colorWarning,
-                isActive: selectedFilter == .today
-            ) { selectedFilter = .today }
-
-            TraceabilityMetricTile(
                 title: "Non conformi",
                 value: "\(metrics.critical)",
                 subtitle: "Da verificare",
@@ -256,6 +272,15 @@ struct TraceabilityView: View {
                 accent: theme.colorError,
                 isActive: selectedFilter == .critical
             ) { selectedFilter = .critical }
+
+            TraceabilityMetricTile(
+                title: "Totale lotti",
+                value: "\(metrics.total)",
+                subtitle: "In archivio",
+                icon: "archivebox.fill",
+                accent: theme.colorPrimary,
+                isActive: selectedFilter == .all
+            ) { selectedFilter = .all }
         }
     }
 
@@ -281,77 +306,160 @@ struct TraceabilityView: View {
 
     private var recordsSection: some View {
         VStack(spacing: theme.spacing.sectionSpacing) {
-            if !productionArchiveGroups.isEmpty {
-                DashboardCardView(
-                    title: recordsSectionTitle,
-                    subtitle: "\(productionArchiveGroups.count) piatti · \(filteredRecords.count) lotti"
-                ) {
-                    LazyVStack(spacing: 12) {
-                        ForEach(visibleProductionGroups) { group in
-                            SwipeToDeleteRow(
-                                enabled: canDeleteRecords,
-                                deleteTitle: "Rimuovi piatto",
-                                onDelete: { requestDeleteProductionGroup(group) }
-                            ) {
-                                TraceabilityProductionArchiveCard(
-                                    group: group,
-                                    searchText: searchText,
-                                    onOpenIngredient: { recordId in
-                                        openRecord(id: recordId)
-                                    }
-                                )
-                            }
-                        }
+            switch selectedFilter {
+            case .critical:
+                if criticalRecords.isEmpty {
+                    emptyRecordsCard
+                } else {
+                    criticalRecordsCard
+                }
 
-                        if productionArchiveGroups.count > displayLimit {
-                            SecondaryButton(
-                                title: "Carica altri (\(productionArchiveGroups.count - displayLimit))",
-                                icon: "arrow.down.circle"
-                            ) {
-                                displayLimit += 40
+            case .unlinked:
+                if unlinkedRecords.isEmpty {
+                    emptyRecordsCard
+                } else {
+                    unlinkedRecordsCard(title: recordsSectionTitle)
+                }
+
+            case .today:
+                if !unlinkedRecords.isEmpty {
+                    unlinkedRecordsCard(title: "Da associare oggi")
+                }
+                if !productionArchiveGroups.isEmpty {
+                    productionArchiveCard
+                }
+                if unlinkedRecords.isEmpty && productionArchiveGroups.isEmpty {
+                    emptyRecordsCard
+                }
+
+            case .all:
+                if !unlinkedRecords.isEmpty {
+                    unlinkedRecordsCard(title: "Lotti da associare")
+                }
+                if !productionArchiveGroups.isEmpty {
+                    productionArchiveCard
+                }
+                if unlinkedRecords.isEmpty && productionArchiveGroups.isEmpty {
+                    emptyRecordsCard
+                }
+            }
+        }
+    }
+
+    private var productionArchiveCard: some View {
+        DashboardCardView(
+            title: recordsSectionTitle,
+            subtitle: "\(productionArchiveGroups.count) piatti · \(filteredRecords.count) lotti"
+        ) {
+            VStack(spacing: 12) {
+                ForEach(visibleProductionGroups) { group in
+                    TraceabilityProductionArchiveCard(
+                        group: group,
+                        searchText: searchText,
+                        isExpanded: expandedArchiveGroupIds.contains(group.id),
+                        onToggleExpanded: {
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                toggleArchiveGroup(group.id)
+                            }
+                        },
+                        onOpenIngredient: { recordId in
+                            openRecord(id: recordId)
+                        }
+                    )
+                    .equatable()
+                    .contextMenu {
+                        if canDeleteRecords {
+                            Button(role: .destructive) {
+                                requestDeleteProductionGroup(group)
+                            } label: {
+                                Label("Rimuovi piatto", systemImage: "trash")
                             }
                         }
                     }
                 }
-            }
 
-            if !unlinkedRecords.isEmpty {
-                DashboardCardView(
-                    title: selectedFilter == .unlinked ? recordsSectionTitle : "Lotti da associare",
-                    subtitle: "\(unlinkedRecords.count) senza piatto"
-                ) {
-                    LazyVStack(spacing: 10) {
-                        ForEach(visibleUnlinkedRecords) { record in
-                            let display = hubContext.display(for: record)
-                            TraceabilityRecordCard(
-                                display: display,
-                                onTap: { detailRecord = record },
-                                onQuickAssociate: display.needsProductionLink ? {
-                                    quickAssociateRecord = record
-                                } : nil
-                            )
-                        }
-
-                        if unlinkedRecords.count > visibleUnlinkedRecords.count {
-                            SecondaryButton(
-                                title: "Carica altri (\(unlinkedRecords.count - visibleUnlinkedRecords.count))",
-                                icon: "arrow.down.circle"
-                            ) {
-                                displayLimit += 40
-                            }
-                        }
+                if productionArchiveGroups.count > displayLimit {
+                    SecondaryButton(
+                        title: "Carica altri (\(productionArchiveGroups.count - displayLimit))",
+                        icon: "arrow.down.circle"
+                    ) {
+                        displayLimit += 40
                     }
                 }
             }
+        }
+    }
 
-            if productionArchiveGroups.isEmpty && unlinkedRecords.isEmpty {
-                DashboardCardView(
-                    title: recordsSectionTitle,
-                    subtitle: recordsSectionSubtitle
-                ) {
-                    emptyRecordsState
+    private func unlinkedRecordsCard(title: String) -> some View {
+        DashboardCardView(
+            title: title,
+            subtitle: "\(unlinkedRecords.count) senza piatto"
+        ) {
+            VStack(spacing: 10) {
+                ForEach(visibleUnlinkedRecords) { record in
+                    let display = hubContext.display(for: record)
+                    SwipeToDeleteRow(
+                        enabled: canDeleteRecords,
+                        deleteTitle: "Elimina lotto",
+                        onDelete: { requestDeleteUnlinkedRecord(record) }
+                    ) {
+                        TraceabilityRecordCard(
+                            display: display,
+                            onTap: { detailRecord = record },
+                            onQuickAssociate: display.needsProductionLink ? {
+                                quickAssociateRecord = record
+                            } : nil
+                        )
+                    }
+                }
+
+                if unlinkedRecords.count > visibleUnlinkedRecords.count {
+                    SecondaryButton(
+                        title: "Carica altri (\(unlinkedRecords.count - visibleUnlinkedRecords.count))",
+                        icon: "arrow.down.circle"
+                    ) {
+                        displayLimit += 40
+                    }
                 }
             }
+        }
+    }
+
+    private var criticalRecordsCard: some View {
+        DashboardCardView(
+            title: recordsSectionTitle,
+            subtitle: "\(criticalRecords.count) da verificare"
+        ) {
+            LazyVStack(spacing: 10) {
+                ForEach(visibleCriticalRecords) { record in
+                    let display = hubContext.display(for: record)
+                    TraceabilityRecordCard(
+                        display: display,
+                        onTap: { detailRecord = record },
+                        onQuickAssociate: display.needsProductionLink ? {
+                            quickAssociateRecord = record
+                        } : nil
+                    )
+                }
+
+                if criticalRecords.count > visibleCriticalRecords.count {
+                    SecondaryButton(
+                        title: "Carica altri (\(criticalRecords.count - visibleCriticalRecords.count))",
+                        icon: "arrow.down.circle"
+                    ) {
+                        displayLimit += 40
+                    }
+                }
+            }
+        }
+    }
+
+    private var emptyRecordsCard: some View {
+        DashboardCardView(
+            title: recordsSectionTitle,
+            subtitle: recordsSectionSubtitle
+        ) {
+            emptyRecordsState
         }
     }
 
@@ -360,7 +468,7 @@ struct TraceabilityView: View {
         case .all: return "Archivio per piatto"
         case .unlinked: return "Lotti da associare"
         case .critical: return "Non conformi"
-        case .today: return "Registrati oggi"
+        case .today: return "Piatti di oggi"
         }
     }
 
@@ -375,12 +483,12 @@ struct TraceabilityView: View {
             message: emptyMessage,
             actionTitle: emptyActionTitle
         )) {
-            if searchText.isEmpty && selectedFilter == .all {
+            if searchText.isEmpty && (selectedFilter == .all || selectedFilter == .today) {
                 showLotCapture = true
-            } else if selectedFilter == .unlinked {
-                selectedFilter = .all
+            } else if selectedFilter == .unlinked || selectedFilter == .critical {
+                selectedFilter = .today
             } else {
-                selectedFilter = .all
+                selectedFilter = .today
                 searchText = ""
             }
         }
@@ -416,7 +524,7 @@ struct TraceabilityView: View {
         if !searchText.isEmpty { return "Reimposta filtri" }
         switch selectedFilter {
         case .all, .today: return "Scatta lotti"
-        case .unlinked, .critical: return "Vedi tutti"
+        case .unlinked, .critical: return "Vedi oggi"
         }
     }
 
@@ -442,7 +550,7 @@ struct TraceabilityView: View {
                 let draft = labelService.draft(from: record)
                 return ProductionLabelLinkMatcher.existingLabel(for: draft, in: scopedLabels) != nil
             }(),
-            masterUser: users.first(where: { $0.role == .master }),
+            masterUser: session.masterUser,
             onAssociate: { beginMultiProductionAssociation(record) },
             onLabel: { beginLabel(for: record) },
             onNonCompliant: { nonComplianceRecord = record },
@@ -565,6 +673,17 @@ struct TraceabilityView: View {
         }
     }
 
+    private func requestDeleteUnlinkedRecord(_ record: TraceabilityRecord) {
+        masterAuth.request(
+            permission: .deleteTraceabilityRecords,
+            permissions: permissions,
+            action: {
+                recordPendingDelete = record
+                performPendingDelete()
+            }
+        )
+    }
+
     private func requestDeleteProductionGroup(_ group: TraceabilityProductionArchiveGroup) {
         masterAuth.request(
             permission: .deleteTraceabilityRecords,
@@ -591,14 +710,38 @@ struct TraceabilityView: View {
     }
 
     private func reloadAll() {
-        if let rid = appState.activeRestaurantId {
-            lottoService.ensureArchiveRecords(restaurantId: rid, modelContext: modelContext)
-        }
-        dataStore.reload(context: modelContext, restaurantId: appState.activeRestaurantId)
-        if let rid = appState.activeRestaurantId {
-            openSessions = lottoService.openSessions(restaurantId: rid, modelContext: modelContext)
-        } else {
+        let rid = appState.activeRestaurantId
+        dataStore.reload(context: modelContext, restaurantId: rid, force: true)
+        auxiliaryLoadTask?.cancel()
+        guard let rid else {
             openSessions = []
+            auxiliaryCategories = []
+            auxiliaryLabels = []
+            return
+        }
+        auxiliaryLoadTask = Task(priority: .utility) { @MainActor in
+            await Task.yield()
+            var categoryDescriptor = FetchDescriptor<ProductionCategory>(
+                predicate: #Predicate { $0.restaurantId == rid },
+                sortBy: [SortDescriptor(\ProductionCategory.orderIndex)]
+            )
+            categoryDescriptor.fetchLimit = 100
+            auxiliaryCategories = (try? modelContext.fetch(categoryDescriptor)) ?? []
+            await Task.yield()
+            guard !Task.isCancelled else { return }
+
+            var labelDescriptor = FetchDescriptor<ProductionLabelRecord>(
+                predicate: #Predicate { $0.restaurantId == rid },
+                sortBy: [SortDescriptor(\ProductionLabelRecord.createdAt, order: .reverse)]
+            )
+            labelDescriptor.fetchLimit = 200
+            auxiliaryLabels = (try? modelContext.fetch(labelDescriptor)) ?? []
+            await Task.yield()
+            guard !Task.isCancelled else { return }
+
+            lottoService.ensureArchiveRecords(restaurantId: rid, modelContext: modelContext)
+            guard !Task.isCancelled else { return }
+            openSessions = lottoService.openSessions(restaurantId: rid, modelContext: modelContext)
         }
     }
 

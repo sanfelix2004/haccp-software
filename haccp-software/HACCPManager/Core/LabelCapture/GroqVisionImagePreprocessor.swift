@@ -5,10 +5,14 @@ import UIKit
 enum GroqVisionImagePreprocessor {
 
     struct PreparedImages: Sendable {
-        /// Ritaglio area stampa produzione (ingrandito + contrasto).
+        /// Ritaglio area stampa superiore (retro confezione, etichetta alta).
         let stampFocusJPEG: Data
-        /// Stessa area con colori invertiti (testo bianco su sfondo scuro → nero su bianco).
+        /// Ritaglio area stampa inferiore (tappi, fondo barattolo, base confezione).
+        let stampBottomJPEG: Data
+        /// Stessa area superiore con colori invertiti (testo bianco su sfondo scuro → nero su bianco).
         let stampInvertedJPEG: Data
+        /// Stessa area inferiore invertita.
+        let stampBottomInvertedJPEG: Data
         /// Inquadratura completa con contrasto leggero.
         let fullFrameJPEG: Data
     }
@@ -21,33 +25,41 @@ enum GroqVisionImagePreprocessor {
         ) else { return nil }
 
         let stampFocus = enhanceContrast(
-            cropStampRegion(from: base)
+            cropStampRegion(from: base, centerYFraction: 0.34)
+        )
+        let stampBottom = enhanceContrast(
+            cropStampRegion(from: base, centerYFraction: 0.72)
         )
         let stampInverted = invertColors(stampFocus)
+        let stampBottomInverted = invertColors(stampBottom)
         let fullFrame = enhanceContrast(base)
 
         guard let stampJPEG = jpegData(stampFocus, maxPixel: PerformanceConfig.groqVisionMaxPixel),
+              let bottomJPEG = jpegData(stampBottom, maxPixel: PerformanceConfig.groqVisionMaxPixel),
               let invertedJPEG = jpegData(stampInverted, maxPixel: PerformanceConfig.groqVisionMaxPixel),
+              let bottomInvertedJPEG = jpegData(stampBottomInverted, maxPixel: PerformanceConfig.groqVisionMaxPixel),
               let fullJPEG = jpegData(fullFrame, maxPixel: PerformanceConfig.groqVisionMaxPixel) else {
             return nil
         }
 
         return PreparedImages(
             stampFocusJPEG: stampJPEG,
+            stampBottomJPEG: bottomJPEG,
             stampInvertedJPEG: invertedJPEG,
+            stampBottomInvertedJPEG: bottomInvertedJPEG,
             fullFrameJPEG: fullJPEG
         )
     }
 
     // MARK: - Crop
 
-    /// Ritaglio centrato nella metà superiore — tipico per stampa lotto/data su bottiglia/retro confezione.
-    private static func cropStampRegion(from image: UIImage) -> UIImage {
+    /// Ritaglio centrato su una fascia verticale — lotto/data su retro confezione o tappo.
+    private static func cropStampRegion(from image: UIImage, centerYFraction: CGFloat) -> UIImage {
         crop(
             image: image,
             widthFraction: 0.92,
             heightFraction: 0.48,
-            centerYFraction: 0.34
+            centerYFraction: centerYFraction
         )
     }
 

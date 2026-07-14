@@ -82,7 +82,7 @@ struct TraceabilityHistoryProvider {
         let scopedRecords = records.filter {
             $0.restaurantId == restaurantId && TraceabilityRecordSupport.isHubRecord($0)
         }
-        let recordsById = Dictionary(uniqueKeysWithValues: scopedRecords.map { ($0.id, $0) })
+        let recordsById = HACCPSafeParse.dictionary(scopedRecords.map { ($0.id, $0) })
 
         let hub = TraceabilityHubContext(
             records: scopedRecords,
@@ -98,12 +98,13 @@ struct TraceabilityHistoryProvider {
             searchText: ""
         )
 
-        let linkedRecordIds = Set(productionGroups.flatMap { $0.ingredients.map(\.recordId) })
+        let linkedRecordIds = Set(productionGroups.flatMap { $0.ingredients.compactMap(\.recordId) })
         let productionEntries = productionGroups.compactMap { group -> HistoryEntry? in
             let ingredients = group.ingredients.compactMap { item -> HistoryTraceabilityIngredient? in
-                guard let record = recordsById[item.recordId] else { return nil }
+                guard let recordId = item.recordId,
+                      let record = recordsById[recordId] else { return nil }
                 return HistoryTraceabilityIngredient(
-                    id: item.recordId,
+                    id: recordId,
                     name: item.name,
                     lotCode: item.lotCode,
                     supplier: item.supplier,
@@ -169,16 +170,16 @@ struct TraceabilityHistoryProvider {
         productions: [Production],
         restaurantId: UUID
     ) -> [HistoryEntry] {
-        let recordsById = Dictionary(
-            uniqueKeysWithValues: records.filter { $0.restaurantId == restaurantId }.map { ($0.id, $0) }
+        let recordsById = HACCPSafeParse.dictionary(
+            records.filter { $0.restaurantId == restaurantId }.map { ($0.id, $0) }
         )
-        let productionsById = Dictionary(uniqueKeysWithValues: productions.map { ($0.id, $0) })
-        let meaningful: Set<TraceabilityActionType> = [.withdrawn, .expired, .nonCompliance, .rejected, .linkedToProduction]
+        let productionsById = HACCPSafeParse.dictionary(productions.map { ($0.id, $0) })
+        let meaningful: Set<TraceabilityActionType> = [.withdrawn, .nonCompliance, .rejected, .linkedToProduction]
 
         return logs.compactMap { log -> HistoryEntry? in
             guard meaningful.contains(log.actionType),
                   let record = recordsById[log.receivedItemId] else { return nil }
-            let actionLabel = logActionLabel(log.actionType)
+            let actionLabel = logActionLabel(log.actionType, detail: log.detail)
             let productionName = log.linkedProductionDisplayName(productionsById: productionsById)
             var details: [HistoryEntryDetail] = [
                 .init(label: "Prodotto", value: record.productName),
@@ -201,17 +202,24 @@ struct TraceabilityHistoryProvider {
                 operatorName: log.operatorName,
                 date: log.timestamp,
                 details: details,
-                hasCriticality: log.actionType == .expired
-                    || log.actionType == .nonCompliance
+                hasCriticality: log.actionType == .nonCompliance
                     || log.actionType == .rejected
             )
         }
     }
 
-    private func logActionLabel(_ action: TraceabilityActionType) -> String {
+    private func logActionLabel(_ action: TraceabilityActionType, detail: String?) -> String {
         switch action {
-        case .withdrawn: return "Ritiro/scarto"
-        case .expired: return "Scaduto"
+        case .withdrawn:
+            let trimmed = detail?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            if trimmed.localizedCaseInsensitiveContains("scartat") {
+                return TraceabilityWithdrawalKind.scartato.label
+            }
+            if trimmed.localizedCaseInsensitiveContains("usat")
+                || trimmed.localizedCaseInsensitiveContains("ritirat") {
+                return TraceabilityWithdrawalKind.ritirato.label
+            }
+            return trimmed.isEmpty ? "Chiusura lotto" : trimmed
         case .nonCompliance: return "Non conformità"
         case .rejected: return "Respinto"
         case .linkedToProduction: return "Associato a produzione"
@@ -405,29 +413,61 @@ struct OilControlHistoryProvider: HistoryDataProvider {
 struct ExpiryHistoryProvider {
     func entries(
         traceabilityRecords: [TraceabilityRecord],
+        traceabilityLogs: [TraceabilityLog],
         lottoFotos: [LottoFoto],
         restaurantId: UUID
     ) -> [HistoryEntry] {
         let lottoById = Dictionary(lottoFotos.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let logsByRecord = Dictionary(grouping: traceabilityLogs, by: \.receivedItemId)
 
         return traceabilityRecords
             .filter { $0.restaurantId == restaurantId && TraceabilityRecordSupport.isExpiryMonitored($0) }
-            .filter { record in
-                record.productStatus == .expired
-                    || record.productStatus == .rejected
-                    || record.productStatus == .used
-                    || record.isNonCompliant
-            }
-            .map { record in
+            .compactMap { record -> HistoryEntry? in
                 let sourceLabel = TraceabilityRecordSupport.expirySourceLabel(for: record, lottoById: lottoById)
+                let logs = (logsByRecord[record.id] ?? []).sorted { $0.timestamp > $1.timestamp }
+
+                if record.productStatus == .expired, record.canBeWithdrawn {
+                    return HistoryEntry(
+                        id: "expiry-pending-\(record.id)",
+                        module: .expiryControl,
+                        title: record.productName,
+                        category: TraceabilityRecordSupport.expiryTypeLabel(for: record),
+                        status: "Da chiudere",
+                        operatorName: record.createdByNameSnapshot,
+                        date: record.expiryDate ?? record.receivedAt,
+                        details: [
+                            .init(label: "Tipo", value: TraceabilityRecordSupport.expiryTypeLabel(for: record)),
+                            .init(label: "Prodotto", value: record.productName),
+                            .init(label: "Lotto", value: record.lotCode),
+                            .init(label: "Fornitore", value: HistoryFormat.text(record.supplier)),
+                            .init(label: "Scadenza", value: HistoryFormat.date(record.expiryDate)),
+                            .init(label: "Provenienza scadenza", value: HistoryFormat.text(sourceLabel)),
+                            .init(label: "Azione richiesta", value: "Indica se il lotto è stato usato o scartato"),
+                            .init(label: "Operatore", value: record.createdByNameSnapshot)
+                        ],
+                        hasCriticality: true,
+                        pendingTraceabilityRecordId: record.id
+                    )
+                }
+
+                guard record.productStatus == .used
+                    || record.productStatus == .rejected
+                    || record.isNonCompliant else { return nil }
+
+                let closureStatus = closureStatusLabel(for: record, logs: logs)
+                let anchorDate = logs.first(where: { $0.actionType == .withdrawn })?.timestamp
+                    ?? record.expiryDate
+                    ?? record.receivedAt
+
                 return HistoryEntry(
                     id: "expiry-\(record.id)",
                     module: .expiryControl,
                     title: record.productName,
                     category: TraceabilityRecordSupport.expiryTypeLabel(for: record),
-                    status: record.productStatus == .expired ? "Scaduto" : "Monitorato",
-                    operatorName: record.createdByNameSnapshot,
-                    date: record.expiryDate ?? record.receivedAt,
+                    status: closureStatus,
+                    operatorName: logs.first(where: { $0.actionType == .withdrawn })?.operatorName
+                        ?? record.createdByNameSnapshot,
+                    date: anchorDate,
                     details: [
                         .init(label: "Tipo", value: TraceabilityRecordSupport.expiryTypeLabel(for: record)),
                         .init(label: "Prodotto", value: record.productName),
@@ -435,13 +475,30 @@ struct ExpiryHistoryProvider {
                         .init(label: "Fornitore", value: HistoryFormat.text(record.supplier)),
                         .init(label: "Scadenza", value: HistoryFormat.date(record.expiryDate)),
                         .init(label: "Provenienza scadenza", value: HistoryFormat.text(sourceLabel)),
-                        .init(label: "Stato", value: record.productStatus.label),
-                        .init(label: "Azione", value: record.productStatus == .expired ? "Registrare ritiro/scarto" : (record.productStatus == .used ? "Archiviato" : "Monitoraggio")),
-                        .init(label: "Operatore", value: record.createdByNameSnapshot)
+                        .init(label: "Esito operatore", value: closureStatus),
+                        .init(label: "Operatore", value: logs.first(where: { $0.actionType == .withdrawn })?.operatorName
+                            ?? record.createdByNameSnapshot)
                     ],
-                    hasCriticality: record.productStatus == .expired
+                    hasCriticality: record.productStatus == .rejected || record.isNonCompliant
                 )
             }
+    }
+
+    private func closureStatusLabel(for record: TraceabilityRecord, logs: [TraceabilityLog]) -> String {
+        if let withdrawn = logs.first(where: { $0.actionType == .withdrawn }) {
+            let detail = withdrawn.detail?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            if detail.localizedCaseInsensitiveContains("scartat") {
+                return TraceabilityWithdrawalKind.scartato.label
+            }
+            if detail.localizedCaseInsensitiveContains("usat")
+                || detail.localizedCaseInsensitiveContains("ritirat") {
+                return TraceabilityWithdrawalKind.ritirato.label
+            }
+            return detail.isEmpty ? TraceabilityWithdrawalKind.ritirato.label : detail
+        }
+        if record.productStatus == .rejected { return "Respinto" }
+        if record.isNonCompliant { return "Non conforme" }
+        return ProductStatus.used.label
     }
 }
 

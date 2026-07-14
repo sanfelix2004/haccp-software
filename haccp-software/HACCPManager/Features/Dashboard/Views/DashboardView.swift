@@ -119,14 +119,13 @@ struct DashboardView: View {
         .navigationBarHidden(true)
         .onAppear {
             withAnimation(theme.spring) { appeared = true }
-            viewModel.reload()
         }
         .task(id: activeRestaurantId) {
             guard let rid = activeRestaurantId else {
                 metrics = .empty
                 return
             }
-            metrics = DashboardMetricsFetcher.fetch(context: modelContext, restaurantId: rid)
+            metrics = await DashboardMetricsFetcher.fetchAsync(context: modelContext, restaurantId: rid)
         }
     }
 

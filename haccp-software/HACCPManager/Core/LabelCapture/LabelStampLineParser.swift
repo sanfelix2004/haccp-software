@@ -3,17 +3,72 @@ import Foundation
 /// Parser locale per righe di stampa produzione (matrice su sfondo scuro, data+orario, lotto).
 enum LabelStampLineParser {
 
-    /// Estrae la data da righe tipo `23/08/2026 06:08` — ignora l'orario.
+    /// Estrae lotto da righe di stampa a matrice (es. `L9330 B8 00:09`, `L6036BH099`).
+    static func extractLot(from text: String) -> String? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+
+        let patterns: [(String, ([String]) -> String?)] = [
+            (
+                #"(?i)\bLOT\s+(\d{4,12})\b"#,
+                { groups in groups.first }
+            ),
+            (
+                #"(?i)\b(\d{6,12}[A-Z0-9]{1,4}-\d{2})(?:\s+\d{1,2}:\d{2}(?::\d{2})?)?\b"#,
+                { groups in groups.first }
+            ),
+            (
+                #"(?i)\bL(\d{3,6})\s+([A-Z0-9]{1,6})(?:\s+\d{1,2}:\d{2})?\b"#,
+                { groups in
+                    guard groups.count == 2 else { return nil }
+                    return "L\(groups[0])\(groups[1])"
+                }
+            ),
+            (
+                #"(?i)\bL([A-Z0-9]{4,18})\b"#,
+                { groups in
+                    guard let code = groups.first else { return nil }
+                    return "L\(code)"
+                }
+            ),
+            (
+                #"(?i)\b(?:lot(?:to)?|batch|partita)\s*[:#.]?\s*([0-9A-Z][0-9A-Z\-]{2,20})\b"#,
+                { groups in groups.first }
+            )
+        ]
+
+        for (pattern, build) in patterns {
+            guard let regex = try? NSRegularExpression(pattern: pattern) else { continue }
+            let range = NSRange(trimmed.startIndex..., in: trimmed)
+            guard let match = regex.firstMatch(in: trimmed, range: range),
+                  match.numberOfRanges > 1 else { continue }
+
+            var groups: [String] = []
+            for index in 1..<match.numberOfRanges {
+                guard let groupRange = Range(match.range(at: index), in: trimmed) else { continue }
+                groups.append(String(trimmed[groupRange]))
+            }
+            if let lot = build(groups),
+               let validated = LabelLotSanitizer.validateExtractedCandidate(lot, rawContext: trimmed) {
+                return validated
+            }
+        }
+
+        return nil
+    }
+
+    /// Estrae scadenza da righe tipo `SELL BY 09/02`, `BEST BEFORE 31 AUG 2018`.
     static func parseExpiry(from text: String) -> Date? {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
 
         if LabelLotSanitizer.looksLikeTimeOnly(trimmed) { return nil }
 
+        if let sellBy = ExpiryDateParser.parseSellByCompact(from: trimmed) { return sellBy }
         if let stamp = parseDateWithTrailingTime(trimmed) { return stamp }
         if let compact = parseCompactDateDigits(trimmed) { return compact }
 
-        return nil
+        return ExpiryDateParser.parse(from: trimmed)
     }
 
     /// Rileva scadenze derivate per errore dall'orario di produzione (es. 06:08 → 6/8/2026).

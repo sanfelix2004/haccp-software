@@ -33,5 +33,7 @@ DerivedData/
 
 # API keys (non committare)
 **/GeminiSecrets.plist
+**/GroqSecrets.plist
+.derivedData/
 
 # End of Swift.gitignore

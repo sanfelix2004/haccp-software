@@ -91,10 +91,17 @@ final class ChecklistTemplate {
 }
 
 extension ChecklistTemplate {
+    static let cleaningCategoryRawValue = ChecklistCategory.cleaning.rawValue
+
     var isCleaningBridge: Bool { sourceCleaningTaskId != nil }
 
     /// Template del modulo pulizie (bridge o categoria dedicata).
     var isCleaningModule: Bool { category == .cleaning || isCleaningBridge }
+
+    /// Filtro persistito per fetch SwiftData — non usare `isCleaningModule` nei `#Predicate`.
+    var matchesCleaningModuleFilter: Bool {
+        categoryRaw == Self.cleaningCategoryRawValue || sourceCleaningTaskId != nil
+    }
 
     var supportsBulkPass: Bool { allowsBulkPass ?? true }
 

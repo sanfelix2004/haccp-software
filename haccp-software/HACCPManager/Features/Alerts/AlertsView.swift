@@ -6,15 +6,9 @@ struct AlertsView: View {
     @Environment(\.theme) private var theme
     @EnvironmentObject var appState: AppState
 
-    @Query private var checklistAlerts: [ChecklistAlert]
-    @Query private var temperatureAlerts: [TemperatureAlert]
-    @Query private var cleaningCriticalities: [CleaningCriticality]
-    @Query private var oilAlerts: [OilControlAlert]
-    @Query private var defrostCriticalities: [DefrostCriticality]
-    @Query private var traceabilityRecords: [TraceabilityRecord]
-    @Query private var goodsReceipts: [GoodsReceivingRecord]
-    @Query private var productionLabels: [ProductionLabelRecord]
     @Query private var users: [LocalUser]
+
+    @ObservedObject private var dataStore = ModuleStoreRegistry.shared.alerts
 
     @State private var alertToResolve: UnifiedAlert?
     @State private var checklistAlertToResolve: ChecklistAlert?
@@ -37,14 +31,14 @@ struct AlertsView: View {
         guard let rid = appState.activeRestaurantId else { return [] }
         return HACCPUnifiedAlertsBuilder.build(
             restaurantId: rid,
-            temperatureAlerts: temperatureAlerts,
-            cleaningCriticalities: cleaningCriticalities,
-            defrostCriticalities: defrostCriticalities,
-            oilAlerts: oilAlerts,
-            checklistAlerts: checklistAlerts,
-            traceabilityRecords: traceabilityRecords,
-            goodsReceipts: goodsReceipts,
-            productionLabels: productionLabels,
+            temperatureAlerts: dataStore.temperatureAlerts,
+            cleaningCriticalities: dataStore.cleaningCriticalities,
+            defrostCriticalities: dataStore.defrostCriticalities,
+            oilAlerts: dataStore.oilAlerts,
+            checklistAlerts: dataStore.checklistAlerts,
+            traceabilityRecords: dataStore.traceabilityRecords,
+            goodsReceipts: dataStore.goodsReceipts,
+            productionLabels: dataStore.productionLabels,
             soonThresholdDays: soonThresholdDays,
             resolveTemperature: resolveTemperatureAlert,
             resolveCleaning: resolveCriticality,
@@ -88,6 +82,12 @@ struct AlertsView: View {
         }
         .background(theme.colorBackground.ignoresSafeArea())
         .navigationTitle("Avvisi")
+        .moduleScreenLoad(restaurantId: appState.activeRestaurantId) {
+            dataStore.reload(context: modelContext, restaurantId: appState.activeRestaurantId)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .kitchenProcessRecordsDidChange)) { _ in
+            dataStore.reload(context: modelContext, restaurantId: appState.activeRestaurantId, force: true)
+        }
         .confirmationDialog(
             "Segnare come risolto?",
             isPresented: Binding(
@@ -225,7 +225,7 @@ struct AlertsView: View {
         guard let user = currentUser else { return }
         receipt.nonComplianceResolvedAt = Date()
         receipt.nonComplianceResolvedByNameSnapshot = user.name
-        if let record = traceabilityRecords.first(where: { $0.goodsReceiptId == receipt.id }) {
+        if let record = dataStore.traceabilityRecords.first(where: { $0.goodsReceiptId == receipt.id }) {
             record.nonComplianceResolvedAt = receipt.nonComplianceResolvedAt
             record.nonComplianceResolvedByNameSnapshot = user.name
         }
@@ -237,7 +237,7 @@ struct AlertsView: View {
         record.nonComplianceResolvedAt = Date()
         record.nonComplianceResolvedByNameSnapshot = user.name
         if let receiptId = record.goodsReceiptId,
-           let receipt = goodsReceipts.first(where: { $0.id == receiptId }) {
+           let receipt = dataStore.goodsReceipts.first(where: { $0.id == receiptId }) {
             receipt.nonComplianceResolvedAt = record.nonComplianceResolvedAt
             receipt.nonComplianceResolvedByNameSnapshot = user.name
         }

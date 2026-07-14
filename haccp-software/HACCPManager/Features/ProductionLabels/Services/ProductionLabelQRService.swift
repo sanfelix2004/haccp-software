@@ -65,24 +65,39 @@ enum ProductionLabelQRService {
 
     /// Payload per stampa fisica — il più ricco possibile entro i limiti dell'adesivo.
     static func printPayload(for label: ProductionLabelRecord, restaurantName: String? = nil) -> String {
-        buildScanPayload(for: label, restaurantName: restaurantName)
+        buildScanPayload(
+            for: label,
+            restaurantName: restaurantName,
+            settings: SettingsStorageService.shared.printer
+        )
     }
 
     /// Payload salvato su record (allineato alla stampa).
     static func buildPayload(for label: ProductionLabelRecord, restaurantName: String? = nil) -> String {
-        buildScanPayload(for: label, restaurantName: restaurantName)
+        buildScanPayload(
+            for: label,
+            restaurantName: restaurantName,
+            settings: SettingsStorageService.shared.printer
+        )
     }
 
-    private static func buildScanPayload(for label: ProductionLabelRecord, restaurantName: String? = nil) -> String {
-        let candidates = [
-            buildFullPayload(for: label, restaurantName: restaurantName),
-            buildEssentialPayload(for: label, restaurantName: restaurantName),
-            compactScanPayload(for: label),
-            compactMinimalPayload(for: label)
-        ]
-        for cellSize in [LabelQRCodeLayout.preferredCellSize, LabelQRCodeLayout.minCellSize] {
+    private static func buildScanPayload(
+        for label: ProductionLabelRecord,
+        restaurantName: String? = nil,
+        settings: LabelPrinterSettings
+    ) -> String {
+        let candidates =
+            ProductionLabelPrintContent.humanReadableCandidates(for: label, restaurantName: restaurantName)
+            + [
+                buildFullPayload(for: label, restaurantName: restaurantName),
+                buildEssentialPayload(for: label, restaurantName: restaurantName),
+                compactScanPayload(for: label),
+                compactMinimalPayload(for: label)
+            ]
+        let profile = settings.labelSpec.layout
+        for cellSize in [profile.preferredQRCell, profile.minQRCell] {
             if let payload = candidates.first(where: {
-                LabelQRCodeLayout.fitsOnLabel(payload: $0, cellSize: cellSize)
+                LabelQRCodeLayout.fitsOnLabel(payload: $0, cellSize: cellSize, settings: settings)
             }) {
                 return payload
             }
@@ -217,6 +232,10 @@ enum ProductionLabelQRService {
     static func parseScanned(_ raw: String) -> ProductionLabelScanData? {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
+
+        if let human = ProductionLabelPrintContent.parseHumanReadable(trimmed) {
+            return human
+        }
 
         if trimmed.hasPrefix(pipeMarker) {
             return parsePipePayload(trimmed)

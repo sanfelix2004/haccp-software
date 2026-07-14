@@ -5,41 +5,32 @@
 import SwiftUI
 
 /// Scheda archivio: piatto di produzione in alto, alimenti in ingresso sotto.
-struct TraceabilityProductionArchiveCard: View {
+struct TraceabilityProductionArchiveCard: View, Equatable {
     let group: TraceabilityProductionArchiveGroup
     var searchText: String = ""
+    let isExpanded: Bool
+    let onToggleExpanded: () -> Void
     let onOpenIngredient: (UUID) -> Void
 
     @Environment(\.theme) private var theme
-    @State private var isExpanded = false
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.group == rhs.group
+            && lhs.isExpanded == rhs.isExpanded
+            && lhs.searchText == rhs.searchText
+    }
 
     private var searchTokens: [String] {
         TraceabilityArchiveSearch.tokens(from: searchText)
     }
 
-    private var shouldAutoExpand: Bool {
-        !searchTokens.isEmpty
-    }
-
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Button {
-                withAnimation(.easeInOut(duration: 0.2)) {
-                    isExpanded.toggle()
-                }
-            } label: {
-                productionHeader
-            }
-            .buttonStyle(.plain)
+            productionHeader
 
             if isExpanded {
-                VStack(spacing: 8) {
-                    ForEach(group.ingredients) { ingredient in
-                        ingredientRow(ingredient)
-                    }
-                }
-                .padding(.top, 12)
-                .transition(.opacity.combined(with: .move(edge: .top)))
+                ingredientsSection
+                    .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
         .padding(14)
@@ -49,14 +40,15 @@ struct TraceabilityProductionArchiveCard: View {
             RoundedRectangle(cornerRadius: theme.spacing.cornerMedium, style: .continuous)
                 .stroke(theme.colorPrimary.opacity(0.15), lineWidth: 1)
         )
+        .animation(.easeInOut(duration: 0.2), value: isExpanded)
         .onAppear {
-            if shouldAutoExpand { isExpanded = true }
+            if !searchTokens.isEmpty, !isExpanded {
+                onToggleExpanded()
+            }
         }
         .onChange(of: searchText) { _, newValue in
-            if !TraceabilityArchiveSearch.tokens(from: newValue).isEmpty {
-                withAnimation(.easeInOut(duration: 0.2)) {
-                    isExpanded = true
-                }
+            if !TraceabilityArchiveSearch.tokens(from: newValue).isEmpty, !isExpanded {
+                onToggleExpanded()
             }
         }
     }
@@ -78,72 +70,107 @@ struct TraceabilityProductionArchiveCard: View {
                     .foregroundStyle(theme.colorPrimary)
             }
 
-            VStack(alignment: .leading, spacing: 3) {
-                Text(group.productionName)
-                    .font(theme.typography.headline)
+            Button(action: onToggleExpanded) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(group.productionName)
+                        .font(theme.typography.headline)
+                        .foregroundStyle(theme.colorTextPrimary)
+                        .multilineTextAlignment(.leading)
+                    HStack(spacing: 8) {
+                        Label(group.registeredAt.formatted(date: .abbreviated, time: .shortened), systemImage: "calendar")
+                        Label(TraceabilityCountLabel.alimenti(group.ingredients.count), systemImage: "shippingbox")
+                    }
+                    .font(theme.typography.caption2)
+                    .foregroundStyle(theme.colorTextSecondary)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .buttonStyle(.plain)
+
+            Button(action: onToggleExpanded) {
+                Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(theme.colorTextSecondary)
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.borderless)
+            .accessibilityLabel(isExpanded ? "Nascondi alimenti" : "Mostra alimenti")
+        }
+    }
+
+    @ViewBuilder
+    private var ingredientsSection: some View {
+        if group.ingredients.isEmpty {
+            Text("Nessun alimento collegato a questo piatto.")
+                .font(theme.typography.caption)
+                .foregroundStyle(theme.colorTextSecondary)
+                .padding(.top, 12)
+        } else {
+            VStack(spacing: 8) {
+                ForEach(group.ingredients) { ingredient in
+                    ingredientRow(ingredient)
+                }
+            }
+            .padding(.top, 12)
+        }
+    }
+
+    @ViewBuilder
+    private func ingredientRow(_ ingredient: TraceabilityArchiveIngredientItem) -> some View {
+        if let recordId = ingredient.recordId {
+            Button {
+                onOpenIngredient(recordId)
+            } label: {
+                ingredientRowContent(ingredient, showsChevron: true)
+            }
+            .buttonStyle(PremiumPressButtonStyle())
+        } else {
+            ingredientRowContent(ingredient, showsChevron: false)
+        }
+    }
+
+    private func ingredientRowContent(_ ingredient: TraceabilityArchiveIngredientItem, showsChevron: Bool) -> some View {
+        HStack(alignment: .center, spacing: 12) {
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(theme.colorPrimary.opacity(0.1))
+                .frame(width: 44, height: 44)
+                .overlay {
+                    Image(systemName: "shippingbox.fill")
+                        .foregroundStyle(theme.colorPrimary)
+                }
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text(ingredient.name)
+                    .font(theme.typography.subheadline.weight(.semibold))
                     .foregroundStyle(theme.colorTextPrimary)
                     .multilineTextAlignment(.leading)
-                HStack(spacing: 8) {
-                    Label(group.registeredAt.formatted(date: .abbreviated, time: .shortened), systemImage: "calendar")
-                    Label(TraceabilityCountLabel.alimenti(group.ingredients.count), systemImage: "shippingbox")
+
+                Text(ingredient.lotCode)
+                    .font(theme.typography.caption.weight(.bold).monospaced())
+                    .foregroundStyle(theme.colorPrimary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(theme.colorPrimary.opacity(0.1))
+                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+
+                if ingredient.supplier != "—" {
+                    Text(ingredient.supplier)
+                        .font(theme.typography.caption2)
+                        .foregroundStyle(theme.colorTextSecondary)
                 }
-                .font(theme.typography.caption2)
-                .foregroundStyle(theme.colorTextSecondary)
             }
 
             Spacer(minLength: 0)
 
-            Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
-                .font(.caption.weight(.bold))
-                .foregroundStyle(theme.colorTextSecondary)
-                .padding(8)
-        }
-    }
-
-    private func ingredientRow(_ ingredient: TraceabilityArchiveIngredientItem) -> some View {
-        Button {
-            onOpenIngredient(ingredient.recordId)
-        } label: {
-            HStack(alignment: .center, spacing: 12) {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(theme.colorPrimary.opacity(0.1))
-                    .frame(width: 44, height: 44)
-                    .overlay {
-                        Image(systemName: "shippingbox.fill")
-                            .foregroundStyle(theme.colorPrimary)
-                    }
-
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(ingredient.name)
-                        .font(theme.typography.subheadline.weight(.semibold))
-                        .foregroundStyle(theme.colorTextPrimary)
-                        .multilineTextAlignment(.leading)
-
-                    Text(ingredient.lotCode)
-                        .font(theme.typography.caption.weight(.bold).monospaced())
-                        .foregroundStyle(theme.colorPrimary)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(theme.colorPrimary.opacity(0.1))
-                        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-
-                    if ingredient.supplier != "—" {
-                        Text(ingredient.supplier)
-                            .font(theme.typography.caption2)
-                            .foregroundStyle(theme.colorTextSecondary)
-                    }
-                }
-
-                Spacer(minLength: 0)
-
+            if showsChevron {
                 Image(systemName: "chevron.right")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(theme.colorTextSecondary.opacity(0.6))
             }
-            .padding(10)
-            .background(theme.colorBackground)
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         }
-        .buttonStyle(PremiumPressButtonStyle())
+        .padding(10)
+        .background(theme.colorBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 }

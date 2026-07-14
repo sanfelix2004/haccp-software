@@ -201,29 +201,30 @@ final class ClabelPrinterManager: NSObject, ObservableObject {
         test: Bool,
         restaurantName: String? = nil
     ) -> Data {
-        let widthBytes = ClabelLabelDimensions.widthBytes
-        let heightDots = ClabelLabelDimensions.heightDots
+        let spec = settings.labelSpec
+        let widthBytes = spec.widthBytes
+        let heightDots = spec.heightDots
 
         switch engine {
         case .auto:
-            return ClabelTSPLProtocol.buildTestJob()
+            return ClabelTSPLProtocol.buildTestJob(spec: spec)
         case .tsplText:
             if test {
-                return ClabelTSPLProtocol.buildTestJob()
+                return ClabelTSPLProtocol.buildTestJob(spec: spec)
             }
-            guard let label else { return ClabelTSPLProtocol.buildTestJob() }
+            guard let label else { return ClabelTSPLProtocol.buildTestJob(spec: spec) }
             return ClabelTSPLProtocol.buildTextJob(label: label, settings: settings, restaurantName: restaurantName)
         case .tsplBitmap:
             if test {
-                return ClabelTSPLProtocol.buildTestJob()
+                return ClabelTSPLProtocol.buildTestJob(spec: spec)
             }
-            guard let label else { return ClabelTSPLProtocol.buildTestJob() }
+            guard let label else { return ClabelTSPLProtocol.buildTestJob(spec: spec) }
             let raster = ProductionLabelBitmapRenderer.raster(
                 for: label,
                 settings: settings,
                 restaurantName: restaurantName
             )
-            return ClabelTSPLProtocol.buildBitmapJob(raster: raster, widthBytes: widthBytes, heightDots: heightDots)
+            return ClabelTSPLProtocol.buildBitmapJob(raster: raster, spec: spec)
         case .escPosLujiang:
             if test {
                 return ClabelThermalProtocol.buildTestPattern(widthBytes: widthBytes, heightDots: heightDots)

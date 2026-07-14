@@ -14,28 +14,39 @@ struct CleaningTaskBFF {
         modelContext: ModelContext
     ) {
         for task in tasks where task.restaurantId == restaurantId && task.isActive {
-            try? ensureBridgeTemplate(task: task, user: user, modelContext: modelContext)
+            try? ensureBridgeTemplate(task: task, user: user, modelContext: modelContext, persistImmediately: false)
         }
+        modelContext.saveSafely(operation: "cleaning-bridge-templates")
     }
 
     @discardableResult
     func ensureBridgeTemplate(
         task: CleaningTask,
         user: LocalUser,
-        modelContext: ModelContext
+        modelContext: ModelContext,
+        persistImmediately: Bool = true
     ) throws -> ChecklistTemplate {
         if let templateId = task.linkedChecklistTemplateId,
            let existing = fetchTemplate(id: templateId, modelContext: modelContext) {
             syncBridgeTemplate(from: task, template: existing)
-            try? modelContext.save()
+            if persistImmediately {
+                modelContext.saveSafely(operation: "cleaning-bridge-template")
+            }
             return existing
         }
 
-        let templates = (try? modelContext.fetch(FetchDescriptor<ChecklistTemplate>())) ?? []
+        let rid = task.restaurantId
+        var descriptor = FetchDescriptor<ChecklistTemplate>(
+            predicate: #Predicate { $0.restaurantId == rid }
+        )
+        descriptor.fetchLimit = PerformanceConfig.checklistTemplateFetchLimit
+        let templates = (try? modelContext.fetch(descriptor)) ?? []
         if let existing = templates.first(where: { $0.sourceCleaningTaskId == task.id }) {
             task.linkedChecklistTemplateId = existing.id
             syncBridgeTemplate(from: task, template: existing)
-            try? modelContext.save()
+            if persistImmediately {
+                modelContext.saveSafely(operation: "cleaning-bridge-template")
+            }
             return existing
         }
 
@@ -45,7 +56,9 @@ struct CleaningTaskBFF {
             modelContext: modelContext
         )
         task.linkedChecklistTemplateId = template.id
-        try modelContext.save()
+        if persistImmediately {
+            try modelContext.save()
+        }
         return template
     }
 

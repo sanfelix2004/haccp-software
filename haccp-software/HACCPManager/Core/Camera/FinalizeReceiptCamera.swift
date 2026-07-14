@@ -162,7 +162,7 @@ final class FinalizeReceiptCameraViewModel: ObservableObject {
         guard !configured else { return captureDevice != nil }
         session.beginConfiguration()
         defer { session.commitConfiguration() }
-        session.sessionPreset = .photo
+        session.sessionPreset = .high
         guard
             let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back),
             let input = try? AVCaptureDeviceInput(device: device),
@@ -175,7 +175,7 @@ final class FinalizeReceiptCameraViewModel: ObservableObject {
         configureAutofocus(on: device)
         if session.canAddOutput(photoOutput) {
             session.addOutput(photoOutput)
-            photoOutput.isHighResolutionCaptureEnabled = true
+            photoOutput.isHighResolutionCaptureEnabled = false
         }
         configured = true
         return true

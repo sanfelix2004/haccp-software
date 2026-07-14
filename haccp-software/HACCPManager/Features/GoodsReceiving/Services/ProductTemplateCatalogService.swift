@@ -63,12 +63,27 @@ struct ProductTemplateCatalogService {
 
     func deleteTemplateIfUnused(
         _ template: ProductTemplate,
-        receipts: [GoodsReceivingRecord],
-        defrostRecords: [DefrostRecord],
         modelContext: ModelContext
     ) throws {
-        let usedInReceipts = receipts.contains { $0.productTemplateId == template.id }
-        let usedInDefrost = defrostRecords.contains { $0.productTemplateId == template.id }
+        let templateId = template.id
+        let restaurantId = template.restaurantId
+
+        var receiptDescriptor = FetchDescriptor<GoodsReceivingRecord>(
+            predicate: #Predicate {
+                $0.restaurantId == restaurantId && $0.productTemplateId == templateId
+            }
+        )
+        receiptDescriptor.fetchLimit = 1
+        let usedInReceipts = ((try? modelContext.fetch(receiptDescriptor)) ?? []).isEmpty == false
+
+        var defrostDescriptor = FetchDescriptor<DefrostRecord>(
+            predicate: #Predicate {
+                $0.restaurantId == restaurantId && $0.productTemplateId == templateId
+            }
+        )
+        defrostDescriptor.fetchLimit = 1
+        let usedInDefrost = ((try? modelContext.fetch(defrostDescriptor)) ?? []).isEmpty == false
+
         guard !usedInReceipts, !usedInDefrost else {
             throw catalogError("Alimento già usato in ricezioni o decongelamenti: non può essere eliminato.")
         }

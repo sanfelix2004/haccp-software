@@ -418,7 +418,9 @@ struct TraceabilityLotCaptureFlowView: View {
         if pending.isLotExtracting {
             HStack(spacing: 8) {
                 ProgressView()
-                Text("Lettura lotto in corso…")
+                Text(pending.testoLottoOCR != nil || pending.labelExpiryDate != nil
+                     ? "Affinamento lettura…"
+                     : "Lettura lotto in corso…")
                     .font(theme.typography.caption)
                     .foregroundStyle(theme.colorTextSecondary)
             }
@@ -795,6 +797,7 @@ struct TraceabilityLotCaptureFlowView: View {
         reloadSession()
         camera.resetCaptureBuffer()
         camera.start()
+        GroqApiKeyService.prefetchVisionModels()
         Task { await prepareCatalogIfNeeded() }
     }
 
@@ -804,8 +807,6 @@ struct TraceabilityLotCaptureFlowView: View {
         ProductTemplateSeeder.ensureTemplates(restaurantId: restaurantId, modelContext: modelContext)
         libraryService.ensureDefaults(
             restaurantId: restaurantId,
-            categories: categories,
-            productions: productions,
             modelContext: modelContext
         )
         reloadSession()
@@ -828,57 +829,122 @@ struct TraceabilityLotCaptureFlowView: View {
         expiryFromLabel = false
         expiryUserEdited = false
         camera.resetCaptureBuffer()
-        camera.stop()
 
         Task {
             await extractLotInBackground(captureId: captureId, photoData: data)
         }
+
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(500))
+            if pendingCapture != nil {
+                camera.stop()
+            }
+        }
     }
 
     @MainActor
-    private func extractLotInBackground(captureId: UUID, photoData: Data) async {
-        do {
-            let outcome = try await lottoService.extractLot(from: photoData)
-            guard var current = pendingCapture, current.id == captureId else { return }
+    private func applyLotOutcome(_ outcome: ProductionLotCaptureOutcome, to captureId: UUID, isFinal: Bool) {
+        guard var current = pendingCapture, current.id == captureId else { return }
 
-            if !lotDraftUserEdited,
-               let lot = outcome.lotCode?.trimmingCharacters(in: .whitespacesAndNewlines),
-               !lot.isEmpty {
-                current.lotDraft = lot
-            }
-            current.testoLottoOCR = outcome.lotCode
-            let raw = outcome.rawText.trimmingCharacters(in: .whitespacesAndNewlines)
-            current.ocrRawText = raw.isEmpty ? nil : raw
-            current.ocrConfidence = outcome.confidence
+        if !lotDraftUserEdited,
+           let lot = outcome.lotCode?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !lot.isEmpty {
+            current.lotDraft = lot
+        }
+        current.testoLottoOCR = outcome.lotCode
+        let raw = outcome.rawText.trimmingCharacters(in: .whitespacesAndNewlines)
+        current.ocrRawText = raw.isEmpty ? nil : raw
+        current.ocrConfidence = outcome.confidence
+
+        if isFinal {
             current.isLotExtracting = false
             current.lotExtractionError = outcome.analysisNote
                 ?? (outcome.confidence < GroqLotExtractor.manualVerificationThreshold
                     ? "Verifica lotto e scadenza sull'etichetta — lettura AI incerta."
                     : nil)
+        }
 
-            if let labelExpiry = outcome.expiryDate {
-                current.labelExpiryDate = labelExpiry
-                current.expiryFromLabel = true
-                suppressExpiryEditTracking = true
-                expiryDate = labelExpiry
-                suppressExpiryEditTracking = false
-                expiryFromLabel = true
-                expiryUserEdited = false
+        if let labelExpiry = outcome.expiryDate {
+            current.labelExpiryDate = labelExpiry
+            current.expiryFromLabel = true
+            suppressExpiryEditTracking = true
+            expiryDate = labelExpiry
+            suppressExpiryEditTracking = false
+            expiryFromLabel = true
+            expiryUserEdited = false
+        }
+
+        pendingCapture = current
+
+        if isFinal, outcome.lotCode?.isEmpty == false, !lotDraftUserEdited {
+            HapticManager.shared.notification(.success)
+        } else if isFinal, outcome.expiryDate != nil {
+            HapticManager.shared.notification(.success)
+        }
+    }
+
+    @MainActor
+    private func extractLotInBackground(captureId: UUID, photoData: Data) async {
+        var previewOutcome: ProductionLotCaptureOutcome?
+
+        if let preview = await lottoService.extractLotLocalPreview(from: photoData) {
+            previewOutcome = preview
+            applyLotOutcome(preview, to: captureId, isFinal: false)
+            if preview.lotCode != nil, preview.expiryDate != nil {
+                applyLotOutcome(preview, to: captureId, isFinal: true)
+                return
             }
+        }
 
-            pendingCapture = current
-
-            if outcome.lotCode?.isEmpty == false, !lotDraftUserEdited {
-                HapticManager.shared.notification(.success)
-            } else if outcome.expiryDate != nil {
-                HapticManager.shared.notification(.success)
+        if GroqApiKeyService.hasAnyKey() {
+            do {
+                let enhanced = try await lottoService.extractLotGroqOnly(from: photoData)
+                let merged = mergeLotOutcomes(preview: previewOutcome, enhanced: enhanced)
+                applyLotOutcome(merged, to: captureId, isFinal: true)
+                return
+            } catch {
+                if previewOutcome != nil {
+                    applyLotOutcome(previewOutcome!, to: captureId, isFinal: true)
+                    return
+                }
+                guard var current = pendingCapture, current.id == captureId else { return }
+                current.isLotExtracting = false
+                current.lotExtractionError = friendlyLotExtractionError(error)
+                pendingCapture = current
+                return
             }
+        }
+
+        if let previewOutcome {
+            applyLotOutcome(previewOutcome, to: captureId, isFinal: true)
+            return
+        }
+
+        do {
+            let outcome = try await lottoService.extractLot(from: photoData)
+            applyLotOutcome(outcome, to: captureId, isFinal: true)
         } catch {
             guard var current = pendingCapture, current.id == captureId else { return }
             current.isLotExtracting = false
-            current.lotExtractionError = "Lettura non riuscita (\(error.localizedDescription)). Inserisci il lotto manualmente."
+            current.lotExtractionError = friendlyLotExtractionError(error)
             pendingCapture = current
         }
+    }
+
+    private func mergeLotOutcomes(
+        preview: ProductionLotCaptureOutcome?,
+        enhanced: ProductionLotCaptureOutcome
+    ) -> ProductionLotCaptureOutcome {
+        guard let preview else { return enhanced }
+        return ProductionLotCaptureOutcome(
+            rawText: [preview.rawText, enhanced.rawText].filter { !$0.isEmpty }.joined(separator: "\n"),
+            lotCode: enhanced.lotCode ?? preview.lotCode,
+            ingredientName: enhanced.ingredientName ?? preview.ingredientName,
+            expiryDate: enhanced.expiryDate ?? preview.expiryDate,
+            confidence: max(preview.confidence, enhanced.confidence),
+            lotParseAudit: preview.lotParseAudit + enhanced.lotParseAudit,
+            analysisNote: enhanced.analysisNote ?? preview.analysisNote
+        )
     }
 
     private func selectTemplate(_ template: ProductTemplate) {
@@ -1026,6 +1092,22 @@ struct TraceabilityLotCaptureFlowView: View {
             errorMessage = error.localizedDescription
         }
     }
+}
+
+private func friendlyLotExtractionError(_ error: Error) -> String {
+    if let groq = error as? GroqLotError {
+        return "Lettura automatica non riuscita. \(groq.localizedDescription)"
+    }
+    let message = error.localizedDescription
+    if message.localizedCaseInsensitiveContains("model_not_found")
+        || message.localizedCaseInsensitiveContains("maverick")
+        || message.localizedCaseInsensitiveContains("does not exist") {
+        return "Servizio AI etichette non disponibile. Ricompila l'app aggiornata oppure inserisci lotto e scadenza manualmente."
+    }
+    if message.count > 120 {
+        return "Lettura automatica non riuscita. Inserisci lotto e scadenza manualmente."
+    }
+    return "Lettura automatica non riuscita. \(message)"
 }
 
 // MARK: - Sheet unico (evita conflitti SwiftUI)

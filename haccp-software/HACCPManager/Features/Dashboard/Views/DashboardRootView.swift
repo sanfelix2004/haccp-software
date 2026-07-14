@@ -75,10 +75,13 @@ struct DashboardRootView: View {
     @State private var selectedItem: SidebarItem? = .dashboard
     @State private var columnVisibility = NavigationSplitViewVisibility.all
     @State private var detailNavigationPath = NavigationPath()
+    @State private var bootstrappedRestaurantIds: Set<UUID> = []
+    @State private var isReconcilingModuleAccess = false
     @State private var showCreateUserFromSidebar = false
     @State private var showMasterAuthForCreate = false
     @State private var masterAuth = MasterAuthCoordinator()
     @State private var pendingNavigationItem: SidebarItem?
+    @StateObject private var session = RestaurantSessionContext()
     private let documentsService = DocumentsService()
     private let productionLibraryService = ProductionLibraryService()
     private let oilControlService = OilControlService()
@@ -131,10 +134,12 @@ struct DashboardRootView: View {
 
                 if let selectedItem = selectedItem {
                     NavigationStack(path: $detailNavigationPath) {
-                        detailView(for: selectedItem)
-                            .scrollContentBackground(.hidden)
+                        ActiveModuleDetailLayer(selectedItem: selectedItem) { item in
+                            detailView(for: item)
+                                .environment(\.sidebarModule, item)
+                        }
+                        .scrollContentBackground(.hidden)
                     }
-                    .id(selectedItem.id)
                 } else {
                     VStack(spacing: theme.spacing.lg) {
                         Image(systemName: "sidebar.left")
@@ -149,14 +154,30 @@ struct DashboardRootView: View {
             }
         }
         .onChange(of: selectedItem) { oldItem, newItem in
+            ModuleNavigationCoordinator.shared.userSelectedModule(newItem)
+            guard !isReconcilingModuleAccess else { return }
             guard let newItem, oldItem?.id != newItem.id else { return }
-            detailNavigationPath = NavigationPath()
-            guard !permissions.isMaster, newItem.needsMasterAuthToAccess(by: permissions) else { return }
-            pendingNavigationItem = newItem
-            selectedItem = oldItem
-            masterAuth.requestModuleAccess(module: newItem, permissions: permissions) {
-                selectedItem = pendingNavigationItem
-                pendingNavigationItem = nil
+
+            if oldItem != nil {
+                var resetTransaction = Transaction()
+                resetTransaction.disablesAnimations = true
+                withTransaction(resetTransaction) {
+                    detailNavigationPath = NavigationPath()
+                }
+            }
+
+            if !permissions.isMaster, newItem.needsMasterAuthToAccess(by: permissions) {
+                pendingNavigationItem = newItem
+                isReconcilingModuleAccess = true
+                selectedItem = oldItem
+                isReconcilingModuleAccess = false
+                masterAuth.requestModuleAccess(module: newItem, permissions: permissions) {
+                    isReconcilingModuleAccess = true
+                    selectedItem = pendingNavigationItem
+                    isReconcilingModuleAccess = false
+                    pendingNavigationItem = nil
+                }
+                return
             }
         }
         .onChange(of: appState.navigateToGoodsReceiving) { _, go in
@@ -178,7 +199,18 @@ struct DashboardRootView: View {
             }
         }
         .onChange(of: appState.activeRestaurantId) { _, _ in
+            syncSessionContext()
+            ModuleStoreRegistry.shared.clearForRestaurantChange(context: modelContext)
             ensureRestaurantDefaults()
+        }
+        .onChange(of: appState.currentUserId) { _, _ in
+            syncSessionContext()
+        }
+        .onChange(of: users.count) { _, _ in
+            syncSessionContext()
+        }
+        .onChange(of: restaurants.count) { _, _ in
+            syncSessionContext()
         }
         .sheet(isPresented: $showCreateUserFromSidebar) {
             CreateUserView()
@@ -199,9 +231,21 @@ struct DashboardRootView: View {
             }
         }
         .onAppear {
+            ModuleNavigationCoordinator.shared.installActiveModule(selectedItem)
+            syncSessionContext()
             ensureRestaurantDefaults()
         }
-        .masterAuthCover(coordinator: masterAuth, master: users.first(where: { $0.role == .master }))
+        .environmentObject(session)
+        .masterAuthCover(coordinator: masterAuth, master: session.masterUser ?? users.first(where: { $0.role == .master }))
+    }
+
+    private func syncSessionContext() {
+        session.sync(
+            users: users,
+            restaurants: restaurants,
+            currentUserId: appState.currentUserId,
+            activeRestaurantId: appState.activeRestaurantId
+        )
     }
 
     private var floatingSidebarPadding: EdgeInsets {
@@ -213,13 +257,16 @@ struct DashboardRootView: View {
     private func ensureRestaurantDefaults() {
         guard
             let restaurant = activeRestaurant,
-            let user = currentUser
+            let user = currentUser,
+            !bootstrappedRestaurantIds.contains(restaurant.id)
         else { return }
 
-        let rid = restaurant.id
+        bootstrappedRestaurantIds.insert(restaurant.id)
 
-        Task { @MainActor in
-            let ridCapture = rid
+        Task(priority: .utility) { @MainActor in
+            await Task.yield()
+            await Task.yield()
+            let ridCapture = restaurant.id
             var folderDescriptor = FetchDescriptor<DocumentFolder>(
                 predicate: #Predicate { $0.restaurantId == ridCapture }
             )
@@ -232,18 +279,6 @@ struct DashboardRootView: View {
             itemDescriptor.fetchLimit = 500
             let items = (try? modelContext.fetch(itemDescriptor)) ?? []
 
-            var categoryDescriptor = FetchDescriptor<ProductionCategory>(
-                predicate: #Predicate { $0.restaurantId == ridCapture }
-            )
-            categoryDescriptor.fetchLimit = 100
-            let categories = (try? modelContext.fetch(categoryDescriptor)) ?? []
-
-            var productionDescriptor = FetchDescriptor<Production>(
-                predicate: #Predicate { $0.restaurantId == ridCapture }
-            )
-            productionDescriptor.fetchLimit = 300
-            let productions = (try? modelContext.fetch(productionDescriptor)) ?? []
-
             var oilDescriptor = FetchDescriptor<OilPoint>(
                 predicate: #Predicate { $0.restaurantId == ridCapture }
             )
@@ -251,25 +286,116 @@ struct DashboardRootView: View {
             let oilPoints = (try? modelContext.fetch(oilDescriptor)) ?? []
 
             documentsService.ensureDefaultFolders(
-                restaurantId: rid,
+                restaurantId: restaurant.id,
                 restaurantDisplayName: restaurant.name,
                 user: user,
                 existingFolders: folders,
                 existingItems: items,
                 modelContext: modelContext
             )
-            productionLibraryService.ensureDefaults(
-                restaurantId: rid,
-                categories: categories,
-                productions: productions,
-                modelContext: modelContext
-            )
+            await Task.yield()
+            if RestaurantModuleBootstrap.shared.claimOnce(
+                restaurantId: restaurant.id,
+                module: "production-catalog"
+            ) {
+                await productionLibraryService.ensureDefaultsAsync(
+                    restaurantId: restaurant.id,
+                    modelContext: modelContext
+                )
+                ModuleStoreRegistry.shared.productionCatalog.reload(
+                    context: modelContext,
+                    restaurantId: restaurant.id,
+                    force: true
+                )
+            }
+            if RestaurantModuleBootstrap.shared.claimOnce(
+                restaurantId: restaurant.id,
+                module: "incoming-food-catalog"
+            ) {
+                await ProductTemplateSeeder.ensureTemplatesAsync(
+                    restaurantId: restaurant.id,
+                    modelContext: modelContext
+                )
+                ModuleStoreRegistry.shared.incomingFoodCatalog.reload(
+                    context: modelContext,
+                    restaurantId: restaurant.id,
+                    force: true
+                )
+            }
+            if RestaurantModuleBootstrap.shared.claimOnce(
+                restaurantId: restaurant.id,
+                module: "cleaning-seed"
+            ) {
+                var areaDescriptor = FetchDescriptor<CleaningArea>(
+                    predicate: #Predicate { $0.restaurantId == ridCapture }
+                )
+                areaDescriptor.fetchLimit = 100
+                let cleaningAreas = (try? modelContext.fetch(areaDescriptor)) ?? []
+                await CleaningControlService().ensureInitialTemplatesAsync(
+                    restaurantId: restaurant.id,
+                    user: user,
+                    existingAreas: cleaningAreas,
+                    modelContext: modelContext
+                )
+            }
+            if RestaurantModuleBootstrap.shared.claimOnce(
+                restaurantId: restaurant.id,
+                module: "cleaning-dedupe-areas"
+            ) {
+                var areaDescriptor = FetchDescriptor<CleaningArea>(
+                    predicate: #Predicate { $0.restaurantId == ridCapture }
+                )
+                areaDescriptor.fetchLimit = 200
+                var taskDescriptor = FetchDescriptor<CleaningTask>(
+                    predicate: #Predicate { $0.restaurantId == ridCapture }
+                )
+                taskDescriptor.fetchLimit = 500
+                let areas = (try? modelContext.fetch(areaDescriptor)) ?? []
+                let tasks = (try? modelContext.fetch(taskDescriptor)) ?? []
+                _ = CleaningAreaGrouping.deduplicateInStore(
+                    restaurantId: restaurant.id,
+                    areas: areas,
+                    tasks: tasks,
+                    modelContext: modelContext
+                )
+                _ = CleaningAreaGrouping.deduplicateTasksInStore(
+                    restaurantId: restaurant.id,
+                    tasks: tasks,
+                    modelContext: modelContext
+                )
+            }
+            await Task.yield()
             oilControlService.ensureDefaultPoints(
-                restaurantId: rid,
+                restaurantId: restaurant.id,
                 user: user,
                 existingPoints: oilPoints,
                 modelContext: modelContext
             )
+            ModuleStoreRegistry.shared.checklist.reload(
+                context: modelContext,
+                restaurantId: restaurant.id,
+                force: true
+            )
+            ModuleStoreRegistry.shared.cleaningControl.reload(
+                context: modelContext,
+                restaurantId: restaurant.id,
+                force: true
+            )
+            if RestaurantModuleBootstrap.shared.claimOnce(
+                restaurantId: restaurant.id,
+                module: "checklist-period-sync"
+            ) {
+                ChecklistService().syncScheduledRuns(
+                    restaurantId: restaurant.id,
+                    user: user,
+                    modelContext: modelContext
+                )
+                ModuleStoreRegistry.shared.checklist.reload(
+                    context: modelContext,
+                    restaurantId: restaurant.id,
+                    force: true
+                )
+            }
         }
     }
     
@@ -320,7 +446,7 @@ struct DashboardRootView: View {
             MasterGatedContent(
                 permission: .manageUsers,
                 permissions: permissions,
-                master: users.first(where: { $0.role == .master }),
+                master: session.masterUser ?? users.first(where: { $0.role == .master }),
                 title: "Gestione collaboratori",
                 message: "Solo il responsabile MASTER può creare e modificare gli utenti. Inserisci il PIN MASTER per continuare."
             ) {

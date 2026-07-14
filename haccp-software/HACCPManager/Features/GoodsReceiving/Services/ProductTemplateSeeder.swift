@@ -95,6 +95,7 @@ enum ProductTemplateSeeder {
 
     /// Inserisce i template mancanti per il ristorante (idempotente per nome).
     static func ensureTemplates(restaurantId: UUID, modelContext: ModelContext) {
+        guard !catalogIsPopulated(restaurantId: restaurantId, modelContext: modelContext) else { return }
         let rid = restaurantId
         let descriptor = FetchDescriptor<ProductTemplate>(
             predicate: #Predicate<ProductTemplate> { $0.restaurantId == rid }
@@ -130,5 +131,58 @@ enum ProductTemplateSeeder {
         if didInsert || didBackfill {
             try? modelContext.save()
         }
+    }
+
+    static func ensureTemplatesAsync(restaurantId: UUID, modelContext: ModelContext) async {
+        guard !catalogIsPopulated(restaurantId: restaurantId, modelContext: modelContext) else { return }
+        let rid = restaurantId
+        let descriptor = FetchDescriptor<ProductTemplate>(
+            predicate: #Predicate<ProductTemplate> { $0.restaurantId == rid }
+        )
+        let existing = (try? modelContext.fetch(descriptor)) ?? []
+        let existingNames = Set(existing.map(\.name))
+        var didInsert = false
+        var insertedCount = 0
+        for seed in seeds where existingNames.contains(seed.name) == false {
+            let template = ProductTemplate(
+                restaurantId: restaurantId,
+                name: seed.name,
+                category: seed.category,
+                defaultMinTemp: seed.defaultMinTemp,
+                defaultMaxTemp: seed.defaultMaxTemp,
+                requiresTemperature: seed.requiresTemperature,
+                requiresLot: seed.requiresLot,
+                requiresExpiry: seed.requiresExpiry,
+                requiresPackagingCheck: seed.requiresPackagingCheck,
+                requiresAppearanceCheck: seed.requiresAppearanceCheck,
+                requiresThawingCheck: seed.requiresThawingCheck,
+                requiresMoldCheck: seed.requiresMoldCheck,
+                requiresFreshnessCheck: seed.requiresFreshnessCheck,
+                shelfLifeDays: IncomingFoodShelfLifeDefaults.days(forName: seed.name, category: seed.category)
+            )
+            modelContext.insert(template)
+            didInsert = true
+            insertedCount += 1
+            if insertedCount.isMultiple(of: 8) {
+                await Task.yield()
+            }
+        }
+        var didBackfill = false
+        for template in existing where template.shelfLifeDays == nil {
+            template.shelfLifeDays = IncomingFoodShelfLifeDefaults.days(forName: template.name, category: template.category)
+            didBackfill = true
+        }
+        if didInsert || didBackfill {
+            modelContext.saveSafely(operation: "incoming-food-catalog-seed")
+        }
+    }
+
+    private static func catalogIsPopulated(restaurantId: UUID, modelContext: ModelContext) -> Bool {
+        let rid = restaurantId
+        var descriptor = FetchDescriptor<ProductTemplate>(
+            predicate: #Predicate<ProductTemplate> { $0.restaurantId == rid }
+        )
+        descriptor.fetchLimit = 1
+        return !((try? modelContext.fetch(descriptor)) ?? []).isEmpty
     }
 }

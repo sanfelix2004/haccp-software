@@ -138,8 +138,6 @@ struct ProductionSelectionView: View {
                 guard let rid = appState.activeRestaurantId else { return }
                 service.ensureDefaults(
                     restaurantId: rid,
-                    categories: categories,
-                    productions: productions,
                     modelContext: modelContext
                 )
             }

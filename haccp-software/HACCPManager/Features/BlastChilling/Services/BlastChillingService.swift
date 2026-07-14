@@ -207,10 +207,17 @@ struct BlastChillingService {
 
     func deleteProductionIfUnused(
         _ production: Production,
-        records: [BlastChillingRecord],
         modelContext: ModelContext
     ) throws {
-        guard records.contains(where: { $0.productionId == production.id }) == false else {
+        let productionId = production.id
+        let restaurantId = production.restaurantId
+        var descriptor = FetchDescriptor<BlastChillingRecord>(
+            predicate: #Predicate {
+                $0.restaurantId == restaurantId && $0.productionId == productionId
+            }
+        )
+        descriptor.fetchLimit = 1
+        guard ((try? modelContext.fetch(descriptor)) ?? []).isEmpty else {
             throw NSError(domain: "BlastChillingService", code: 9004, userInfo: [NSLocalizedDescriptionKey: "Produzione già usata nello storico: non può essere eliminata."])
         }
         modelContext.delete(production)

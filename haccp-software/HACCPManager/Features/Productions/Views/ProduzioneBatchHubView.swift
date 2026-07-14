@@ -110,8 +110,6 @@ struct ProduzioneBatchHubView: View {
     private func bootstrap() {
         libraryService.ensureDefaults(
             restaurantId: restaurantId,
-            categories: categories.filter { $0.restaurantId == restaurantId },
-            productions: scopedProductions,
             modelContext: modelContext
         )
         reloadBatches()

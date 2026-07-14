@@ -436,14 +436,15 @@ enum ModuleHelpLibrary {
     static let settingsPrinter = ModuleHelp(
         id: "settings-printer",
         title: "Stampanti",
-        purpose: "Configurazione stampante etichette CLABEL via Bluetooth.",
+        purpose: "Configurazione stampante CLABEL S1 (40×30 o 50×30 mm) via Bluetooth.",
         steps: [
+            "Seleziona il formato rotolo montato: 40×30 mm o 50×30 mm.",
             "Accoppia la stampante Bluetooth e attendi lo stato Connessa.",
             "Esegui una stampa di prova da questa schermata.",
             "Le etichette operative si creano e stampano dal modulo Etichette di produzione.",
             "Se il canale non è pronto, le stampe restano in coda finché la stampante non risponde."
         ],
-        notes: ["Riservato al MASTER.", "Il QR sulle etichette è configurabile qui (dimensione e rotazione)."]
+        notes: ["Riservato al MASTER.", "Il layout (testo, QR, margini) si adatta al rotolo scelto."]
     )
 
     static let settingsInfo = ModuleHelp(
