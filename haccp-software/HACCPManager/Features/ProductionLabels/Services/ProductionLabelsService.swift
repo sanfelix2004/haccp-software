@@ -35,6 +35,8 @@ struct ProductionLabelsService {
         }
 
         let quantity = Double(draft.quantity.replacingOccurrences(of: ",", with: "."))
+        let operatorName = draft.operatorName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let displayOperator = operatorName.isEmpty ? user.name : operatorName
 
         var record = ProductionLabelRecord(
             restaurantId: restaurantId,
@@ -44,9 +46,9 @@ struct ProductionLabelsService {
             lotCode: draft.lotCode.nilIfEmpty,
             previewText: nil,
             createdByUserId: user.id,
-            createdByNameSnapshot: user.name,
+            createdByNameSnapshot: displayOperator,
             notes: draft.notes.nilIfEmpty,
-            operatorSignature: user.name,
+            operatorSignature: displayOperator,
             category: draft.category.nilIfEmpty,
             supplier: draft.supplier.nilIfEmpty,
             allergens: draft.allergens.nilIfEmpty,
@@ -186,14 +188,16 @@ struct ProductionLabelsService {
         var d = ProductionLabelDraft()
         d.productName = blast.productionNameSnapshot
         d.category = blast.productionCategorySnapshot
+        d.lotCode = blast.lotNumberSnapshot ?? ""
         d.productionDate = blast.endedAt ?? blast.startedAt
         d.expiryDate = Calendar.current.date(byAdding: .day, value: 90, to: d.productionDate) ?? d.productionDate
-        d.temperatureNote = blast.finalTemperature.map { String(format: "%.1f °C", $0) } ?? ""
-        d.storageInstructions = "Surgelato -18°C"
+        d.temperatureNote = blast.finalTemperature.map { String(format: "%.0fC", $0) } ?? ""
+        d.storageInstructions = "Surgelato -18C"
         d.productStatus = .blastChilled
         d.sourceModule = .blastChilling
         d.blastChillingRecordId = blast.id
         d.productionId = blast.productionId
+        d.operatorName = blast.createdByNameSnapshot
         return d
     }
 
@@ -203,11 +207,12 @@ struct ProductionLabelsService {
         d.lotCode = defrost.lotNumber ?? ""
         d.productionDate = defrost.endAt ?? defrost.startAt
         d.expiryDate = Calendar.current.date(byAdding: .hour, value: 24, to: d.productionDate) ?? d.productionDate
-        d.storageInstructions = "Frigo +2°C / +4°C — consumare entro 24h"
+        d.storageInstructions = "Frigo +2/+4C entro 24h"
         d.productStatus = .defrosted
         d.sourceModule = .defrost
         d.defrostRecordId = defrost.id
         d.traceabilityRecordId = defrost.traceabilityItemId
+        d.operatorName = defrost.createdByNameSnapshot
         return d
     }
 
@@ -240,6 +245,7 @@ struct ProductionLabelsService {
         d.blastChillingRecordId = label.blastChillingRecordId
         d.defrostRecordId = label.defrostRecordId
         d.productionId = label.productionId
+        d.operatorName = label.createdByNameSnapshot
         return d
     }
 

@@ -61,7 +61,7 @@ enum LabelQRCodeLayout {
         let spec = settings.labelSpec
         let profile = spec.layout
         let cell = max(profile.minQRCell, cellSize)
-        let size = printSizeDots(cellSize: cell, payload: payload)
+        let size = printSizeDots(cellSize: cell, payload: payload, settings: settings)
         guard size >= profile.minPrintDots else { return false }
         let (x, y) = origin(
             corner: corner,
@@ -82,15 +82,22 @@ enum LabelQRCodeLayout {
         ProductionLabelQRService.moduleCount(for: payload)
     }
 
-    /// Dimensione reale stimata del QR stampato (dots).
-    static func printSizeDots(cellSize: Int, payload: String) -> Int {
+    /// Dimensione reale stimata del QR stampato (dots), con tetto per adesivi piccoli.
+    static func printSizeDots(cellSize: Int, payload: String, settings: LabelPrinterSettings? = nil) -> Int {
         let cell = max(minCellSize, min(8, cellSize))
-        return ProductionLabelQRService.moduleCount(for: payload) * cell
+        let raw = ProductionLabelQRService.moduleCount(for: payload) * cell
+        guard let settings else { return raw }
+        return min(raw, settings.labelSpec.layout.maxQRDots)
+    }
+
+    /// Backward-compatible overload.
+    static func printSizeDots(cellSize: Int, payload: String) -> Int {
+        printSizeDots(cellSize: cellSize, payload: payload, settings: nil)
     }
 
     /// Dimensione sicura per layout (anteprima / riserva testo).
     static func layoutBoxDots(cellSize: Int, payload: String) -> Int {
-        printSizeDots(cellSize: cellSize, payload: payload) + 4
+        printSizeDots(cellSize: cellSize, payload: payload) + 2
     }
 
     /// Sceglie la cella più grande possibile (QR più leggibile).
@@ -104,7 +111,7 @@ enum LabelQRCodeLayout {
         let profile = spec.layout
         let upper = min(8, max(cellSize, profile.preferredQRCell))
         for cell in stride(from: upper, through: profile.minQRCell, by: -1) {
-            let size = printSizeDots(cellSize: cell, payload: payload)
+            let size = printSizeDots(cellSize: cell, payload: payload, settings: settings)
             let (x, y) = origin(
                 corner: corner,
                 labelWidth: spec.widthDots,
@@ -132,7 +139,11 @@ enum LabelQRCodeLayout {
     ) -> Int {
         guard corner.reservesHorizontalColumn else { return 0 }
         let cell = clampedCellSize(cellSize, payload: payload, settings: settings, corner: corner)
-        return layoutBoxDots(cellSize: cell, payload: payload) + (settings.clabelSize == .mm40x30 ? 4 : 6)
+        return layoutBoxDots(cellSize: cell, payload: payload, settings: settings) + 3
+    }
+
+    static func layoutBoxDots(cellSize: Int, payload: String, settings: LabelPrinterSettings) -> Int {
+        printSizeDots(cellSize: cellSize, payload: payload, settings: settings) + 2
     }
 
     static func origin(
@@ -190,7 +201,7 @@ enum LabelQRCodeLayout {
         )
         let qrSize = CGFloat(max(
             profile.minPrintDots,
-            LabelQRCodeLayout.printSizeDots(cellSize: cell, payload: payload)
+            LabelQRCodeLayout.printSizeDots(cellSize: cell, payload: payload, settings: settings)
         ))
         guard qrSize >= 1 else { return }
         let rect = self.rect(

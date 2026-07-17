@@ -200,7 +200,7 @@ struct CleaningControlView: View {
 
     private var mainScrollContent: some View {
         ScrollView {
-            VStack(spacing: 14) {
+            VStack(spacing: 20) {
                 ModuleScreenHeader(
                     title: "Controllo pulizia",
                     subtitle: "Piano sanificazione aree e attività con storico HACCP",
@@ -220,24 +220,35 @@ struct CleaningControlView: View {
                         }
                     }
                 } else {
-                    VStack(spacing: 14) {
+                    VStack(spacing: 18) {
                         progressCard
-                        HStack(spacing: 8) {
-                            Button("Gestione aree/task") {
+
+                        // Bottoni gestione con icone
+                        HStack(spacing: 10) {
+                            Button {
                                 masterAuth.request(permission: .manageCleaningConfiguration, permissions: permissions) {
                                     showManageSheet = true
                                 }
+                            } label: {
+                                Label("Gestione aree/task", systemImage: "gearshape.fill")
+                                    .font(.subheadline.weight(.semibold))
+                                    .frame(maxWidth: .infinity)
                             }
                             .buttonStyle(.bordered)
                             .tint(ThemeManager.shared.colorPrimary)
 
-                            Button("Pulisci storico", role: .destructive) {
+                            Button(role: .destructive) {
                                 masterAuth.request(permission: .clearCleaningHistory, permissions: permissions) {
                                     clearHistory()
                                 }
+                            } label: {
+                                Label("Pulisci storico", systemImage: "trash.fill")
+                                    .font(.subheadline.weight(.semibold))
+                                    .frame(maxWidth: .infinity)
                             }
                             .buttonStyle(.bordered)
                         }
+
                         Picker("Filtro", selection: $vm.selectedTab) {
                             ForEach(CleaningControlViewModel.Tab.allCases) { tab in
                                 Text(tab.rawValue).tag(tab)
@@ -267,20 +278,41 @@ struct CleaningControlView: View {
         }
     }
 
+    /// Indicatore circolare di progresso (anello) a destra del titolo.
     private var progressCard: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Completamento periodo corrente")
-                .font(.subheadline.bold())
-                .foregroundStyle(ThemeManager.shared.colorTextPrimary)
-            Text("\(runBasedSummary.completed) / \(runBasedSummary.total) task · \(Int(runBasedSummary.percentage * 100))%")
-                .font(.caption)
-                .foregroundStyle(ThemeManager.shared.colorTextSecondary)
-            ProgressView(value: runBasedSummary.percentage)
-                .tint(ThemeManager.shared.colorSuccess)
+        let completed = runBasedSummary.completed
+        let total = runBasedSummary.total
+        let pct = runBasedSummary.percentage
+
+        return HStack(alignment: .center, spacing: 16) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Completamento periodo")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(ThemeManager.shared.colorTextPrimary)
+                Text(total == 0
+                    ? "Nessun task nel ciclo corrente"
+                    : "\(completed) di \(total) task completati")
+                    .font(.caption)
+                    .foregroundStyle(ThemeManager.shared.colorTextSecondary)
+            }
+
+            Spacer(minLength: 8)
+
+            CleaningCircularProgressView(
+                progress: pct,
+                label: total == 0 ? "—" : "\(Int(pct * 100))%",
+                detail: total == 0 ? "0/0" : "\(completed)/\(total)"
+            )
         }
-        .padding(10)
-        .background(ThemeManager.shared.colorSurface)
-        .cornerRadius(10)
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(ThemeManager.shared.colorSurface)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .stroke(ThemeManager.shared.colorDivider.opacity(0.8), lineWidth: 1)
+                )
+        )
     }
 
     private func cardList(_ cards: [CleaningTaskCard], emptyText: String) -> some View {
@@ -931,5 +963,46 @@ struct CleaningControlView: View {
             onlyCleaningBridge: true
         )
         dataStore.reload(context: modelContext, restaurantId: rid, force: true)
+    }
+}
+
+// MARK: - Anello progresso compatto
+
+private struct CleaningCircularProgressView: View {
+    let progress: Double
+    let label: String
+    let detail: String
+
+    @Environment(\.theme) private var theme
+
+    private var clamped: Double {
+        min(1, max(0, progress))
+    }
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .stroke(theme.colorDivider.opacity(0.55), lineWidth: 7)
+            Circle()
+                .trim(from: 0, to: clamped)
+                .stroke(
+                    theme.colorPrimary,
+                    style: StrokeStyle(lineWidth: 7, lineCap: .round)
+                )
+                .rotationEffect(.degrees(-90))
+                .animation(.easeInOut(duration: 0.35), value: clamped)
+
+            VStack(spacing: 1) {
+                Text(label)
+                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                    .foregroundStyle(theme.colorTextPrimary)
+                Text(detail)
+                    .font(.system(size: 9, weight: .medium, design: .rounded))
+                    .foregroundStyle(theme.colorTextSecondary)
+            }
+        }
+        .frame(width: 64, height: 64)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Completamento \(label), \(detail)")
     }
 }

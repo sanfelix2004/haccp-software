@@ -146,9 +146,9 @@ struct ProductionLabelDetailView: View {
     @ViewBuilder
     private var detailsTab: some View {
         if SettingsStorageService.shared.printer.showQRCode {
-            DashboardCardView(title: "Codice QR", subtitle: "Leggibile da qualsiasi dispositivo") {
+            DashboardCardView(title: "Codice QR", subtitle: "Scansione solo da iPad") {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Il QR contiene prodotto, lotto, date, allergeni e altre info HACCP. Puoi scansionarlo da un altro telefono anche senza archivio locale.")
+                    Text("Il QR collega l’etichetta all’archivio HACCP. Scansionarlo solo dall’app su iPad.")
                         .font(theme.typography.subheadline)
                         .foregroundStyle(theme.colorTextSecondary)
                     Text("ID: \(label.id.uuidString.prefix(8).uppercased())…")

@@ -3,8 +3,18 @@ import Vision
 import VisionKit
 
 enum ProductionLabelScannerSupport {
+    /// Scanner QR solo su iPad (non su iPhone).
     static var isAvailable: Bool {
-        DataScannerViewController.isSupported && DataScannerViewController.isAvailable
+        UIDevice.current.userInterfaceIdiom == .pad
+            && DataScannerViewController.isSupported
+            && DataScannerViewController.isAvailable
+    }
+
+    static var unavailableMessage: String {
+        if UIDevice.current.userInterfaceIdiom != .pad {
+            return "La scansione QR etichette è disponibile solo su iPad."
+        }
+        return "Scanner non disponibile su questo dispositivo."
     }
 }
 
@@ -29,10 +39,10 @@ struct ProductionLabelScannerSheet: View {
                     .ignoresSafeArea()
                 } else {
                     VStack(spacing: 16) {
-                        Image(systemName: "camera.fill")
+                        Image(systemName: "ipad")
                             .font(.largeTitle)
                             .foregroundStyle(theme.colorTextSecondary)
-                        Text("Scanner non disponibile su questo dispositivo.")
+                        Text(ProductionLabelScannerSupport.unavailableMessage)
                             .font(theme.typography.body)
                             .multilineTextAlignment(.center)
                             .foregroundStyle(theme.colorTextSecondary)
@@ -48,7 +58,7 @@ struct ProductionLabelScannerSheet: View {
                 }
             }
             .safeAreaInset(edge: .bottom) {
-                Text("Inquadra il QR: su iPad apre la scheda HACCP. Su telefono senza app, la fotocamera mostra prodotto, lotto, date e allergeni in italiano.")
+                Text("Inquadra il QR dell’etichetta. La scansione funziona solo da iPad.")
                     .font(theme.typography.caption)
                     .foregroundStyle(theme.colorTextSecondary)
                     .multilineTextAlignment(.center)

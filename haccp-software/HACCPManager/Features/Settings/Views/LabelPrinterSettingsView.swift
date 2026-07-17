@@ -162,30 +162,18 @@ struct LabelPrinterSettingsView: View {
     }
 
     private var labelSizeSection: some View {
-        @Bindable var storage = storage
-        return SettingsPanelCard(
+        SettingsPanelCard(
             title: "Formato rotolo",
-            caption: "Seleziona il rotolo montato sulla stampante. Il layout si adatta automaticamente."
+            caption: "Rotolo fisso 50×30 mm (CLABEL S1)."
         ) {
-            Picker("Rotolo", selection: Binding(
-                get: { storage.printer.clabelSize },
-                set: { newSize in
-                    storage.printer.clabelSize = newSize
-                    storage.saveAll()
-                }
-            )) {
-                ForEach(ClabelLabelSize.allCases) { size in
-                    Text(size.displayName).tag(size)
-                }
+            HStack {
+                Text("Rotolo")
+                Spacer()
+                Text("50×30 mm")
+                    .fontWeight(.semibold)
             }
-            .pickerStyle(.segmented)
-
-            Text(storage.printer.clabelSize.usageHint)
+            Text("Layout compatto: prodotto, date, lotto e QR piccolo.")
                 .font(.caption)
-                .foregroundStyle(ThemeManager.shared.colorTextSecondary)
-
-            Text("Campi inclusi: prodotto, lotto, date, operatore, allergeni e QR tracciabilità.")
-                .font(.caption2)
                 .foregroundStyle(ThemeManager.shared.colorTextSecondary)
         }
     }
@@ -213,7 +201,7 @@ struct LabelPrinterSettingsView: View {
 
     private var qrCodeSection: some View {
         @Bindable var storage = storage
-        return SettingsPanelCard(title: "Codice QR", caption: "Testo in italiano, leggibile anche dalla fotocamera del telefono") {
+        return SettingsPanelCard(title: "Codice QR", caption: "Scansione etichette solo dall’app su iPad") {
             VStack(alignment: .leading, spacing: 12) {
                 Toggle("Mostra QR su etichetta", isOn: $storage.printer.showQRCode)
 

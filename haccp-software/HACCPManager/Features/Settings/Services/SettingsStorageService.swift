@@ -70,7 +70,13 @@ final class SettingsStorageService {
         if let data = store.haccpData { haccp = (try? decoder.decode(HACCPSettings.self, from: data)) ?? haccp }
         if let data = store.securityData { security = (try? decoder.decode(SecuritySettings.self, from: data)) ?? security }
         if let data = store.notificationData { notifications = (try? decoder.decode(NotificationSettings.self, from: data)) ?? notifications }
-        if let data = store.printerData { printer = (try? decoder.decode(LabelPrinterSettings.self, from: data)) ?? printer }
+        if let data = store.printerData,
+           var loaded = try? decoder.decode(LabelPrinterSettings.self, from: data) {
+            loaded.applyRecommendedLayout()
+            printer = loaded
+        } else {
+            printer.applyRecommendedLayout()
+        }
 
         if let data = store.appearanceData,
            let decoded = try? decoder.decode(AppearanceSettings.self, from: data) {

@@ -142,7 +142,7 @@ struct ProductionLabelsView: View {
                 }
 
                 if ProductionLabelScannerSupport.isAvailable {
-                    DashboardCardView(title: "Scansione", subtitle: "Leggi un QR etichetta già stampata") {
+                    DashboardCardView(title: "Scansione", subtitle: "Solo da iPad — leggi un QR già stampato") {
                         SecondaryButton(title: "Scansiona QR etichetta", icon: "qrcode.viewfinder") {
                             showScanner = true
                         }
@@ -374,6 +374,8 @@ struct ProductionLabelsView: View {
             return
         }
 
-        errorMessage = "QR senza dati completi. Ristampa l’etichetta per generare un codice aggiornato."
+        errorMessage = """
+        QR illeggibile o etichetta vecchia. Ristampa l’etichetta (formato 40×30 compatto) e riprova tenendo il QR ben inquadrato.
+        """
     }
 }
