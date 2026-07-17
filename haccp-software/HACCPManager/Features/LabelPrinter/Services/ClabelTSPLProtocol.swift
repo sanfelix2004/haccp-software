@@ -1,7 +1,15 @@
 import Foundation
 
 /// TSPL / TSPL2 — protocollo tipico stampanti CLABEL S1 (Bluetooth termica).
+/// Layout fisso 50×30 mm: colonna testo sinistra + QR destra, con gap fisso.
 enum ClabelTSPLProtocol {
+
+    /// Larghezza massima colonna testo (dot) — oltre inizia il gap verso il QR.
+    private static let textColumnEndX = 230
+    private static let qrEdgeInset = 32
+    private static let textQRGap = 24
+    private static let qrTargetDots = 80
+    private static let maxTextChars = 18
 
     static func buildBitmapJob(raster: Data, spec: ClabelLabelSpec) -> Data {
         var payload = Data()
@@ -27,7 +35,6 @@ enum ClabelTSPLProtocol {
         restaurantName: String? = nil
     ) -> Data {
         let spec = settings.labelSpec
-        let profile = spec.layout
         var data = Data()
         data.append(ascii("""
         SET TEAR ON\r\n\
@@ -37,29 +44,45 @@ enum ClabelTSPLProtocol {
         SIZE \(spec.widthMM) mm,\(spec.heightMM) mm\r\n\
         GAP \(spec.gapMM) mm,0 mm\r\n\
         DIRECTION 1,0\r\n\
+        REFERENCE 0,0\r\n\
         CLS\r\n
         """))
 
-        let payload = LabelQRCodeLayout.payload(for: label, restaurantName: restaurantName)
-        let qrCell = settings.showQRCode
-            ? LabelQRCodeLayout.clampedCellSize(settings.qrCellSize, payload: payload, settings: settings, corner: settings.qrCorner)
-            : settings.qrCellSize
-        let textInset = settings.showQRCode
-            ? LabelQRCodeLayout.reservedColumnDots(cellSize: qrCell, payload: payload, settings: settings, corner: settings.qrCorner)
-            : 0
-        let textX = settings.qrCorner.reservesLeftColumn ? profile.tsplTextX + textInset : profile.tsplTextX
+        let lines = ProductionLabelPrintContent.printLines(
+            for: label,
+            settings: settings,
+            restaurantName: restaurantName
+        )
 
-        var y = 12
-        let step = max(18, profile.tsplDetailYStep - 2)
-        for line in ProductionLabelPrintContent.printLines(for: label, settings: settings, restaurantName: restaurantName) {
-            guard y < spec.heightDots - 20 else { break }
-            let font = line.bold ? profile.tsplProductFont : profile.tsplDetailFont
-            data.append(ascii("TEXT \(textX),\(y),\"\(font)\",0,1,1,\"\(tsplEscape(line.text))\"\r\n"))
-            y += line.bold ? profile.tsplProductYStep : step
+        var y = 14
+        let productStep = 34
+        let detailStep = 26
+        let textX = 14
+        let maxY = min(spec.heightDots - 14, 220)
+
+        for line in lines {
+            guard y + 20 < maxY else { break }
+            let font = line.bold ? "2" : "1"
+            let clipped = ProductionLabelPrintContent.printerSafe(
+                String(line.text.prefix(maxTextChars))
+            )
+            guard !clipped.isEmpty else { continue }
+            data.append(cp1252Safe("TEXT \(textX),\(y),\"\(font)\",0,1,1,\"\(tsplEscape(clipped))\"\r\n"))
+            y += line.bold ? productStep : detailStep
         }
 
         if settings.showQRCode {
-            appendNativeQR(to: &data, payload: payload, settings: settings, cell: qrCell, spec: spec)
+            let payload = LabelQRCodeLayout.payload(for: label, restaurantName: restaurantName)
+            let cell = bestQRCell(payload: payload, settings: settings, spec: spec)
+            let qrSize = LabelQRCodeLayout.printSizeDots(cellSize: cell, payload: payload, settings: settings)
+            // Un po' più al centro: non a filo destro, ma ancora a destra del testo.
+            let minX = textColumnEndX + textQRGap
+            let maxX = spec.widthDots - qrSize - qrEdgeInset
+            let qx = max(minX, maxX - 18)
+            let qy = max(qrEdgeInset, (spec.heightDots - qrSize) / 2)
+            data.append(cp1252Safe(
+                "QRCODE \(qx),\(qy),M,\(cell),A,0,\"\(tsplEscape(payload))\"\r\n"
+            ))
         }
 
         data.append(ascii("PRINT 1,1\r\n"))
@@ -67,17 +90,36 @@ enum ClabelTSPLProtocol {
     }
 
     static func buildTestJob(spec: ClabelLabelSpec = ClabelLabelDimensions.defaultSpec) -> Data {
-        let qrX = spec.size == .mm40x30 ? 170 : 220
+        let qrX = max(textColumnEndX + textQRGap, spec.widthDots - 100 - qrEdgeInset)
         return ascii(setupHeader + """
         SIZE \(spec.widthMM) mm,\(spec.heightMM) mm\r\n\
         GAP \(spec.gapMM) mm,0 mm\r\n\
         DIRECTION 1,0\r\n\
+        REFERENCE 0,0\r\n\
         CLS\r\n\
-        TEXT 12,70,\"3\",0,1,1,\"HACCP TEST\"\r\n\
-        TEXT 12,120,\"2\",0,1,1,\"CLABEL S1 \(spec.widthMM)x\(spec.heightMM)\"\r\n\
-        QRCODE \(qrX),36,L,\(spec.layout.preferredQRCell),A,0,\"HACCP%0AProdotto: Test%0ALotto: L001%0AProd: 10/07/26%0AScad: 12/07/26\"\r\n\
+        TEXT 14,20,\"2\",0,1,1,\"HACCP TEST\"\r\n\
+        TEXT 14,60,\"1\",0,1,1,\"50x30 CLABEL\"\r\n\
+        TEXT 14,90,\"1\",0,1,1,\"Scad 18/07\"\r\n\
+        QRCODE \(qrX),40,M,4,A,0,\"HC2|TEST\"\r\n\
         PRINT 1,1\r\n
         """)
+    }
+
+    private static func bestQRCell(
+        payload: String,
+        settings: LabelPrinterSettings,
+        spec: ClabelLabelSpec
+    ) -> Int {
+        let profile = spec.layout
+        let upper = max(profile.preferredQRCell, settings.qrCellSize)
+        let maxWidth = spec.widthDots - textColumnEndX - textQRGap - qrEdgeInset
+        for cell in stride(from: min(5, upper), through: profile.minQRCell, by: -1) {
+            let size = LabelQRCodeLayout.printSizeDots(cellSize: cell, payload: payload, settings: settings)
+            if size <= qrTargetDots, size <= spec.heightDots - 56, size <= maxWidth {
+                return cell
+            }
+        }
+        return profile.minQRCell
     }
 
     private static var setupHeader: String {
@@ -89,32 +131,31 @@ enum ClabelTSPLProtocol {
         """
     }
 
-    private static func appendNativeQR(
-        to data: inout Data,
-        payload: String,
-        settings: LabelPrinterSettings,
-        cell: Int,
-        spec: ClabelLabelSpec
-    ) {
-        let qrSize = LabelQRCodeLayout.printSizeDots(cellSize: cell, payload: payload)
-        let (qx, qy) = settings.qrCorner.origin(
-            labelWidth: spec.widthDots,
-            labelHeight: spec.heightDots,
-            qrBox: qrSize,
-            margin: spec.layout.qrMarginDots
-        )
-        data.append(ascii(
-            "QRCODE \(qx),\(qy),L,\(cell),A,\(settings.qrRotation.rawValue),\"\(tsplEscape(payload))\"\r\n"
-        ))
-    }
-
     private static func ascii(_ string: String) -> Data {
         Data(string.utf8)
     }
 
+    /// Solo byte ASCII 0x20–0x7E (+ CR/LF) — evita UTF-8 multibyte letti come ideogrammi.
+    private static func cp1252Safe(_ string: String) -> Data {
+        var bytes = [UInt8]()
+        bytes.reserveCapacity(string.utf8.count)
+        for scalar in string.unicodeScalars {
+            let v = scalar.value
+            if v == 0x0D || v == 0x0A || (v >= 0x20 && v <= 0x7E) {
+                bytes.append(UInt8(v))
+            }
+        }
+        return Data(bytes)
+    }
+
     private static func tsplEscape(_ value: String) -> String {
-        value
+        let cleaned = String(value.unicodeScalars.compactMap { scalar -> Character? in
+            let v = scalar.value
+            guard v == 0x0A || (v >= 0x20 && v <= 0x7E) else { return nil }
+            return Character(scalar)
+        })
+        return cleaned
             .replacingOccurrences(of: "\\", with: "\\\\")
-            .replacingOccurrences(of: "\"", with: "\\\"")
+            .replacingOccurrences(of: "\"", with: "'")
     }
 }

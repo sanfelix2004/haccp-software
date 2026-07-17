@@ -86,15 +86,14 @@ enum ProductionLabelQRService {
         restaurantName: String? = nil,
         settings: LabelPrinterSettings
     ) -> String {
-        let candidates =
-            ProductionLabelPrintContent.humanReadableCandidates(for: label, restaurantName: restaurantName)
-            + [
-                buildFullPayload(for: label, restaurantName: restaurantName),
-                buildEssentialPayload(for: label, restaurantName: restaurantName),
-                compactScanPayload(for: label),
-                compactMinimalPayload(for: label)
-            ]
         let profile = settings.labelSpec.layout
+        let pipeCandidates = [
+            ultraCompactPayload(for: label, settings: settings),
+            compactMinimalPayload(for: label, settings: settings),
+            compactScanPayload(for: label)
+        ]
+        let candidates = pipeCandidates
+
         for cellSize in [profile.preferredQRCell, profile.minQRCell] {
             if let payload = candidates.first(where: {
                 LabelQRCodeLayout.fitsOnLabel(payload: $0, cellSize: cellSize, settings: settings)
@@ -102,7 +101,42 @@ enum ProductionLabelQRService {
                 return payload
             }
         }
-        return compactMinimalPayload(for: label)
+        return compactMinimalPayload(for: label, settings: settings)
+    }
+
+    /// Payload minimo — date compatte YYMMDD per QR più piccolo.
+    private static func ultraCompactPayload(
+        for label: ProductionLabelRecord,
+        settings: LabelPrinterSettings
+    ) -> String {
+        let productMax = 14
+        return pipeEncode([
+            "HC2",
+            label.id.uuidString.uppercased(),
+            scanClip(label.productName, max: productMax),
+            scanClip(label.lotCode ?? "", max: 8),
+            isoDayCompact(label.productionDate),
+            isoDayCompact(label.expiryDate)
+        ])
+    }
+
+    private static func compactMinimalPayload(
+        for label: ProductionLabelRecord,
+        settings: LabelPrinterSettings
+    ) -> String {
+        _ = settings
+        return pipeEncode([
+            "HC2",
+            label.id.uuidString.uppercased(),
+            scanClip(label.productName, max: 14),
+            scanClip(label.lotCode ?? "", max: scanFieldMax),
+            isoDay(label.productionDate),
+            isoDay(label.expiryDate)
+        ])
+    }
+
+    private static func compactMinimalPayload(for label: ProductionLabelRecord) -> String {
+        compactMinimalPayload(for: label, settings: SettingsStorageService.shared.printer)
     }
 
     private static func compactScanPayload(for label: ProductionLabelRecord) -> String {
@@ -118,17 +152,6 @@ enum ProductionLabelQRService {
         let allergens = scanClip(label.allergens ?? "", max: scanFieldMax)
         if !allergens.isEmpty { fields.append(allergens) }
         return pipeEncode(fields)
-    }
-
-    private static func compactMinimalPayload(for label: ProductionLabelRecord) -> String {
-        pipeEncode([
-            "HC2",
-            label.id.uuidString.uppercased(),
-            scanClip(label.productName, max: scanProductMax),
-            scanClip(label.lotCode ?? "", max: scanFieldMax),
-            isoDay(label.productionDate),
-            isoDay(label.expiryDate)
-        ])
     }
 
     private static func scanClip(_ value: String, max: Int) -> String {
@@ -394,8 +417,8 @@ enum ProductionLabelQRService {
         return ProductionLabelScanData(
             id: uuid,
             productName: field(1) ?? "",
-            productionDate: field(3).flatMap(parseISODay),
-            expiryDate: field(4).flatMap(parseISODay),
+            productionDate: parseDayField(field(3)),
+            expiryDate: parseDayField(field(4)),
             lotCode: field(2),
             operatorName: field(5),
             supplier: field(6),
@@ -468,10 +491,36 @@ enum ProductionLabelQRService {
         return String(format: "%04d-%02d-%02d", year, month, day)
     }
 
+    /// YYMMDD — riduce la dimensione del QR stampato.
+    private static func isoDayCompact(_ date: Date) -> String {
+        let normalized = HACCPDateNormalizer.startOfLocalDay(date)
+        let parts = HACCPDateNormalizer.calendar.dateComponents([.year, .month, .day], from: normalized)
+        guard let year = parts.year, let month = parts.month, let day = parts.day else { return "" }
+        return String(format: "%02d%02d%02d", year % 100, month, day)
+    }
+
+    private static func parseDayField(_ value: String?) -> Date? {
+        guard let value, !value.isEmpty else { return nil }
+        if value.count == 6, value.allSatisfy(\.isNumber) {
+            let yy = Int(value.prefix(2)) ?? 0
+            let mm = Int(value.dropFirst(2).prefix(2)) ?? 0
+            let dd = Int(value.suffix(2)) ?? 0
+            let year = ExpiryDateParser.expandTwoDigitYear(yy)
+            var components = DateComponents()
+            components.year = year
+            components.month = mm
+            components.day = dd
+            if let date = Calendar.current.date(from: components) {
+                return Calendar.current.startOfDay(for: date)
+            }
+        }
+        return parseISODay(value)
+    }
+
     private static func ciImage(from string: String) -> CIImage? {
         let filter = CIFilter.qrCodeGenerator()
         filter.message = Data(string.utf8)
-        filter.correctionLevel = "L"
+        filter.correctionLevel = "M"
         return filter.outputImage
     }
 

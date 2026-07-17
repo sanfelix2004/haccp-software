@@ -31,10 +31,18 @@ struct LabelStickerContent: Equatable {
 }
 
 enum LabelStickerText {
+    /// Anteprima UI — può usare ellissi tipografica.
     static func fit(_ text: String, maxLength: Int) -> String {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmed.count > maxLength else { return trimmed }
         return String(trimmed.prefix(max(1, maxLength - 1))) + "…"
+    }
+
+    /// Stampa termica TSPL/CODEPAGE 1252 — solo ASCII, senza ellissi Unicode.
+    static func printerFit(_ text: String, maxLength: Int) -> String {
+        let cleaned = ProductionLabelPrintContent.printerSafe(text)
+        guard cleaned.count > maxLength else { return cleaned }
+        return String(cleaned.prefix(maxLength))
     }
 }
 
@@ -82,9 +90,9 @@ struct LabelStickerCanvas: View {
 
     @ViewBuilder
     private func stickerSurface(width: CGFloat, height: CGFloat) -> some View {
-        let padding = max(6, height * 0.06)
+        let padding = max(8, height * 0.08)
         let qrSide = qrSideLength(labelHeight: height, labelWidth: width)
-        let spacing = max(3, height * 0.025)
+        let spacing = max(6, height * 0.04)
         let textWidth = max(40, width - padding * 2 - (qrSide > 0 ? qrSide + spacing : 0))
 
         ZStack {
@@ -133,60 +141,50 @@ struct LabelStickerCanvas: View {
             switch self {
             case .regular: return 8
             case .compact: return 7
-            case .minimal: return 6.5
+            case .minimal: return 6
             }
         }
 
         var titleSize: CGFloat {
             switch self {
-            case .regular: return 11.5
-            case .compact: return 10
-            case .minimal: return 9
+            case .regular: return 13
+            case .compact: return 11
+            case .minimal: return 10
             }
         }
 
         var lineSize: CGFloat {
             switch self {
-            case .regular: return 8.5
-            case .compact: return 7.5
-            case .minimal: return 7
+            case .regular: return 10
+            case .compact: return 9
+            case .minimal: return 8
             }
         }
 
         var spacing: CGFloat {
             switch self {
-            case .regular: return 2.5
-            case .compact: return 1.5
-            case .minimal: return 1
+            case .regular: return 4
+            case .compact: return 3
+            case .minimal: return 2
             }
         }
 
         var maxDetailLines: Int {
             switch self {
-            case .regular: return 8
-            case .compact: return 7
-            case .minimal: return 6
+            case .regular: return 5
+            case .compact: return 4
+            case .minimal: return 4
             }
         }
     }
 
     private func maxDetailLines(for density: TextDensity) -> Int {
-        let base = density.maxDetailLines
-        if settings.clabelSize == .mm40x30 {
-            return max(3, base - 3)
-        }
-        return base
+        min(density.maxDetailLines, settings.labelSpec.layout.maxDetailLines)
     }
 
     @ViewBuilder
     private func textStack(density: TextDensity, width: CGFloat) -> some View {
         VStack(alignment: .leading, spacing: density.spacing) {
-            Text("HACCP")
-                .font(.system(size: density.headerSize, weight: .heavy, design: .rounded))
-                .foregroundStyle(.black.opacity(0.55))
-                .tracking(0.8)
-                .lineLimit(1)
-
             if settings.showProductName {
                 Text(content.productName)
                     .font(.system(size: density.titleSize, weight: .bold))
@@ -203,14 +201,6 @@ struct LabelStickerCanvas: View {
                     .lineLimit(1)
                     .minimumScaleFactor(0.55)
                     .frame(maxWidth: width, alignment: .leading)
-            }
-
-            if let source = content.sourceModuleLabel, density != .minimal {
-                Text(LabelStickerText.fit(source, maxLength: 18))
-                    .font(.system(size: max(6, density.lineSize - 1), weight: .medium))
-                    .foregroundStyle(.black.opacity(0.45))
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.5)
             }
         }
     }
@@ -243,9 +233,11 @@ struct LabelStickerCanvas: View {
 
     private func qrSideLength(labelHeight: CGFloat, labelWidth: CGFloat) -> CGFloat {
         guard settings.showQRCode else { return 0 }
-        let maxByHeight = labelHeight * (settings.clabelSize == .mm40x30 ? 0.42 : 0.46)
-        let maxByWidth = labelWidth * (settings.clabelSize == .mm40x30 ? 0.34 : 0.3)
-        return max(32, min(maxByHeight, maxByWidth))
+        let heightFactor: CGFloat = 0.46
+        let widthFactor: CGFloat = 0.30
+        let maxByHeight = labelHeight * heightFactor
+        let maxByWidth = labelWidth * widthFactor
+        return max(40, min(maxByHeight, maxByWidth))
     }
 
     private var qrTaskID: String {
@@ -273,8 +265,8 @@ struct LabelStickerCanvas: View {
             settings: settings,
             corner: settings.qrCorner
         )
-        let dots = LabelQRCodeLayout.printSizeDots(cellSize: cell, payload: payload)
-        let dimension = max(72, CGFloat(dots) * 1.6)
+        let dots = LabelQRCodeLayout.printSizeDots(cellSize: cell, payload: payload, settings: settings)
+        let dimension = max(48, CGFloat(dots) * 1.4)
         let rotation = settings.qrRotation
 
         let image = await Task.detached(priority: .userInitiated) {

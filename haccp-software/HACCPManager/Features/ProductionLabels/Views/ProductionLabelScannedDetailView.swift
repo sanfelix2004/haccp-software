@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Dettaglio etichetta letta da QR — funziona su qualsiasi dispositivo, con tutti i campi HACCP.
+/// Dettaglio etichetta letta da QR — scansione dall’app su iPad.
 struct ProductionLabelScannedDetailView: View {
     let data: ProductionLabelScanData
     var showsOfflineBanner: Bool = true
@@ -14,8 +14,8 @@ struct ProductionLabelScannedDetailView: View {
             ScrollView {
                 VStack(spacing: theme.spacing.sectionSpacing) {
                     if showsOfflineBanner {
-                        DashboardCardView(title: "Lettura QR", subtitle: "Da qualsiasi dispositivo") {
-                            Text("Il QR contiene tutte le informazioni in italiano. Su iPad apri la scheda completa; su un telefono senza app usa la fotocamera — vedrai subito prodotto, lotto, scadenze e allergeni.")
+                        DashboardCardView(title: "Lettura QR", subtitle: "Solo da iPad") {
+                            Text("Etichetta letta dall’app HACCP su iPad. I dati completi sono disponibili qui sotto.")
                                 .font(theme.typography.subheadline)
                                 .foregroundStyle(theme.colorTextSecondary)
                         }

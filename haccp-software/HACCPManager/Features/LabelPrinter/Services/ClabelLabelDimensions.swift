@@ -61,6 +61,8 @@ struct ClabelLabelLayoutProfile {
     let maxDetailLines: Int
     let productNameMaxLength: Int
     let detailMaxLength: Int
+    /// Limite superiore QR in dots (40×30: QR piccolo, testo leggibile).
+    let maxQRDots: Int
 }
 
 struct ClabelLabelSpec: Equatable {
@@ -91,45 +93,48 @@ extension ClabelLabelSize {
         switch self {
         case .mm40x30:
             return ClabelLabelLayoutProfile(
-                brandFontSize: 7,
-                productFontSize: 11,
-                detailFontSize: 8,
-                smallFontSize: 7,
-                contentPadding: 5,
-                lineGap: 1,
-                tsplProductFont: "2",
+                brandFontSize: 5,
+                productFontSize: 7,
+                detailFontSize: 6,
+                smallFontSize: 5,
+                contentPadding: 3,
+                lineGap: 0,
+                tsplProductFont: "1",
                 tsplDetailFont: "1",
-                tsplProductYStep: 26,
-                tsplDetailYStep: 19,
-                tsplTextX: 8,
-                preferredQRCell: 3,
+                tsplProductYStep: 18,
+                tsplDetailYStep: 14,
+                tsplTextX: 4,
+                preferredQRCell: 2,
                 minQRCell: 2,
-                minPrintDots: 80,
-                qrMarginDots: 5,
-                maxDetailLines: 7,
-                productNameMaxLength: 22,
-                detailMaxLength: 24
+                minPrintDots: 40,
+                qrMarginDots: 2,
+                maxDetailLines: 2,
+                productNameMaxLength: 14,
+                detailMaxLength: 22,
+                maxQRDots: 46
             )
         case .mm50x30:
+            // 50×30: prodotto, date, lotto, operatore + QR a destra.
             return ClabelLabelLayoutProfile(
-                brandFontSize: 9,
-                productFontSize: 14,
+                brandFontSize: 8,
+                productFontSize: 13,
                 detailFontSize: 10,
-                smallFontSize: 8,
-                contentPadding: 8,
+                smallFontSize: 9,
+                contentPadding: 6,
                 lineGap: 2,
-                tsplProductFont: "3",
+                tsplProductFont: "2",
                 tsplDetailFont: "1",
-                tsplProductYStep: 34,
-                tsplDetailYStep: 23,
-                tsplTextX: 10,
-                preferredQRCell: 4,
-                minQRCell: 3,
-                minPrintDots: 96,
-                qrMarginDots: 8,
-                maxDetailLines: 10,
-                productNameMaxLength: 28,
-                detailMaxLength: 32
+                tsplProductYStep: 30,
+                tsplDetailYStep: 22,
+                tsplTextX: 12,
+                preferredQRCell: 3,
+                minQRCell: 2,
+                minPrintDots: 72,
+                qrMarginDots: 24,
+                maxDetailLines: 5,
+                productNameMaxLength: 18,
+                detailMaxLength: 18,
+                maxQRDots: 80
             )
         }
     }

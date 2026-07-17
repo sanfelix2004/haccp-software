@@ -13,133 +13,223 @@ enum ProductionLabelPrintContent {
         let priority: Int
     }
 
-    // MARK: - Righe stampa fisica
+    // MARK: - Righe stampa fisica (50×30)
 
     static func printLines(
         for label: ProductionLabelRecord,
         settings: LabelPrinterSettings,
         restaurantName: String? = nil
     ) -> [PrintLine] {
-        let profile = settings.labelSpec.layout
-        var lines: [PrintLine] = []
+        _ = restaurantName
+        return compactPrintLines(for: label, settings: settings)
+    }
 
-        lines.append(.init(id: "brand", text: "HACCP", fontSize: profile.brandFontSize, bold: true, priority: 200))
+    /// Solo info essenziali, una per riga — layout diverso per abbattimento / decongelamento.
+    private static func compactPrintLines(
+        for label: ProductionLabelRecord,
+        settings: LabelPrinterSettings
+    ) -> [PrintLine] {
+        let profile = settings.labelSpec.layout
+        let maxChars = min(18, profile.productNameMaxLength)
+
+        let lines: [PrintLine]
+        switch label.sourceModule {
+        case .blastChilling, .production:
+            lines = blastPrintLines(for: label, settings: settings, maxChars: maxChars, profile: profile)
+        case .defrost:
+            lines = defrostPrintLines(for: label, settings: settings, maxChars: maxChars, profile: profile)
+        default:
+            lines = productionPrintLines(for: label, settings: settings, maxChars: maxChars, profile: profile)
+        }
+
+        return Array(lines.prefix(profile.maxDetailLines)).map { line in
+            PrintLine(
+                id: line.id,
+                text: printerSafe(line.text),
+                fontSize: line.fontSize,
+                bold: line.bold,
+                priority: line.priority
+            )
+        }
+    }
+
+    /// Abbattimento: nome, data abb., scad, temp finale, operatore.
+    private static func blastPrintLines(
+        for label: ProductionLabelRecord,
+        settings: LabelPrinterSettings,
+        maxChars: Int,
+        profile: ClabelLabelLayoutProfile
+    ) -> [PrintLine] {
+        var lines: [PrintLine] = []
 
         if settings.showProductName {
             lines.append(.init(
                 id: "product",
-                text: LabelStickerText.fit(label.productName.uppercased(), maxLength: profile.productNameMaxLength),
+                text: LabelStickerText.printerFit(label.productName.uppercased(), maxLength: maxChars),
+                fontSize: profile.productFontSize,
+                bold: true,
+                priority: 190
+            ))
+        }
+        if settings.showPrepDate {
+            lines.append(.init(
+                id: "blast",
+                text: LabelStickerText.printerFit("Abb. \(ultraShortDay(label.productionDate))", maxLength: maxChars),
+                fontSize: profile.detailFontSize,
+                bold: false,
+                priority: 180
+            ))
+        }
+        if settings.showExpiryDate {
+            lines.append(.init(
+                id: "expiry",
+                text: LabelStickerText.printerFit("Scad \(ultraShortDay(label.expiryDate))", maxLength: maxChars),
+                fontSize: profile.detailFontSize,
+                bold: false,
+                priority: 170
+            ))
+        }
+        if let temp = compactTemperature(label.temperatureNote) {
+            lines.append(.init(
+                id: "temp",
+                text: LabelStickerText.printerFit("T \(temp)", maxLength: maxChars),
+                fontSize: profile.detailFontSize,
+                bold: false,
+                priority: 160
+            ))
+        }
+        appendOperatorLine(to: &lines, label: label, settings: settings, maxChars: maxChars, profile: profile)
+        return lines
+    }
+
+    /// Decongelamento: nome, data dec., scad (+24h), lotto, operatore.
+    private static func defrostPrintLines(
+        for label: ProductionLabelRecord,
+        settings: LabelPrinterSettings,
+        maxChars: Int,
+        profile: ClabelLabelLayoutProfile
+    ) -> [PrintLine] {
+        var lines: [PrintLine] = []
+
+        if settings.showProductName {
+            lines.append(.init(
+                id: "product",
+                text: LabelStickerText.printerFit(label.productName.uppercased(), maxLength: maxChars),
+                fontSize: profile.productFontSize,
+                bold: true,
+                priority: 190
+            ))
+        }
+        if settings.showPrepDate {
+            lines.append(.init(
+                id: "defrost",
+                text: LabelStickerText.printerFit("Dec. \(ultraShortDay(label.productionDate))", maxLength: maxChars),
+                fontSize: profile.detailFontSize,
+                bold: false,
+                priority: 180
+            ))
+        }
+        if settings.showExpiryDate {
+            lines.append(.init(
+                id: "expiry",
+                text: LabelStickerText.printerFit("Scad \(ultraShortDay(label.expiryDate))", maxLength: maxChars),
+                fontSize: profile.detailFontSize,
+                bold: false,
+                priority: 170
+            ))
+        }
+        if settings.showLotNumber,
+           let lot = label.lotCode?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !lot.isEmpty {
+            lines.append(.init(
+                id: "lot",
+                text: LabelStickerText.printerFit("Lotto \(lot)", maxLength: maxChars),
+                fontSize: profile.detailFontSize,
+                bold: false,
+                priority: 160
+            ))
+        }
+        appendOperatorLine(to: &lines, label: label, settings: settings, maxChars: maxChars, profile: profile)
+        return lines
+    }
+
+    /// Produzione / altri: nome, prod, scad, lotto, operatore.
+    private static func productionPrintLines(
+        for label: ProductionLabelRecord,
+        settings: LabelPrinterSettings,
+        maxChars: Int,
+        profile: ClabelLabelLayoutProfile
+    ) -> [PrintLine] {
+        var lines: [PrintLine] = []
+
+        if settings.showProductName {
+            lines.append(.init(
+                id: "product",
+                text: LabelStickerText.printerFit(label.productName.uppercased(), maxLength: maxChars),
                 fontSize: profile.productFontSize,
                 bold: true,
                 priority: 190
             ))
         }
         if settings.showExpiryDate {
-            let d = label.expiryDate.formatted(date: .abbreviated, time: .omitted)
-            lines.append(.init(id: "expiry", text: "Scad. \(d)", fontSize: profile.detailFontSize, bold: false, priority: 180))
-        }
-        if settings.showLotNumber, let lot = label.lotCode?.trimmingCharacters(in: .whitespacesAndNewlines), !lot.isEmpty {
             lines.append(.init(
-                id: "lot",
-                text: "Lotto \(LabelStickerText.fit(lot, maxLength: profile.detailMaxLength - 6))",
+                id: "expiry",
+                text: LabelStickerText.printerFit("Scad \(ultraShortDay(label.expiryDate))", maxLength: maxChars),
+                fontSize: profile.detailFontSize,
+                bold: false,
+                priority: 180
+            ))
+        }
+        if settings.showPrepDate {
+            lines.append(.init(
+                id: "prod",
+                text: LabelStickerText.printerFit("Prod \(ultraShortDay(label.productionDate))", maxLength: maxChars),
                 fontSize: profile.detailFontSize,
                 bold: false,
                 priority: 170
             ))
         }
-        if settings.showPrepDate {
-            let d = label.productionDate.formatted(date: .abbreviated, time: .omitted)
-            lines.append(.init(id: "prod", text: "Prod. \(d)", fontSize: profile.detailFontSize, bold: false, priority: 160))
-        }
-        if settings.showAllergenWarning, !label.allergenList.isEmpty {
-            let text = label.allergenList.joined(separator: ", ")
+        if settings.showLotNumber,
+           let lot = label.lotCode?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !lot.isEmpty {
             lines.append(.init(
-                id: "allergens",
-                text: "All: \(LabelStickerText.fit(text, maxLength: profile.detailMaxLength - 5))",
-                fontSize: profile.smallFontSize,
+                id: "lot",
+                text: LabelStickerText.printerFit("Lotto \(lot)", maxLength: maxChars),
+                fontSize: profile.detailFontSize,
                 bold: false,
-                priority: 150
+                priority: 160
             ))
         }
-        if settings.showOperatorName {
-            let op = LabelStickerText.fit(label.createdByNameSnapshot, maxLength: profile.detailMaxLength - 4)
-            lines.append(.init(id: "operator", text: "Op. \(op)", fontSize: profile.smallFontSize, bold: false, priority: 140))
-        }
-        if let supplier = label.supplier?.trimmingCharacters(in: .whitespacesAndNewlines), !supplier.isEmpty {
-            lines.append(.init(
-                id: "supplier",
-                text: "Forn. \(LabelStickerText.fit(supplier, maxLength: profile.detailMaxLength - 6))",
-                fontSize: profile.smallFontSize,
-                bold: false,
-                priority: 130
-            ))
-        }
-        if let category = label.category?.trimmingCharacters(in: .whitespacesAndNewlines), !category.isEmpty {
-            lines.append(.init(
-                id: "category",
-                text: "Cat. \(LabelStickerText.fit(category, maxLength: profile.detailMaxLength - 5))",
-                fontSize: profile.smallFontSize,
-                bold: false,
-                priority: 120
-            ))
-        }
-        if let qty = label.quantityDisplay {
-            lines.append(.init(
-                id: "quantity",
-                text: "Qtà \(LabelStickerText.fit(qty, maxLength: profile.detailMaxLength - 4))",
-                fontSize: profile.smallFontSize,
-                bold: false,
-                priority: 110
-            ))
-        }
-        if let temp = label.temperatureNote?.trimmingCharacters(in: .whitespacesAndNewlines), !temp.isEmpty {
-            lines.append(.init(
-                id: "temperature",
-                text: "Temp. \(LabelStickerText.fit(temp, maxLength: profile.detailMaxLength - 6))",
-                fontSize: profile.smallFontSize,
-                bold: false,
-                priority: 100
-            ))
-        }
-        if let storage = label.storageInstructions?.trimmingCharacters(in: .whitespacesAndNewlines), !storage.isEmpty {
-            lines.append(.init(
-                id: "storage",
-                text: "Cons. \(LabelStickerText.fit(storage, maxLength: profile.detailMaxLength - 6))",
-                fontSize: profile.smallFontSize,
-                bold: false,
-                priority: 90
-            ))
-        }
-        let status = label.productStatus.label
-        if !status.isEmpty {
-            lines.append(.init(
-                id: "status",
-                text: "Stato: \(LabelStickerText.fit(status, maxLength: profile.detailMaxLength - 7))",
-                fontSize: profile.smallFontSize,
-                bold: false,
-                priority: 80
-            ))
-        }
-        if let notes = label.notes?.trimmingCharacters(in: .whitespacesAndNewlines), !notes.isEmpty {
-            lines.append(.init(
-                id: "notes",
-                text: LabelStickerText.fit(notes, maxLength: profile.detailMaxLength),
-                fontSize: profile.smallFontSize,
-                bold: false,
-                priority: 70
-            ))
-        }
-        if let restaurant = restaurantName?.trimmingCharacters(in: .whitespacesAndNewlines), !restaurant.isEmpty {
-            lines.append(.init(
-                id: "restaurant",
-                text: LabelStickerText.fit(restaurant, maxLength: profile.detailMaxLength),
-                fontSize: profile.smallFontSize,
-                bold: false,
-                priority: 60
-            ))
-        }
-
+        appendOperatorLine(to: &lines, label: label, settings: settings, maxChars: maxChars, profile: profile)
         return lines
+    }
+
+    private static func appendOperatorLine(
+        to lines: inout [PrintLine],
+        label: ProductionLabelRecord,
+        settings: LabelPrinterSettings,
+        maxChars: Int,
+        profile: ClabelLabelLayoutProfile
+    ) {
+        let op = label.createdByNameSnapshot.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard settings.showOperatorName, !op.isEmpty else { return }
+        lines.append(.init(
+            id: "operator",
+            text: LabelStickerText.printerFit("Op. \(op)", maxLength: maxChars),
+            fontSize: profile.smallFontSize,
+            bold: false,
+            priority: 155
+        ))
+    }
+
+    /// Es. " -18.0 C" / "-18C" per stampa termica.
+    private static func compactTemperature(_ raw: String?) -> String? {
+        guard let raw = raw?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty else { return nil }
+        let cleaned = printerSafe(raw)
+            .replacingOccurrences(of: " ", with: "")
+        guard !cleaned.isEmpty else { return nil }
+        if cleaned.uppercased().hasSuffix("C") { return cleaned }
+        return cleaned + "C"
     }
 
     /// Righe che entrano nell'altezza disponibile (stampa bitmap).
@@ -161,18 +251,15 @@ enum ProductionLabelPrintContent {
                 ? UIFont.boldSystemFont(ofSize: line.fontSize)
                 : UIFont.systemFont(ofSize: line.fontSize)
             let remaining = maxHeight - y - padding
-            guard remaining > 4 else { break }
+            guard remaining > font.lineHeight else { break }
             let bounding = (line.text as NSString).boundingRect(
                 with: CGSize(width: maxTextWidth, height: remaining),
                 options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine],
                 attributes: [.font: font],
                 context: nil
             )
-            let used = min(max(bounding.height, font.lineHeight), remaining) + lineGap
-            if y + used > maxHeight - padding {
-                if line.priority >= 150 { fitted.append(line) }
-                continue
-            }
+            let used = max(bounding.height, font.lineHeight) + lineGap
+            guard y + used <= maxHeight - padding + 0.5 else { break }
             fitted.append(line)
             y += used
         }
@@ -266,6 +353,29 @@ enum ProductionLabelPrintContent {
 
     // MARK: - Private
 
+    /// Solo ASCII stampabile per TSPL CODEPAGE 1252 (niente ellissi/accenti → ideogrammi).
+    static func printerSafe(_ text: String) -> String {
+        let folded = text
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "℃", with: "C")
+            .replacingOccurrences(of: "°C", with: "C")
+            .replacingOccurrences(of: "°", with: "")
+            .replacingOccurrences(of: "…", with: "")
+            .replacingOccurrences(of: "\u{2026}", with: "")
+            .replacingOccurrences(of: "...", with: "")
+            .replacingOccurrences(of: "’", with: "'")
+            .replacingOccurrences(of: "‘", with: "'")
+            .replacingOccurrences(of: "“", with: "\"")
+            .replacingOccurrences(of: "”", with: "\"")
+            .replacingOccurrences(of: "–", with: "-")
+            .replacingOccurrences(of: "—", with: "-")
+            .applyingTransform(.stripDiacritics, reverse: false)
+            ?? text
+
+        let allowed = CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 .-_/#:+()")
+        return String(folded.unicodeScalars.filter { allowed.contains($0) })
+    }
+
     private static func appendHumanRow(_ rows: inout [String], key: String, value: String?) {
         let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         guard !trimmed.isEmpty else { return }
@@ -274,6 +384,10 @@ enum ProductionLabelPrintContent {
 
     private static func shortDay(_ date: Date) -> String {
         date.formatted(.dateTime.day(.twoDigits).month(.twoDigits).year(.twoDigits))
+    }
+
+    private static func ultraShortDay(_ date: Date) -> String {
+        date.formatted(.dateTime.day(.twoDigits).month(.twoDigits))
     }
 
     private static func parseHumanDay(_ value: String?) -> Date? {

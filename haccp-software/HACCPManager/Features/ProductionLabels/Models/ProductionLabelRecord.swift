@@ -172,6 +172,8 @@ struct ProductionLabelDraft: Equatable {
     var blastChillingRecordId: UUID?
     var defrostRecordId: UUID?
     var productionId: UUID?
+    /// Operatore del processo (abbattimento/decongelamento); se vuoto usa l'utente corrente.
+    var operatorName: String = ""
 
     var isValid: Bool {
         !productName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty

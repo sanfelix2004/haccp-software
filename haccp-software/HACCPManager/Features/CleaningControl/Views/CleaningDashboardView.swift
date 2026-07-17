@@ -60,7 +60,7 @@ struct CleaningDashboardView: View {
     }
 
     var body: some View {
-        VStack(spacing: 14) {
+        VStack(spacing: 16) {
             Picker("Filtro pulizie", selection: $selectedTab) {
                 ForEach(Tab.allCases) { tab in
                     Text(tab.rawValue).tag(tab)
@@ -78,14 +78,14 @@ struct CleaningDashboardView: View {
         } message: {
             Text(errorMessage ?? "")
         }
-        .alert("Completa tutto", isPresented: Binding(
+        .alert("Completa Tutti", isPresented: Binding(
             get: { pendingBulkAreaName != nil },
             set: { if !$0 { pendingBulkAreaName = nil } }
         )) {
             Button("Annulla", role: .cancel) {
                 pendingBulkAreaName = nil
             }
-            Button("Completa tutto") {
+            Button("Completa Tutti") {
                 if let name = pendingBulkAreaName {
                     completeAllInArea(named: name)
                 }
@@ -109,9 +109,12 @@ struct CleaningDashboardView: View {
     private func areaGroupedList(_ tabRuns: [ChecklistRun], emptyText: String) -> some View {
         Group {
             if areaSections(for: tabRuns).isEmpty {
-                DashboardEmptyStateView(state: .init(title: "Nessun elemento", message: emptyText, actionTitle: nil))
+                cleaningNeutralEmptyState(
+                    title: "Nessun dato",
+                    message: emptyText
+                )
             } else {
-                VStack(spacing: 12) {
+                VStack(spacing: 14) {
                     ForEach(areaSections(for: tabRuns)) { section in
                         let sectionRuns = runs(for: section, in: tabRuns)
                         collapsibleAreaSection(
@@ -123,6 +126,25 @@ struct CleaningDashboardView: View {
                 }
             }
         }
+    }
+
+    /// Empty state neutro (niente icona errore rossa).
+    private func cleaningNeutralEmptyState(title: String, message: String) -> some View {
+        VStack(spacing: 12) {
+            Image(systemName: "list.bullet.rectangle.portrait")
+                .font(.system(size: 36, weight: .light))
+                .foregroundStyle(theme.colorTextSecondary.opacity(0.55))
+            Text(title)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(theme.colorTextSecondary)
+            Text(message)
+                .font(.caption)
+                .foregroundStyle(theme.colorTextSecondary.opacity(0.85))
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 28)
+        .padding(.horizontal, 16)
     }
 
     private func areaSections(for tabRuns: [ChecklistRun]) -> [AreaSection] {
@@ -148,65 +170,71 @@ struct CleaningDashboardView: View {
         let isExpanded = expandedAreaIds.contains(section.id)
         let completed = sectionRuns.filter { $0.statusRaw == ChecklistRunStatus.completed.rawValue }.count
         let total = sectionRuns.count
+        let hasOpen = sectionRuns.contains { $0.statusRaw != ChecklistRunStatus.completed.rawValue }
 
         return VStack(alignment: .leading, spacing: 0) {
-            Button {
-                withAnimation(.easeInOut(duration: 0.22)) {
-                    toggleArea(section.id)
-                }
-            } label: {
-                HStack(spacing: 12) {
-                    Image(systemName: isExpanded ? "chevron.down.circle.fill" : "chevron.right.circle.fill")
-                        .font(.title3)
-                        .foregroundStyle(theme.colorPrimary)
-
-                    VStack(alignment: .leading, spacing: 4) {
-                        Label(section.name, systemImage: "square.grid.2x2")
-                            .font(.headline)
-                            .foregroundStyle(theme.colorTextPrimary)
-                        Text(total == 0
-                            ? "Nessun controllo in questo filtro"
-                            : "\(completed)/\(total) completati")
-                            .font(.caption)
-                            .foregroundStyle(theme.colorTextSecondary)
+            HStack(spacing: 10) {
+                Button {
+                    withAnimation(.easeInOut(duration: 0.22)) {
+                        toggleArea(section.id)
                     }
+                } label: {
+                    HStack(spacing: 12) {
+                        Image(systemName: isExpanded ? "chevron.down.circle.fill" : "chevron.right.circle.fill")
+                            .font(.title3)
+                            .foregroundStyle(theme.colorPrimary)
 
-                    Spacer(minLength: 0)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Label(section.name, systemImage: "square.grid.2x2")
+                                .font(.headline)
+                                .foregroundStyle(theme.colorTextPrimary)
+                                .labelStyle(.titleAndIcon)
 
-                    if total > 0 {
-                        ProgressView(value: Double(completed) / Double(total))
-                            .frame(width: 56)
-                            .tint(theme.colorSuccess)
+                            if total == 0 {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "eye.slash")
+                                        .font(.caption2)
+                                    Text("Nessun dato")
+                                        .font(.caption)
+                                }
+                                .foregroundStyle(theme.colorTextSecondary.opacity(0.75))
+                            } else {
+                                Text("\(completed)/\(total) completati")
+                                    .font(.caption)
+                                    .foregroundStyle(theme.colorTextSecondary)
+                            }
+                        }
+
+                        Spacer(minLength: 4)
                     }
+                    .contentShape(Rectangle())
                 }
-                .padding(12)
-                .contentShape(Rectangle())
+                .buttonStyle(.plain)
+
+                // Completa Tutti: sul header, senza dover espandere la card.
+                if canExecute, hasOpen {
+                    Button {
+                        pendingBulkAreaName = section.name
+                    } label: {
+                        Label("Completa Tutti", systemImage: "checkmark.circle.fill")
+                            .font(.caption.weight(.semibold))
+                            .labelStyle(.titleAndIcon)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 8)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(theme.colorSuccess)
+                    .accessibilityHint("Segna completati tutti i task di \(section.name)")
+                }
             }
-            .buttonStyle(.plain)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 14)
 
             if isExpanded {
-                VStack(alignment: .leading, spacing: 8) {
-                    if canExecute, sectionRuns.contains(where: { $0.statusRaw != ChecklistRunStatus.completed.rawValue }) {
-                        Button {
-                            pendingBulkAreaName = section.name
-                        } label: {
-                            Label("Completa tutto", systemImage: "checkmark.circle.fill")
-                                .font(.subheadline.weight(.semibold))
-                                .frame(maxWidth: .infinity)
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .tint(theme.colorSuccess)
-                        .padding(.horizontal, 12)
-                        .padding(.bottom, 4)
-                    }
-
+                VStack(alignment: .leading, spacing: 10) {
                     if sectionRuns.isEmpty {
-                        Text(emptyText)
-                            .font(.caption)
-                            .foregroundStyle(theme.colorTextSecondary)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.horizontal, 12)
-                            .padding(.bottom, 4)
+                        cleaningNeutralEmptyState(title: "Nessun dato", message: emptyText)
+                            .padding(.horizontal, 4)
                     } else {
                         ForEach(sectionRuns) { run in
                             CleaningInlineTaskRow(
@@ -215,20 +243,20 @@ struct CleaningDashboardView: View {
                                 canExecute: canExecute,
                                 onComplete: { completeInline(run) }
                             )
-                            .padding(.horizontal, 8)
+                            .padding(.horizontal, 10)
                         }
                     }
                 }
-                .padding(.bottom, 10)
+                .padding(.bottom, 14)
                 .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
         .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
                 .fill(theme.colorSurface)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .stroke(isExpanded ? theme.colorPrimary.opacity(0.35) : theme.colorDivider, lineWidth: 1)
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .stroke(isExpanded ? theme.colorPrimary.opacity(0.32) : theme.colorDivider, lineWidth: 1)
                 )
         )
     }

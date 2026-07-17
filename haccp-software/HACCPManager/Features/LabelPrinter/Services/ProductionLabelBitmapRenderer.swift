@@ -1,6 +1,9 @@
 import UIKit
 
+/// Raster 50×30: testo a sinistra, QR grande a destra, senza sovrapposizioni.
 enum ProductionLabelBitmapRenderer {
+
+    private static let textQRGap: CGFloat = 10
 
     static func raster(
         for label: ProductionLabelRecord,
@@ -18,16 +21,27 @@ enum ProductionLabelBitmapRenderer {
             settings.qrCellSize,
             payload: payload,
             settings: settings,
-            corner: settings.qrCorner
+            corner: .topRight
         )
-        let qrReserve = settings.showQRCode && settings.qrCorner.reservesHorizontalColumn
-            ? CGFloat(LabelQRCodeLayout.reservedColumnDots(
-                cellSize: cell,
-                payload: payload,
-                settings: settings,
-                corner: settings.qrCorner
+        let qrSize: CGFloat = settings.showQRCode
+            ? CGFloat(min(
+                profile.maxQRDots,
+                max(
+                    profile.minPrintDots,
+                    LabelQRCodeLayout.printSizeDots(cellSize: cell, payload: payload, settings: settings)
+                )
             ))
             : 0
+
+        let left = profile.contentPadding
+        // Colonna testo limitata: gap fisso prima del QR.
+        let textColumnCap = qrSize > 0
+            ? CGFloat(width) * 0.55
+            : CGFloat(width) - profile.contentPadding * 2
+        let maxTextWidth = min(
+            textColumnCap,
+            CGFloat(width) - left - (qrSize > 0 ? qrSize + textQRGap + 24 : profile.contentPadding)
+        )
 
         let renderer = UIGraphicsImageRenderer(size: CGSize(width: width, height: height))
         let image = renderer.image { ctx in
@@ -35,65 +49,45 @@ enum ProductionLabelBitmapRenderer {
             UIColor.white.setFill()
             ctx.fill(CGRect(x: 0, y: 0, width: width, height: height))
 
-            let left: CGFloat = settings.qrCorner.reservesLeftColumn
-                ? profile.contentPadding + qrReserve
-                : profile.contentPadding
-            let maxTextWidth = CGFloat(width) - left
-                - (settings.qrCorner.reservesRightColumn ? qrReserve : 0)
-                - profile.contentPadding
-
-            let lines = ProductionLabelPrintContent.fittingPrintLines(
+            let lines = ProductionLabelPrintContent.printLines(
                 for: label,
                 settings: settings,
-                restaurantName: restaurantName,
-                maxHeight: CGFloat(height),
-                maxTextWidth: maxTextWidth
+                restaurantName: restaurantName
             )
 
-            var y: CGFloat = profile.contentPadding
+            var y = profile.contentPadding + 2
+            let maxY = CGFloat(height) - profile.contentPadding
             for line in lines {
-                guard y < CGFloat(height) - profile.contentPadding else { break }
                 let font = line.bold
                     ? UIFont.boldSystemFont(ofSize: line.fontSize)
-                    : UIFont.systemFont(ofSize: line.fontSize)
+                    : UIFont.systemFont(ofSize: line.fontSize, weight: .medium)
+                let lineHeight = ceil(font.lineHeight) + profile.lineGap
+                guard y + lineHeight <= maxY else { break }
+
                 let attrs: [NSAttributedString.Key: Any] = [
                     .font: font,
                     .foregroundColor: UIColor.black
                 ]
-                let remainingHeight = CGFloat(height) - y - profile.contentPadding
-                guard remainingHeight > 4 else { break }
-                let rect = CGRect(x: left, y: y, width: maxTextWidth, height: remainingHeight)
-                let bounding = (line.text as NSString).boundingRect(
-                    with: CGSize(width: maxTextWidth, height: remainingHeight),
-                    options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine],
-                    attributes: attrs,
-                    context: nil
-                )
+                let rect = CGRect(x: left, y: y, width: maxTextWidth, height: lineHeight)
                 (line.text as NSString).draw(
                     with: rect,
                     options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine],
                     attributes: attrs,
                     context: nil
                 )
-                y += min(max(bounding.height, font.lineHeight), remainingHeight) + profile.lineGap
+                y += lineHeight
             }
 
-            if settings.showQRCode,
-               let qr = ProductionLabelQRService.image(
-                   from: payload,
-                   dimension: CGFloat(max(
-                       profile.minPrintDots,
-                       LabelQRCodeLayout.printSizeDots(cellSize: cell, payload: payload)
-                   ))
-               ) {
-                LabelQRCodeLayout.drawQR(
-                    qr,
-                    in: cg,
-                    settings: settings,
-                    payload: payload,
-                    labelWidth: CGFloat(width),
-                    labelHeight: CGFloat(height)
-                )
+            if settings.showQRCode, qrSize >= 1,
+               let qr = ProductionLabelQRService.image(from: payload, dimension: qrSize) {
+                // Margine interno: QR non a filo bordo.
+                let edgeInset = max(profile.contentPadding + 10, CGFloat(profile.qrMarginDots + 12))
+                let flushRight = CGFloat(width) - qrSize - edgeInset
+                let qx = max(left + maxTextWidth + textQRGap, flushRight - 18)
+                let qy = max(edgeInset, (CGFloat(height) - qrSize) / 2)
+                UIColor.white.setFill()
+                cg.fill(CGRect(x: qx - 3, y: qy - 3, width: qrSize + 6, height: qrSize + 6))
+                qr.draw(in: CGRect(x: qx, y: qy, width: qrSize, height: qrSize))
             }
         }
 
@@ -123,7 +117,8 @@ enum ProductionLabelBitmapRenderer {
         for y in 0..<height {
             for x in 0..<width {
                 let gray = pixels[y * width + x]
-                if gray < 128 {
+                // CLABEL S1: bit 1 = bianco (non scalda). Invertiamo rispetto allo standard TSPL.
+                if gray >= 128 {
                     let byteIndex = y * widthBytes + (x / 8)
                     let bit = 7 - (x % 8)
                     raster[byteIndex] |= UInt8(1 << bit)
