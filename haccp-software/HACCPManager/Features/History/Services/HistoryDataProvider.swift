@@ -60,11 +60,11 @@ struct GoodsReceivingHistoryProvider: HistoryDataProvider {
                     .init(label: "Range", value: "\(HistoryFormat.temp(receipt.minAllowed)) / \(HistoryFormat.temp(receipt.maxAllowed))"),
                     .init(label: "Esito temperatura", value: receipt.temperatureStatus.label),
                     .init(label: "Checklist HACCP", value: checklist.isEmpty ? "—" : checklist),
-                    .init(label: "Foto", value: HistoryFormat.yesNo(receipt.photoData != nil)),
                     .init(label: "Note", value: HistoryFormat.text(receipt.notes)),
                     .init(label: "Azione correttiva", value: HistoryFormat.text(receipt.correctiveAction))
                 ],
-                hasCriticality: receipt.status != .conforme
+                hasCriticality: receipt.status != .conforme,
+                photoData: receipt.photoData
             )
         }
     }

@@ -184,29 +184,13 @@ struct ProductionLabelsService {
         return d
     }
 
-    func draft(from blast: BlastChillingRecord, modelContext: ModelContext? = nil) -> ProductionLabelDraft {
+    func draft(from blast: BlastChillingRecord) -> ProductionLabelDraft {
         var d = ProductionLabelDraft()
         d.productName = blast.productionNameSnapshot
         d.category = blast.productionCategorySnapshot
-        
-        var lot = blast.lotNumberSnapshot ?? ""
-        var expiry = Calendar.current.date(byAdding: .day, value: 90, to: blast.endedAt ?? blast.startedAt) ?? (blast.endedAt ?? blast.startedAt)
-        
-        if let context = modelContext, let traceId = blast.traceabilityItemId {
-            let descriptor = FetchDescriptor<TraceabilityRecord>(
-                predicate: #Predicate<TraceabilityRecord> { $0.id == traceId }
-            )
-            if let trace = (try? context.fetch(descriptor))?.first {
-                lot = trace.lotCode
-                if let traceExpiry = trace.expiryDate {
-                    expiry = traceExpiry
-                }
-            }
-        }
-
-        d.lotCode = lot
+        d.lotCode = blast.lotNumberSnapshot ?? ""
         d.productionDate = blast.endedAt ?? blast.startedAt
-        d.expiryDate = expiry
+        d.expiryDate = Calendar.current.date(byAdding: .day, value: 90, to: d.productionDate) ?? d.productionDate
         d.temperatureNote = ProcessLabelDetailNote.encode(
             initial: blast.initialTemperature,
             final: blast.finalTemperature,
@@ -221,28 +205,12 @@ struct ProductionLabelsService {
         return d
     }
 
-    func draft(from defrost: DefrostRecord, modelContext: ModelContext? = nil) -> ProductionLabelDraft {
+    func draft(from defrost: DefrostRecord) -> ProductionLabelDraft {
         var d = ProductionLabelDraft()
         d.productName = defrost.productName
-        
-        var lot = defrost.lotNumber ?? ""
-        var expiry = Calendar.current.date(byAdding: .hour, value: 24, to: defrost.endAt ?? defrost.startAt) ?? (defrost.endAt ?? defrost.startAt)
-        
-        if let context = modelContext, let traceId = defrost.traceabilityItemId {
-            let descriptor = FetchDescriptor<TraceabilityRecord>(
-                predicate: #Predicate<TraceabilityRecord> { $0.id == traceId }
-            )
-            if let trace = (try? context.fetch(descriptor))?.first {
-                lot = trace.lotCode
-                if let traceExpiry = trace.expiryDate {
-                    expiry = traceExpiry
-                }
-            }
-        }
-
-        d.lotCode = lot
+        d.lotCode = defrost.lotNumber ?? ""
         d.productionDate = defrost.endAt ?? defrost.startAt
-        d.expiryDate = expiry
+        d.expiryDate = Calendar.current.date(byAdding: .hour, value: 24, to: d.productionDate) ?? d.productionDate
         d.temperatureNote = ProcessLabelDetailNote.encode(
             initial: defrost.initialTemperature,
             final: defrost.finalTemperature,

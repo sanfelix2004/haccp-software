@@ -16,9 +16,19 @@ struct NotificationSettingsView: View {
                     VStack(alignment: .leading, spacing: 14) {
                         notificationToggle("Temperature", keyPath: \.tempAlertsEnabled)
                         notificationToggle("Checklist", keyPath: \.checklistRemindersEnabled)
+                        notificationToggle("Pulizie", keyPath: \.cleaningRemindersEnabled)
                         notificationToggle("Scadenze prodotti", keyPath: \.productExpiryAlertsEnabled)
                         notificationToggle("Backup iCloud", keyPath: \.iCloudBackupAlertsEnabled)
                         notificationToggle("Riepilogo serale", keyPath: \.dailyReportSummaryEnabled)
+
+                        if storage.notifications.dailyReportSummaryEnabled {
+                            Stepper(
+                                "Ora riepilogo: \(storage.notifications.dailySummaryHour):00",
+                                value: $storage.notifications.dailySummaryHour,
+                                in: 17...23
+                            )
+                            .font(theme.typography.subheadline)
+                        }
                     }
                     .padding(.leading, 4)
                 }
@@ -33,14 +43,29 @@ struct NotificationSettingsView: View {
                 .disabled(!storage.notifications.notificationsEnabled)
             }
         }
-        .onChange(of: storage.notifications.notificationsEnabled) { storage.saveAll() }
-        .onChange(of: storage.notifications.tempAlertsEnabled) { storage.saveAll() }
-        .onChange(of: storage.notifications.checklistRemindersEnabled) { storage.saveAll() }
-        .onChange(of: storage.notifications.productExpiryAlertsEnabled) { storage.saveAll() }
-        .onChange(of: storage.notifications.iCloudBackupAlertsEnabled) { storage.saveAll() }
-        .onChange(of: storage.notifications.dailyReportSummaryEnabled) { storage.saveAll() }
+        .onChange(of: storage.notifications.notificationsEnabled) { saveAndResync() }
+        .onChange(of: storage.notifications.tempAlertsEnabled) { saveAndResync() }
+        .onChange(of: storage.notifications.checklistRemindersEnabled) { saveAndResync() }
+        .onChange(of: storage.notifications.cleaningRemindersEnabled) { saveAndResync() }
+        .onChange(of: storage.notifications.productExpiryAlertsEnabled) { saveAndResync() }
+        .onChange(of: storage.notifications.iCloudBackupAlertsEnabled) { saveAndResync() }
+        .onChange(of: storage.notifications.dailyReportSummaryEnabled) { saveAndResync() }
+        .onChange(of: storage.notifications.dailySummaryHour) { saveAndResync() }
         .onChange(of: storage.notifications.soundsEnabled) { storage.saveAll() }
         .onChange(of: storage.notifications.hapticsEnabled) { storage.saveAll() }
+    }
+
+    private func saveAndResync() {
+        storage.saveAll()
+        HACCPLocalNotificationService.syncDailySummary()
+        if !storage.notifications.notificationsEnabled
+            || !storage.notifications.cleaningRemindersEnabled {
+            HACCPLocalNotificationService.syncCleaningReminders(pendingCount: 0)
+        }
+        if !storage.notifications.notificationsEnabled
+            || !storage.notifications.productExpiryAlertsEnabled {
+            HACCPLocalNotificationService.syncProductExpiryAlerts(records: [], thresholdDays: 0)
+        }
     }
 
     @ViewBuilder

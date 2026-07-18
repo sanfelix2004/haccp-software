@@ -10,8 +10,8 @@ enum LegalConstants {
     static let dataController = "Romanazzi IT Solutions"
     static let registeredOffice = "Italia" // Completare con indirizzo sede legale
     static let vatNumber = "—" // Completare con P.IVA / C.F.
-    static let supportEmail = "supporto@romanazzi.it"
-    static let privacyEmail = "privacy@romanazzi.it"
+    static let supportEmail = "romanazzi.sanfelice004@gmail.com"
+    static let privacyEmail = "sanfelicefrancesco004@gmail.com"
     static let website = "https://romanazzi.it" // Completare se disponibile
     static let lastUpdated = "18 giugno 2026"
     static let governingLaw = "Repubblica Italiana"

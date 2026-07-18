@@ -139,6 +139,10 @@ struct HACCPManagerApp: App {
                     await DataArchiveService.runIfNeeded(modelContainer: container, restaurantId: restaurantId)
                 }
                 ClabelPrinterManager.shared.reconnectIfSaved()
+                HACCPLocalNotificationService.syncScheduledAlerts(
+                    modelContext: context,
+                    restaurantId: restaurantId
+                )
                 await tickMonthlyArchive(modelContext: context)
             }
         }

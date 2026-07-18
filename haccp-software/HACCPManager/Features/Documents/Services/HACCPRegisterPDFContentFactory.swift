@@ -320,6 +320,7 @@ enum HACCPRegisterPDFContentFactory {
                 .text(r.lot),
                 .text(r.reason),
                 .text(r.correctiveAction),
+                .image(r.photoData.flatMap { HACCPPDFImageCompression.compressedJPEGData(from: $0) }),
                 .text(r.stato),
                 .text(r.risoltaDa),
                 .text(r.risoltaIl),
@@ -329,7 +330,7 @@ enum HACCPRegisterPDFContentFactory {
             ]
         }
         let headers = [
-            "Prodotto", "Lotto", "Descrizione NC", "Azione correttiva",
+            "Prodotto", "Lotto", "Descrizione NC", "Azione correttiva", "Foto",
             "Stato pratica", "Chiusa da", "Data chiusura", "Data rilevazione", "Operatore", "Modulo origine"
         ]
         return [

@@ -1,7 +1,6 @@
 import Foundation
 import SwiftData
 import UIKit
-import UserNotifications
 
 struct TemperatureReportFile: Identifiable {
     let id = UUID()
@@ -316,14 +315,9 @@ final class TemperatureReportService {
     }
 
     private func scheduleReadyNotification() {
-        let content = UNMutableNotificationContent()
-        content.title = "Report pronto"
-        content.body = "Il report temperature e stato generato."
-        content.sound = .default
-
-        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 1, repeats: false)
-        let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: trigger)
-        UNUserNotificationCenter.current().add(request)
+        HACCPLocalNotificationService.notifyReportReady(
+            body: "Il report temperature è stato generato."
+        )
     }
 
     private func cleanupOldExportFiles() throws {

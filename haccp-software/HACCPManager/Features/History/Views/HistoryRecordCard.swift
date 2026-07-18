@@ -66,6 +66,12 @@ struct HistoryRecordCard: View, Equatable {
             } else if isExpanded, !entry.details.isEmpty {
                 detailsGrid
                     .transition(.opacity.combined(with: .move(edge: .top)))
+
+                if let photo = entry.photoData {
+                    photoCard(photo)
+                        .padding(.top, 4)
+                        .transition(.opacity.combined(with: .move(edge: .top)))
+                }
             }
         }
         .contentShape(Rectangle())
@@ -262,6 +268,27 @@ struct HistoryRecordCard: View, Equatable {
                 .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
             }
         }
+    }
+
+    private func photoCard(_ data: Data) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("DOCUMENTAZIONE FOTOGRAFICA")
+                .font(.system(size: 9, weight: .bold))
+                .foregroundStyle(theme.colorTextSecondary)
+                .tracking(0.4)
+
+            if let uiImage = UIImage(data: data) {
+                Image(uiImage: uiImage)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+                    .frame(height: 160)
+                    .frame(maxWidth: .infinity)
+                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            }
+        }
+        .padding(10)
+        .background(theme.colorSurface)
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 
     private var cardBackground: Color {

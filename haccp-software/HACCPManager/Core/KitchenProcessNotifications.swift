@@ -1,12 +1,12 @@
 //
 //  KitchenProcessNotifications.swift
-//  Sincronizza storico globale e schermate modulo dopo salvataggio.
+//  Sincronizza Avvisi, Grafici, Storia e moduli dopo salvataggi operativi.
 //
 
 import Foundation
 
 extension Notification.Name {
-    /// Decongelamento o abbattimento creati, completati o annullati.
+    /// Qualsiasi registrazione/criticità HACCP creata, aggiornata o risolta.
     static let kitchenProcessRecordsDidChange = Notification.Name("HACCP.kitchenProcessRecordsDidChange")
 }
 

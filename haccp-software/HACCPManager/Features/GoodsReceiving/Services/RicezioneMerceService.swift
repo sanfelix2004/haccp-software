@@ -83,6 +83,10 @@ struct RicezioneMerceService {
         )
         modelContext.insert(receipt)
 
+        if hasAnomaly, let firstPhoto = anomalyPhotos.first {
+            receipt.photoData = StoredImageCompression.preparedForStorage(firstPhoto)
+        }
+
         if hasAnomaly, let azione = anomalyAction {
             receipt.notes = anomalyDescription
             receipt.correctiveAction = azione.label

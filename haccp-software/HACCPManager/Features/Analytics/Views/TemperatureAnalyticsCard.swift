@@ -6,7 +6,6 @@ struct TemperatureAnalyticsCard: View {
     let kpis: [AnalyticsKPI]
     let devices: [AnalyticsTemperatureDeviceOption]
     @Binding var selectedDeviceId: UUID?
-    @Binding var selectedPeriod: AnalyticsPeriod
 
     var body: some View {
         DashboardCardView(title: "Andamento temperature") {
@@ -38,7 +37,13 @@ struct TemperatureAnalyticsCard: View {
                             .foregroundStyle(point.isOutOfRange ? .red : .green)
                             .symbolSize(point.isOutOfRange ? 80 : 35)
                         }
-                        if let first = points.first {
+                        // Limiti solo con dispositivo singolo: con «Tutti» i range possono differire.
+                        if selectedDeviceId != nil,
+                           let first = points.first,
+                           points.allSatisfy({
+                               abs($0.minAllowed - first.minAllowed) < 0.01
+                                   && abs($0.maxAllowed - first.maxAllowed) < 0.01
+                           }) {
                             RuleMark(y: .value("Min", first.minAllowed))
                                 .foregroundStyle(.yellow.opacity(0.8))
                                 .lineStyle(StrokeStyle(lineWidth: 1, dash: [6, 4]))

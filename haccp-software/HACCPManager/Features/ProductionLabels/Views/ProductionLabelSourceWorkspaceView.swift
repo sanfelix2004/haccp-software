@@ -325,7 +325,7 @@ struct ProductionLabelSourceWorkspaceView: View {
             selectedLabelId = existing.id
             return
         }
-        newLabelDraft = labelService.draft(from: item, modelContext: modelContext)
+        newLabelDraft = labelService.draft(from: item)
     }
 
     private func handleLabelSaved(_ record: ProductionLabelRecord, shouldPrint: Bool) {
@@ -355,11 +355,11 @@ struct ProductionLabelSourceWorkspaceView: View {
 }
 
 private extension ProductionLabelsService {
-    func draft(from item: ProductionLabelSourceItem, modelContext: ModelContext) -> ProductionLabelDraft {
+    func draft(from item: ProductionLabelSourceItem) -> ProductionLabelDraft {
         switch item {
         case .traceability(let record): return draft(from: record)
-        case .blast(let record): return draft(from: record, modelContext: modelContext)
-        case .defrost(let record): return draft(from: record, modelContext: modelContext)
+        case .blast(let record): return draft(from: record)
+        case .defrost(let record): return draft(from: record)
         }
     }
 }

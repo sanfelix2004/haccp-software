@@ -23,6 +23,8 @@ struct DefrostView: View {
     @State private var showNewSheet = false
     @State private var recordIdToComplete: UUID?
     @State private var recordPendingDelete: DefrostRecord?
+    @State private var pendingSubject: KitchenProcessSubject?
+    @State private var showStartProcessSheet = false
     @State private var showMasterAuthDelete = false
     @State private var errorMessage: String?
     @State private var labelDraft: ProductionLabelDraft?
@@ -86,6 +88,9 @@ struct DefrostView: View {
         .sheet(isPresented: $showNewSheet) {
             newDefrostSheet
         }
+        .sheet(isPresented: $showStartProcessSheet) {
+            startDefrostProcessSheet
+        }
         .sheet(isPresented: completeSheetPresented) {
             completeDefrostSheet
         }
@@ -143,11 +148,34 @@ struct DefrostView: View {
                 user: user,
                 traceabilityRecords: dataStore.traceabilityRecords,
                 incomingFoodTemplates: scopedTemplates,
-                onSaved: {
+                onContinue: { subject in
                     showNewSheet = false
-                    reload()
+                    pendingSubject = subject
+                    showStartProcessSheet = true
                 },
                 onCancel: { showNewSheet = false }
+            )
+        }
+    }
+
+    @ViewBuilder
+    private var startDefrostProcessSheet: some View {
+        if let subject = pendingSubject,
+           let rid = appState.activeRestaurantId,
+           let user = currentUser {
+            DefrostStartProcessSheet(
+                subject: subject,
+                restaurantId: rid,
+                user: user,
+                onSaved: {
+                    showStartProcessSheet = false
+                    pendingSubject = nil
+                    reload()
+                },
+                onCancel: {
+                    showStartProcessSheet = false
+                    pendingSubject = nil
+                }
             )
         }
     }

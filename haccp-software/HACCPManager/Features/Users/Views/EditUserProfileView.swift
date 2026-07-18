@@ -72,7 +72,7 @@ struct EditUserProfileView: View {
                     }
                     
                     // Manage Role (Master Only, and only for others)
-                    if currentSessionUser?.role == .master && user.id != appState.currentUserId {
+                    if currentSessionUser.permissions.can(.manageUsers) && user.id != appState.currentUserId {
                         Section(header: Text("Gestione Amministrativa (MASTER)")) {
                             Picker("Ruolo Collaboratore", selection: $tempRole) {
                                 ForEach(UserRole.allCases.filter { $0 != .master }, id: \.self) { role in
@@ -81,6 +81,10 @@ struct EditUserProfileView: View {
                             }
                             .pickerStyle(.menu)
                             .foregroundStyle(ThemeManager.shared.colorTextPrimary)
+
+                            Text(tempRole.roleSummary)
+                                .font(.caption)
+                                .foregroundStyle(ThemeManager.shared.colorTextSecondary)
                             
                             Button("Resetta PIN a '0000'") {
                                 showResetPin = true
@@ -145,7 +149,7 @@ struct EditUserProfileView: View {
     }
 
     private var requiresMasterAuthorization: Bool {
-        currentSessionUser?.role == .master && user.id != appState.currentUserId
+        currentSessionUser.permissions.can(.manageUsers) && user.id != appState.currentUserId
     }
 
     private var masterOperationForCurrentChanges: MasterAuthorizationService.Operation {

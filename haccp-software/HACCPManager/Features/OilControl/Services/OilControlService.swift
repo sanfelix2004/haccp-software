@@ -152,6 +152,7 @@ struct OilControlService {
         }
 
         try modelContext.save()
+        KitchenProcessNotifications.postRecordsDidChange()
         return record
     }
 
@@ -177,6 +178,7 @@ struct OilControlService {
         alert.resolvedByUserId = user.id
         alert.resolvedByNameSnapshot = user.name
         try modelContext.save()
+        KitchenProcessNotifications.postRecordsDidChange()
     }
 
     private func normalized(_ value: String) -> String {

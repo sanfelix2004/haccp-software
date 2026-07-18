@@ -11,7 +11,6 @@ struct ProductionSelectionView: View {
     @Query private var blastRecords: [BlastChillingRecord]
     @StateObject private var vm = ProductionSelectionViewModel()
     @State private var masterAuth = MasterAuthCoordinator()
-    @State private var showMasterAuthForEdit = false
     @State private var showMasterAuthForDelete = false
     @State private var productionPendingDeletion: Production?
     private let service = ProductionLibraryService()
@@ -101,8 +100,12 @@ struct ProductionSelectionView: View {
                             vm.errorMessage = "Seleziona una sola produzione da modificare."
                             return
                         }
-                        vm.productionToEdit = selected
-                        showMasterAuthForEdit = true
+                        masterAuth.request(permission: .manageProductionLibrary, permissions: permissions) {
+                            vm.productionToEdit = selected
+                            vm.newProductionName = selected.name
+                            vm.newProductionCategoryId = selected.categoryId
+                            vm.showEditSheet = true
+                        }
                     }
                         .buttonStyle(.bordered)
                         .tint(ThemeManager.shared.colorPrimary)
@@ -112,8 +115,9 @@ struct ProductionSelectionView: View {
                             vm.errorMessage = "Seleziona una sola produzione da eliminare."
                             return
                         }
-                        productionPendingDeletion = selected
-                        showMasterAuthForDelete = true
+                        masterAuth.request(permission: .manageProductionLibrary, permissions: permissions) {
+                            performDeleteProduction(selected)
+                        }
                     }
                     .buttonStyle(.bordered)
                     .disabled(selectedSingleProduction == nil)
@@ -147,19 +151,6 @@ struct ProductionSelectionView: View {
             .sheet(isPresented: $vm.showEditSheet) {
                 if let production = vm.productionToEdit {
                     productionEditor(title: "Modifica produzione", production: production)
-                }
-            }
-            .fullScreenCover(isPresented: $showMasterAuthForEdit) {
-                masterOverlay {
-                    showMasterAuthForEdit = false
-                    if let production = vm.productionToEdit {
-                        vm.newProductionName = production.name
-                        vm.newProductionCategoryId = production.categoryId
-                        vm.showEditSheet = true
-                    }
-                } onCancel: {
-                    showMasterAuthForEdit = false
-                    vm.productionToEdit = nil
                 }
             }
             .fullScreenCover(isPresented: $showMasterAuthForDelete) {
@@ -200,7 +191,7 @@ struct ProductionSelectionView: View {
                 }
                 if production != nil {
                     Section {
-                        Text("La modifica è riservata al MASTER. La produzione resta condivisa tra Abbattimento e Tracciabilità.")
+                        Text("La produzione resta condivisa tra Abbattimento e Tracciabilità.")
                             .font(.caption)
                     }
                 }
