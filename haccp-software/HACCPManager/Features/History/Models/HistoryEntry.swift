@@ -31,6 +31,7 @@ struct HistoryEntry: Identifiable, Equatable {
     var traceabilityIngredients: [HistoryTraceabilityIngredient]? = nil
     /// Lotto scaduto in attesa di chiusura operatore (usato/scartato).
     var pendingTraceabilityRecordId: UUID? = nil
+    var photoData: Data? = nil
 
     static func == (lhs: HistoryEntry, rhs: HistoryEntry) -> Bool {
         lhs.id == rhs.id
@@ -38,6 +39,7 @@ struct HistoryEntry: Identifiable, Equatable {
             && lhs.hasCriticality == rhs.hasCriticality
             && lhs.traceabilityIngredients == rhs.traceabilityIngredients
             && lhs.pendingTraceabilityRecordId == rhs.pendingTraceabilityRecordId
+            && lhs.photoData == rhs.photoData
             && lhs.details.count == rhs.details.count
     }
 

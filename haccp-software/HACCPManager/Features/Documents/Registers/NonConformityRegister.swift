@@ -13,6 +13,7 @@ enum NonConformityRegister {
         let stato: String
         let risoltaDa: String
         let risoltaIl: String
+        let photoData: Data?
     }
 
     private static func receiptIsNonConformityCase(_ status: GoodsReceiptStatus) -> Bool {
@@ -29,7 +30,6 @@ enum NonConformityRegister {
         images: [ProductImage],
         df: DateFormatter
     ) -> [Row] {
-        _ = images
         var rows: [Row] = []
 
         for r in receipts where interval.contains(r.receivedAt) {
@@ -44,6 +44,8 @@ enum NonConformityRegister {
             let risoltaIl = resolvedAt.map { df.string(from: $0) } ?? "—"
             let risoltaDa = (r.nonComplianceResolvedByNameSnapshot ?? "").isEmpty ? "—" : (r.nonComplianceResolvedByNameSnapshot ?? "")
 
+            let photo = r.photoData ?? images.first(where: { $0.goodsReceiptId == r.id })?.imageData
+
             rows.append(Row(
                 product: r.productNameSnapshot,
                 lot: r.lotNumber ?? "—",
@@ -54,7 +56,8 @@ enum NonConformityRegister {
                 source: "Ricezione merci",
                 stato: stato,
                 risoltaDa: risoltaDa,
-                risoltaIl: risoltaIl
+                risoltaIl: risoltaIl,
+                photoData: photo
             ))
         }
 
@@ -81,6 +84,8 @@ enum NonConformityRegister {
             let risoltaIl = resolvedAt.map { df.string(from: $0) } ?? "—"
             let risoltaDa = (t.nonComplianceResolvedByNameSnapshot ?? "").isEmpty ? "—" : (t.nonComplianceResolvedByNameSnapshot ?? "")
 
+            let photo = images.first(where: { $0.receivedItemId == t.id })?.imageData
+
             rows.append(Row(
                 product: t.productName,
                 lot: t.lotCode.isEmpty ? "—" : t.lotCode,
@@ -91,7 +96,8 @@ enum NonConformityRegister {
                 source: "Tracciabilità",
                 stato: stato,
                 risoltaDa: risoltaDa,
-                risoltaIl: risoltaIl
+                risoltaIl: risoltaIl,
+                photoData: photo
             ))
         }
 

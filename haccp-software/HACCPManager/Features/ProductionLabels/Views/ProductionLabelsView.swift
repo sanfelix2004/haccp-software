@@ -23,12 +23,15 @@ struct ProductionLabelsView: View {
     @State private var showScanner = false
     @State private var scannedLabelData: ProductionLabelScanData?
     @State private var errorMessage: String?
+    @State private var masterAuth = MasterAuthCoordinator()
 
     private let vm = ProductionLabelsViewModel()
 
     private var currentUser: LocalUser? {
         users.first { $0.id == appState.currentUserId }
     }
+
+    private var permissions: UserPermissions { currentUser.permissions }
 
     private var activeRestaurant: Restaurant? {
         guard let rid = appState.activeRestaurantId else { return nil }
@@ -56,7 +59,9 @@ struct ProductionLabelsView: View {
             if appState.activeRestaurantId != nil, ProductionLabelScannerSupport.isAvailable {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
-                        showScanner = true
+                        masterAuth.request(permission: .executeRecords, permissions: permissions) {
+                            showScanner = true
+                        }
                     } label: {
                         Image(systemName: "qrcode.viewfinder")
                     }
@@ -123,6 +128,7 @@ struct ProductionLabelsView: View {
         } message: {
             Text(errorMessage ?? "")
         }
+        .masterAuthCover(coordinator: masterAuth, master: users.first(where: { $0.role == .master }))
     }
 
     private var mainContent: some View {
@@ -144,7 +150,9 @@ struct ProductionLabelsView: View {
                 if ProductionLabelScannerSupport.isAvailable {
                     DashboardCardView(title: "Scansione", subtitle: "Solo da iPad — leggi un QR già stampato") {
                         SecondaryButton(title: "Scansiona QR etichetta", icon: "qrcode.viewfinder") {
-                            showScanner = true
+                            masterAuth.request(permission: .executeRecords, permissions: permissions) {
+                                showScanner = true
+                            }
                         }
                     }
                 }
@@ -156,7 +164,9 @@ struct ProductionLabelsView: View {
                     ) {
                         ForEach(ProductionLabelLinkedSource.allCases) { source in
                             Button {
-                                pendingWorkspaceSource = source
+                                masterAuth.request(permission: .executeRecords, permissions: permissions) {
+                                    pendingWorkspaceSource = source
+                                }
                             } label: {
                                 sourceCard(source)
                             }

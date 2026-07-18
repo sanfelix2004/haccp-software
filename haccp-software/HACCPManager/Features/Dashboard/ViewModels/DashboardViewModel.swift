@@ -19,7 +19,6 @@ final class DashboardViewModel: ObservableObject {
         .init(name: "Abbattimento", description: "Flussi e registrazioni abbattitore", icon: "wind.snow", state: .configure, isEnabled: false),
         .init(name: "Report", description: "Esportazioni e storico conformita", icon: "doc.text.fill", state: .open, isEnabled: true)
     ]
-    let chartTypes: [DashboardChartType] = DashboardChartType.allCases
 
     private let provider: DashboardDataProviding
     private var timer: Timer?

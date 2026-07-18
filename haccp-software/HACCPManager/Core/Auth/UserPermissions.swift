@@ -1,24 +1,14 @@
 import Foundation
 
-// MARK: - Collaboratori esterni (non MASTER)
+// MARK: - Collaboratori (non MASTER)
 //
-// Cucina, sala, operatore HACCP: lavoro operativo completo senza PIN per ogni azione.
+// Ruoli operativi differenziati:
+// • Cucina — moduli cucina (temp, pulizie, abbattimento, defrost, olio, etichette, catalogo, checklist, tracciabilità, scadenze)
+// • Sala — ricezione, alimenti in ingresso, scadenze, checklist (+ lettura dashboard/avvisi/storia/grafici)
+// • Operatore HACCP — tutti i moduli operativi
+//
 // Riservato a MASTER / titolare (e in parte manager): documenti PDF, utenti, sicurezza,
 // backup dati, cambio ristorante, cancellazione storico pulizie.
-//
-// ┌─────────────────────────┬──────────────────────────────────┬────────────────────────────────────────┐
-// │ Funzionalità            │ Collaboratore PUÒ                │ Solo MASTER / titolare (o PIN)         │
-// ├─────────────────────────┼──────────────────────────────────┼────────────────────────────────────────┤
-// │ Tutti i moduli HACCP    │ Usare e configurare (cataloghi,  │ —                                      │
-// │                         │ checklist, fornitori, frighi…)     │                                        │
-// │ Registrazioni           │ Creare, aggiornare, eliminare    │ —                                      │
-// │ Dashboard / Avvisi      │ Consultare e risolvere             │ —                                      │
-// │ Storia / Grafici        │ Consultare                         │ —                                      │
-// │ Impostazioni            │ Profilo, aspetto, notifiche      │ Sicurezza, ristorante, backup,       │
-// │                         │                                  │ parametri HACCP, stampanti             │
-// │ Documenti PDF           │ —                                │ Archivio mensile e export              │
-// │ Utenti                  │ —                                │ Solo MASTER                            │
-// └─────────────────────────┴──────────────────────────────────┴────────────────────────────────────────┘
 //
 // VIEWER: sola lettura (nessuna registrazione senza PIN MASTER).
 
@@ -56,7 +46,7 @@ struct UserPermissions: Equatable {
     var isManagement: Bool { role == .master || role == .boss || role == .manager }
     /// Collaboratore operativo in cucina/sala (non titolare, non sola lettura).
     var isExternalCollaborator: Bool {
-        !isMaster && !isViewer && role != .boss && role != .manager
+        role == .cucina || role == .cameriere || role == .haccpOperator
     }
 
     // MARK: - Capacità dirette (senza PIN MASTER)
@@ -78,10 +68,28 @@ struct UserPermissions: Equatable {
         case .manageSecuritySettings:
             return role == .master
 
-        case .manageTemperatureDevices, .manageChecklistTemplates,
-             .manageCleaningConfiguration, .manageSuppliers, .manageProductionLibrary,
-             .manageIncomingFoodCatalog, .manageOilControlPoints,
-             .deleteOperationalRecords, .deleteTraceabilityRecords:
+        case .manageTemperatureDevices:
+            return canConfigureKitchenInfrastructure
+
+        case .manageChecklistTemplates:
+            return canConfigureChecklists
+
+        case .manageCleaningConfiguration:
+            return canConfigureKitchenInfrastructure
+
+        case .manageOilControlPoints:
+            return canConfigureKitchenInfrastructure
+
+        case .manageSuppliers:
+            return canManageGoodsSide
+
+        case .manageProductionLibrary:
+            return canConfigureKitchenInfrastructure
+
+        case .manageIncomingFoodCatalog:
+            return canManageGoodsSide
+
+        case .deleteOperationalRecords, .deleteTraceabilityRecords:
             return role != .viewer
 
         case .manageDocuments:
@@ -107,10 +115,10 @@ struct UserPermissions: Equatable {
             return role == .master || role == .boss
         case .users:
             return false
-        case .traceability, .goodsReceiving, .expiryControl,
-             .fridges, .cleaningControl, .blastChilling, .productionCatalog,
-             .incomingFoodCatalog, .defrost, .oilControl, .productionLabels, .checklist:
-            return role != .viewer
+        case .traceability, .fridges, .cleaningControl, .blastChilling,
+             .expiryControl, .defrost, .oilControl, .productionLabels,
+             .goodsReceiving, .checklist, .productionCatalog, .incomingFoodCatalog:
+            return operationalModules.contains(item)
         }
     }
 
@@ -134,9 +142,14 @@ struct UserPermissions: Equatable {
     // MARK: - Risoluzione azione (diretta vs PIN MASTER)
 
     /// MASTER → sempre diretto. Senza permesso → PIN MASTER (sessione temporanea).
+    /// Con «Protezione MASTER» attiva, le eliminazioni richiedono PIN anche ai collaboratori.
     func resolve(_ permission: AppPermission) -> PermissionAuthorization {
         if isMaster { return .allowed }
         if PrivilegedSession.shared.isElevated(permission) { return .allowed }
+
+        if requiresMasterPinForCriticalAction(permission) {
+            return .requiresMaster(permission.masterOperation)
+        }
 
         guard can(permission) else {
             return .requiresMaster(permission.masterOperation)
@@ -161,6 +174,77 @@ struct UserPermissions: Equatable {
             return canAccessSettingsSection(section)
         }
     }
+
+    // MARK: - Profili operativi
+
+    private var operationalModules: Set<SidebarItem> {
+        switch role {
+        case .master, .boss, .manager, .haccpOperator:
+            return Self.fullOperationalModules
+        case .cucina:
+            return Self.kitchenModules
+        case .cameriere:
+            return Self.salaModules
+        case .viewer:
+            return []
+        }
+    }
+
+    private var canConfigureKitchenInfrastructure: Bool {
+        switch role {
+        case .master, .boss, .manager, .haccpOperator, .cucina:
+            return true
+        case .cameriere, .viewer:
+            return false
+        }
+    }
+
+    private var canConfigureChecklists: Bool {
+        switch role {
+        case .master, .boss, .manager, .haccpOperator, .cucina, .cameriere:
+            return true
+        case .viewer:
+            return false
+        }
+    }
+
+    private var canManageGoodsSide: Bool {
+        switch role {
+        case .master, .boss, .manager, .haccpOperator, .cameriere:
+            return true
+        case .cucina, .viewer:
+            return false
+        }
+    }
+
+    private func requiresMasterPinForCriticalAction(_ permission: AppPermission) -> Bool {
+        guard SettingsStorageService.shared.security.requireMasterAuthForCriticalActions else {
+            return false
+        }
+        guard isExternalCollaborator else { return false }
+        switch permission {
+        case .deleteOperationalRecords, .deleteTraceabilityRecords, .clearCleaningHistory, .manageDataAndBackup:
+            return true
+        default:
+            return false
+        }
+    }
+
+    private static let fullOperationalModules: Set<SidebarItem> = [
+        .traceability, .fridges, .cleaningControl, .blastChilling,
+        .expiryControl, .defrost, .oilControl, .productionLabels,
+        .goodsReceiving, .checklist, .productionCatalog, .incomingFoodCatalog
+    ]
+
+    private static let kitchenModules: Set<SidebarItem> = [
+        .traceability, .fridges, .cleaningControl, .blastChilling,
+        .expiryControl, .defrost, .oilControl, .productionLabels,
+        .checklist, .productionCatalog
+    ]
+
+    private static let salaModules: Set<SidebarItem> = [
+        .goodsReceiving, .incomingFoodCatalog, .expiryControl, .checklist
+    ]
 }
 
 extension UserRole {
@@ -173,6 +257,19 @@ extension UserRole {
         case .cameriere: return "Sala"
         case .haccpOperator: return "Operatore HACCP"
         case .viewer: return "Sola lettura"
+        }
+    }
+
+    /// Descrizione breve per UI creazione/modifica collaboratore.
+    var roleSummary: String {
+        switch self {
+        case .master: return "Accesso completo e gestione utenti"
+        case .boss: return "Gestione attività, documenti e backup"
+        case .manager: return "Parametri HACCP e stampanti"
+        case .cucina: return "Moduli cucina: temperature, pulizie, processi"
+        case .cameriere: return "Ricezione merci, scadenze e checklist"
+        case .haccpOperator: return "Tutti i controlli operativi HACCP"
+        case .viewer: return "Solo consultazione"
         }
     }
 

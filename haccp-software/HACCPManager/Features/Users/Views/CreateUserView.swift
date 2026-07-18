@@ -81,10 +81,16 @@ struct CreateUserView: View {
                                             Text(r.displayName).tag(r)
                                         }
                                     }
-                                    .pickerStyle(.segmented)
-                                    .padding(4)
+                                    .pickerStyle(.menu)
+                                    .padding(12)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
                                     .background(ThemeManager.shared.colorSurface)
                                     .cornerRadius(12)
+
+                                    Text(role.roleSummary)
+                                        .font(.caption)
+                                        .foregroundStyle(ThemeManager.shared.colorTextSecondary)
+                                        .padding(.horizontal, 4)
                                 }
                             }
                             

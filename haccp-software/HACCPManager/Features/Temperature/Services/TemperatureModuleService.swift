@@ -52,6 +52,11 @@ final class TemperatureModuleService {
                 message: validation.message
             )
             modelContext.insert(alert)
+            HACCPLocalNotificationService.notifyTemperatureAlert(
+                deviceName: device.name,
+                message: validation.message,
+                recordId: record.id
+            )
         }
 
         log(
@@ -64,6 +69,7 @@ final class TemperatureModuleService {
         )
 
         try modelContext.save()
+        KitchenProcessNotifications.postRecordsDidChange()
         return record
     }
 
@@ -84,6 +90,7 @@ final class TemperatureModuleService {
             modelContext: modelContext
         )
         try modelContext.save()
+        KitchenProcessNotifications.postRecordsDidChange()
     }
 
     func deleteDevice(

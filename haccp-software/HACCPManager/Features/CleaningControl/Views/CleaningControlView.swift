@@ -645,6 +645,12 @@ struct CleaningControlView: View {
                     record.updatedByNameSnapshot = user.name
                     createOrUpdateCriticality(for: record, by: user, note: note, action: action)
                     try? modelContext.save()
+                    HACCPLocalNotificationService.notifyCleaningCriticality(
+                        areaName: record.areaName,
+                        taskName: record.taskName,
+                        recordId: record.id
+                    )
+                    KitchenProcessNotifications.postRecordsDidChange()
                     if let task = scopedTasks.first(where: { $0.id == record.taskId }) {
                         syncCleaningToChecklistEngine(taskId: task.id, record: record, outcome: .nonPulito)
                     }

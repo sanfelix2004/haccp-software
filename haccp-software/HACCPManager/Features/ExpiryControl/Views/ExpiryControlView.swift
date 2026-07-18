@@ -184,6 +184,7 @@ struct ExpiryControlView: View {
     @State private var withdrawRecord: TraceabilityRecord?
     @State private var recordPendingArchive: TraceabilityRecord?
     @State private var showLoginRequiredAlert = false
+    @State private var masterAuth = MasterAuthCoordinator()
 
     private let expiryService = TraceabilityExpiryService()
     private let archiveService = ExpiryArchiveService()
@@ -308,13 +309,17 @@ struct ExpiryControlView: View {
         users.first(where: { $0.id == appState.currentUserId })
     }
 
+    private var permissions: UserPermissions { currentUser.permissions }
+
     private func presentWithdraw(for record: TraceabilityRecord) {
         guard record.canBeWithdrawn else { return }
         guard currentUser != nil else {
             showLoginRequiredAlert = true
             return
         }
-        withdrawRecord = record
+        masterAuth.request(permission: .executeRecords, permissions: permissions) {
+            withdrawRecord = record
+        }
     }
 
     private func presentArchive(for record: TraceabilityRecord) {
@@ -322,7 +327,9 @@ struct ExpiryControlView: View {
             showLoginRequiredAlert = true
             return
         }
-        recordPendingArchive = record
+        masterAuth.request(permission: .executeRecords, permissions: permissions) {
+            recordPendingArchive = record
+        }
     }
 
     private func confirmArchive() {
@@ -331,6 +338,7 @@ struct ExpiryControlView: View {
             try archiveService.archive(record: record, user: user, modelContext: modelContext)
             recordPendingArchive = nil
             HapticManager.shared.notification(.success)
+            KitchenProcessNotifications.postRecordsDidChange()
         } catch {
             recordPendingArchive = nil
         }
@@ -416,7 +424,10 @@ struct ExpiryControlView: View {
                 TraceabilityWithdrawSheet(
                     record: record,
                     user: user,
-                    onSaved: { withdrawRecord = nil },
+                    onSaved: {
+                        withdrawRecord = nil
+                        KitchenProcessNotifications.postRecordsDidChange()
+                    },
                     onCancel: { withdrawRecord = nil }
                 )
             } else {
@@ -449,6 +460,7 @@ struct ExpiryControlView: View {
                      : "Confermi che «\(record.productName)» è stato consumato o venduto? Resta nello storico HACCP.")
             }
         }
+        .masterAuthCover(coordinator: masterAuth, master: users.first(where: { $0.role == .master }))
         .task(id: appState.activeRestaurantId) {
             guard let rid = appState.activeRestaurantId else { return }
             await Task.yield()

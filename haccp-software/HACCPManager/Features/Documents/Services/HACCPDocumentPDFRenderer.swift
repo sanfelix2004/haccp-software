@@ -456,14 +456,11 @@ enum HACCPDocumentPDFRenderer {
                     )
                 case .image(let data):
                     if let data, let image = UIImage(data: data) {
-                        let maxSide: CGFloat = 44
-                        let aspect = image.size.width / max(image.size.height, 1)
-                        var iw = maxSide
-                        var ih = maxSide / max(aspect, 0.01)
-                        if ih > maxSide { ih = maxSide; iw = ih * aspect }
-                        let ix = x + (w - iw) / 2
-                        let iy = flow.y + (rowH - ih) / 2
-                        image.draw(in: CGRect(x: ix, y: iy, width: iw, height: ih))
+                        let size: CGFloat = 44
+                        let cropped = cropToSquare(image)
+                        let ix = x + (w - size) / 2
+                        let iy = flow.y + (rowH - size) / 2
+                        cropped.draw(in: CGRect(x: ix, y: iy, width: size, height: size))
                     } else {
                         (HACCPRegisterCopy.notAvailable as NSString).draw(
                             at: CGPoint(x: x + cellPad, y: flow.y + cellPad),
@@ -554,4 +551,14 @@ private extension Array {
         guard indices.contains(index) else { return nil }
         return self[index]
     }
+}
+
+private func cropToSquare(_ image: UIImage) -> UIImage {
+    guard let cgImage = image.cgImage else { return image }
+    let side = min(cgImage.width, cgImage.height)
+    let x = (cgImage.width - side) / 2
+    let y = (cgImage.height - side) / 2
+    let cropRect = CGRect(x: x, y: y, width: side, height: side)
+    guard let croppedCgImage = cgImage.cropping(to: cropRect) else { return image }
+    return UIImage(cgImage: croppedCgImage, scale: image.scale, orientation: image.imageOrientation)
 }

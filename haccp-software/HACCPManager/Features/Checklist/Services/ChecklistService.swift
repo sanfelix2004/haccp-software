@@ -733,6 +733,7 @@ final class ChecklistService {
             modelContext: modelContext
         )
         try modelContext.save()
+        KitchenProcessNotifications.postRecordsDidChange()
     }
 
     func archiveRun(_ run: ChecklistRun, user: LocalUser, restaurantId: UUID, modelContext: ModelContext) throws {
@@ -935,6 +936,7 @@ final class ChecklistService {
         let runs = ((try? modelContext.fetch(FetchDescriptor<ChecklistRun>())) ?? [])
             .filter { $0.restaurantId == restaurantId && !$0.isArchived }
         notificationService.syncNotifications(for: runs, now: now)
+        KitchenProcessNotifications.postRecordsDidChange()
     }
 
     private func dueDateForTemplateCycle(template: ChecklistTemplate, now: Date) -> Date? {

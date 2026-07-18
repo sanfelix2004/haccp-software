@@ -23,8 +23,7 @@ struct HACCPAnalyticsSectionsView: View {
                 points: presentation.temperaturePoints,
                 kpis: presentation.temperatureKPIs,
                 devices: presentation.activeTemperatureDevices,
-                selectedDeviceId: $vm.selectedDeviceId,
-                selectedPeriod: $vm.selectedPeriod
+                selectedDeviceId: $vm.selectedDeviceId
             )
 
             AnalyticsModuleSection(

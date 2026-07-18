@@ -20,6 +20,10 @@ struct UsersManagementView: View {
     var currentUser: LocalUser? {
         users.first { $0.id == appState.currentUserId }
     }
+
+    private var canManageUsers: Bool {
+        currentUser.permissions.can(.manageUsers)
+    }
     
     var filteredUsers: [LocalUser] {
         if searchText.isEmpty { return users }
@@ -43,7 +47,7 @@ struct UsersManagementView: View {
                                     .onTapGesture {
                                         if user.role == .master {
                                             UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                                        } else if currentUser?.role == .master {
+                                        } else if canManageUsers {
                                             withAnimation(.spring()) {
                                                 pendingUserToEdit = user
                                                 showMasterAuthForEdit = true
@@ -51,7 +55,7 @@ struct UsersManagementView: View {
                                         }
                                     }
                             }
-                            .onDelete(perform: confirmDeletionPrompt)
+                            .onDelete(perform: canManageUsers ? confirmDeletionPrompt : { _ in })
                         } header: {
                             Text("Membri del team")
                                 .font(.caption)
@@ -65,7 +69,7 @@ struct UsersManagementView: View {
                     .foregroundStyle(theme.colorTextPrimary)
                     .background(theme.colorBackground)
 
-                    if currentUser?.role == .master {
+                    if canManageUsers {
                         HStack(spacing: 8) {
                             Image(systemName: "hand.draw.fill")
                                 .foregroundStyle(theme.colorPrimary)
@@ -79,7 +83,7 @@ struct UsersManagementView: View {
                 }
             }
             // --- FLOATING ACTION BUTTON (The "Ingenious" bit) ---
-            if currentUser?.role == .master {
+            if canManageUsers {
                 VStack {
                     Spacer()
                     HStack {
@@ -210,7 +214,7 @@ struct UsersManagementView: View {
                     .padding(.horizontal, 40)
             }
 
-            if searchText.isEmpty, currentUser?.role == .master {
+            if searchText.isEmpty, canManageUsers {
                 PrimaryButton(title: "Aggiungi collaboratore", icon: "person.badge.plus") {
                     showMasterAuthForCreate = true
                 }
@@ -293,11 +297,10 @@ struct UserRow: View {
                         .foregroundStyle(theme.colorTextSecondary)
                         .italic()
                 } else {
-                    Text(user.role.rawValue)
+                    Text(user.role.displayName)
                         .font(.caption)
                         .foregroundStyle(theme.colorPrimary)
                         .fontWeight(.bold)
-                        .tracking(1)
                 }
             }
             
