@@ -17,6 +17,10 @@ import Combine
 final class HACCPReportScheduler: ObservableObject {
     static let shared = HACCPReportScheduler()
 
+    /// Notifica pubblicata su NotificationCenter quando viene rilevato un cambio mese.
+    /// `userInfo` contiene: "restaurantId" (String), "restaurantName" (String), "crossedAt" (Date).
+    static let monthBoundaryCrossedNotification = Notification.Name("HACCPReportScheduler.monthBoundaryCrossed")
+
     private let tickKeyPrefix = "HACCPReportEngine.lastTickAt."
 
     private init() {}
@@ -73,6 +77,20 @@ final class HACCPReportScheduler: ObservableObject {
                 user: user,
                 details: "Frontiere attraversate dall'ultimo run: \(crossings.map(\.label).joined(separator: ", "))"
             )
+
+            if monthCrossed {
+                // Notifica UI: il cambio mese è avvenuto.
+                // La view/coordinator può osservare questa notifica per mostrare un banner all'utente.
+                NotificationCenter.default.post(
+                    name: HACCPReportScheduler.monthBoundaryCrossedNotification,
+                    object: nil,
+                    userInfo: [
+                        "restaurantId": restaurant.id.uuidString,
+                        "restaurantName": restaurant.name,
+                        "crossedAt": now
+                    ]
+                )
+            }
         }
 
         return true

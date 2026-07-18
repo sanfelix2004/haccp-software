@@ -23,7 +23,6 @@ struct DocumentsView: View {
     @State private var showMasterAuthRegenerate = false
     @State private var regenerateError: String?
     @State private var isRefreshingArchive = false
-    @State private var folderMetricsById: [UUID: FolderListMetrics] = [:]
 
     private var currentUser: LocalUser? {
         users.first(where: { $0.id == appState.currentUserId })
@@ -220,9 +219,6 @@ struct DocumentsView: View {
             vm.selectedFolderId = nil
             reloadDocumentsData()
         }
-        .onChange(of: dataStore.items.count) { _, _ in
-            rebuildFolderMetrics()
-        }
         .sheet(item: $documentPreviewItem) { item in
             QuickLookPreviewRepresentable(url: item.url)
                 .ignoresSafeArea()
@@ -384,7 +380,6 @@ struct DocumentsView: View {
                 modelContext: modelContext
             )
             dataStore.reloadSynchronously(context: modelContext, restaurantId: restaurant.id)
-            rebuildFolderMetrics()
             if let selected = vm.selectedFolderId, !scopedFolders.contains(where: { $0.id == selected }) {
                 vm.selectedFolderId = nil
             }
@@ -401,7 +396,6 @@ struct DocumentsView: View {
                 force: false
             )
             dataStore.reloadSynchronously(context: modelContext, restaurantId: restaurant.id)
-            rebuildFolderMetrics()
             isRefreshingArchive = false
         }
     }
@@ -422,7 +416,7 @@ struct DocumentsView: View {
     private func folderGrid(folders: [DocumentFolder]) -> some View {
         LazyVGrid(columns: [GridItem(.adaptive(minimum: 168), spacing: theme.spacing.md)], spacing: theme.spacing.md) {
             ForEach(folders) { folder in
-                let metrics = folderMetricsById[folder.id] ?? .empty
+                let metrics = folderMetrics(for: folder)
                 DocumentFolderCard(
                     folder: folder,
                     documentCount: metrics.count,
@@ -541,24 +535,17 @@ struct DocumentsView: View {
         }
     }
 
-    private func rebuildFolderMetrics() {
-        guard !scopedFolders.isEmpty else {
-            folderMetricsById = [:]
-            return
-        }
+    private func folderMetrics(for folder: DocumentFolder) -> FolderListMetrics {
+        guard !scopedFolders.isEmpty else { return .empty }
         let threshold = Calendar.current.date(byAdding: .day, value: -1, to: Date()) ?? .distantPast
         let itemsByFolder = Dictionary(grouping: scopedItems, by: \.folderId)
-        var metrics: [UUID: FolderListMetrics] = [:]
-        for folder in scopedFolders {
-            let ids = descendantFolderIds(for: folder.id)
-            let items = ids.flatMap { itemsByFolder[$0] ?? [] }
-            metrics[folder.id] = FolderListMetrics(
-                count: items.filter { $0.localFilePresent && $0.status == .generato }.count,
-                latest: items.map(\.generatedAt).max(),
-                hasNew: items.contains { $0.generatedAt >= threshold && $0.status == .generato }
-            )
-        }
-        folderMetricsById = metrics
+        let ids = descendantFolderIds(for: folder.id)
+        let items = ids.flatMap { itemsByFolder[$0] ?? [] }
+        return FolderListMetrics(
+            count: items.filter { $0.localFilePresent && $0.status == .generato }.count,
+            latest: items.map(\.generatedAt).max(),
+            hasNew: items.contains { $0.generatedAt >= threshold && $0.status == .generato }
+        )
     }
 
     private func descendantFolderIds(for rootId: UUID) -> Set<UUID> {

@@ -13,6 +13,7 @@ struct DefrostReportRow {
     let finePrevista: Date?
     let fine: Date?
     let durata: String
+    let temperaturaIniziale: Double?
     let temperaturaFinale: Double?
     let stato: String
     let esito: String
@@ -44,6 +45,7 @@ struct DefrostReportDataProvider {
                     finePrevista: $0.expectedEndAt,
                     fine: $0.endAt,
                     durata: $0.durationText,
+                    temperaturaIniziale: $0.initialTemperature,
                     temperaturaFinale: $0.finalTemperature,
                     stato: $0.defrostStatus.label,
                     esito: $0.outcome?.label ?? "—",

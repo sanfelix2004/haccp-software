@@ -191,7 +191,11 @@ struct ProductionLabelsService {
         d.lotCode = blast.lotNumberSnapshot ?? ""
         d.productionDate = blast.endedAt ?? blast.startedAt
         d.expiryDate = Calendar.current.date(byAdding: .day, value: 90, to: d.productionDate) ?? d.productionDate
-        d.temperatureNote = blast.finalTemperature.map { String(format: "%.0fC", $0) } ?? ""
+        d.temperatureNote = ProcessLabelDetailNote.encode(
+            initial: blast.initialTemperature,
+            final: blast.finalTemperature,
+            durationText: blast.duration.map { ProcessElapsedFormatter.formatReadable(elapsed: $0) }
+        )
         d.storageInstructions = "Surgelato -18C"
         d.productStatus = .blastChilled
         d.sourceModule = .blastChilling
@@ -207,6 +211,11 @@ struct ProductionLabelsService {
         d.lotCode = defrost.lotNumber ?? ""
         d.productionDate = defrost.endAt ?? defrost.startAt
         d.expiryDate = Calendar.current.date(byAdding: .hour, value: 24, to: d.productionDate) ?? d.productionDate
+        d.temperatureNote = ProcessLabelDetailNote.encode(
+            initial: defrost.initialTemperature,
+            final: defrost.finalTemperature,
+            durationText: defrost.duration.map { ProcessElapsedFormatter.formatReadable(elapsed: $0) }
+        )
         d.storageInstructions = "Frigo +2/+4C entro 24h"
         d.productStatus = .defrosted
         d.sourceModule = .defrost

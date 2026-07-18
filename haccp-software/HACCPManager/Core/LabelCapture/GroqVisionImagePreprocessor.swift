@@ -17,18 +17,20 @@ enum GroqVisionImagePreprocessor {
         let fullFrameJPEG: Data
     }
 
-    /// Decodifica max 1536px, ritaglia e migliora prima di inviare a Groq.
+    /// Decodifica, ritaglia fasce ampie (alto/basso con overlap centrale) e migliora contrasto.
     static func prepare(from imageData: Data) -> PreparedImages? {
         guard let base = ImageProcessor.downsampledImage(
             from: imageData,
             maxPixel: PerformanceConfig.groqVisionDecodeMaxPixel
         ) else { return nil }
 
+        // Altezza 0.55 + centri 0.30/0.70: overlap sulla fascia equatoriale (coperchi yogurt / bordi).
+        // Evita il "taglio a metà" della stampigliatura centrale (vecchio 0.48 @ 0.34/0.72).
         let stampFocus = enhanceContrast(
-            cropStampRegion(from: base, centerYFraction: 0.34)
+            crop(image: base, widthFraction: 0.95, heightFraction: 0.55, centerYFraction: 0.30)
         )
         let stampBottom = enhanceContrast(
-            cropStampRegion(from: base, centerYFraction: 0.72)
+            crop(image: base, widthFraction: 0.95, heightFraction: 0.55, centerYFraction: 0.70)
         )
         let stampInverted = invertColors(stampFocus)
         let stampBottomInverted = invertColors(stampBottom)
@@ -52,16 +54,6 @@ enum GroqVisionImagePreprocessor {
     }
 
     // MARK: - Crop
-
-    /// Ritaglio centrato su una fascia verticale — lotto/data su retro confezione o tappo.
-    private static func cropStampRegion(from image: UIImage, centerYFraction: CGFloat) -> UIImage {
-        crop(
-            image: image,
-            widthFraction: 0.92,
-            heightFraction: 0.48,
-            centerYFraction: centerYFraction
-        )
-    }
 
     private static func crop(
         image: UIImage,

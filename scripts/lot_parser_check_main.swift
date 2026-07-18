@@ -58,8 +58,79 @@ enum LabelLotSanitizerSelfCheck {
             failures.append("Estrazione lotto LOT 272019 fallita")
         }
 
+        if LabelStampLineParser.extractLot(from: "15701 00:44") != "15701" {
+            failures.append("Estrazione lotto 15701 da orario fallita")
+        }
+
+        if LabelStampLineParser.extractLot(from: "(10)ABC12345") != "ABC12345" {
+            failures.append("Estrazione lotto GS1 (10) fallita")
+        }
+
+        if LabelStampLineParser.extractLot(from: "N° L24056") != "L24056"
+            && LabelStampLineParser.extractLot(from: "N° L24056") != "24056" {
+            failures.append("Estrazione lotto N° fallita")
+        }
+
+        if LabelStampLineParser.extractLot(from: "240526 14:32 4B22") != "4B22" {
+            failures.append("Estrazione lotto implicito 4B22 fallita")
+        }
+
+        if LabelStampLineParser.extractLot(from: "BATCH #987-XYZ") != "#987-XYZ"
+            && LabelStampLineParser.extractLot(from: "BATCH #987-XYZ") != "987-XYZ" {
+            failures.append("Estrazione lotto BATCH #987-XYZ fallita")
+        }
+
+        if LabelStampLineParser.extractLot(from: "31/08/26\n08:18H-FYB") != "08:18H-FYB" {
+            failures.append("Estrazione lotto yogurt 08:18H-FYB fallita")
+        }
+
+        if LabelStampLineParser.extractLot(from: "Best Before End: 11/2027\nBatch number: 44464") != "44464" {
+            failures.append("Estrazione lotto Batch number 44464 fallita")
+        }
+
+        if LabelLotSanitizer.validateLot("number") != nil
+            || LabelLotSanitizer.validateLot("NUMBER") != nil
+            || LabelLotSanitizer.validateLot("batch") != nil {
+            failures.append("Parola etichetta number/batch accettata come lotto")
+        }
+
+        if let batchExpiry = ExpiryDateParser.parse(from: "Best Before End: 11/2027") {
+            let c = Calendar.current.dateComponents([.day, .month, .year], from: batchExpiry)
+            if c.month != 11 || c.year != 2027 {
+                failures.append("Best Before End 11/2027 non parsata come nov 2027")
+            }
+        } else {
+            failures.append("Best Before End 11/2027 non parsata")
+        }
+
+        if LabelLotSanitizer.validateLot("LATTY") != nil
+            || LabelLotSanitizer.validateLot("LATTE") != nil
+            || LabelLotSanitizer.validateLot("GRECO") != nil {
+            failures.append("Marketing OCR (LATTY/LATTE/GRECO) accettato come lotto")
+        }
+
+        if LabelLotSanitizer.validateLot("08:18H-FYB") != "08:18H-FYB" {
+            failures.append("Lotto industriale 08:18H-FYB rifiutato")
+        }
+
+        if LabelStampLineParser.parseExpiry(from: "240526 14:32 4B22") == nil {
+            failures.append("Scadenza GGMMAA implicita non parsata")
+        }
+
         if LabelLotSanitizer.validateLot("SELL") != nil {
             failures.append("Parola chiave SELL accettata come lotto")
+        }
+
+        if LabelLotSanitizer.validateLot("LATTE") != nil
+            || LabelLotSanitizer.validateLot("YOGURT") != nil
+            || LabelLotSanitizer.validateLot("GRECO") != nil {
+            failures.append("Nome prodotto/marketing accettato come lotto")
+        }
+
+        if LabelLotSanitizer.validateLot("to_found") != nil
+            || LabelLotSanitizer.validateLot("lotto_found") != nil
+            || LabelLotSanitizer.clean("lotto_found") == "to_found" {
+            failures.append("Artefatto schema to_found/lotto_found accettato come lotto")
         }
 
         if LabelLotSanitizer.validateLot("314902058K-25") != "314902058K-25" {

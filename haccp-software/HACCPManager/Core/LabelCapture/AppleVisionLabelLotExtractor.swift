@@ -5,7 +5,11 @@ import UIKit
 /// OCR on-device con Apple Vision — fallback quando Groq non è disponibile.
 struct AppleVisionLabelLotExtractor: LabelLotExtractorProtocol, Sendable {
     func analyzeLabel(from imageData: Data, expectedIngredients: [String]) async throws -> LabelLotExtractionResult {
-        let texts = try await recognizeText(from: imageData)
+        // Tutto il lavoro pesante (downsample + Vision.perform) fuori dal MainActor.
+        let texts = try await Task.detached(priority: .userInitiated) {
+            try await Self.recognizeTextOffMain(from: imageData)
+        }.value
+
         let merged = texts.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
         guard !merged.isEmpty else {
             throw LabelLotError.invalidImage
@@ -43,14 +47,12 @@ struct AppleVisionLabelLotExtractor: LabelLotExtractorProtocol, Sendable {
         )
     }
 
-    private func recognizeText(from imageData: Data) async throws -> [String] {
-        let images = await Task.detached(priority: .userInitiated) {
-            GroqVisionImagePreprocessor.prepare(from: imageData)
-        }.value
-
+    private static func recognizeTextOffMain(from imageData: Data) async throws -> [String] {
+        let prepared = GroqVisionImagePreprocessor.prepare(from: imageData)
         var variants: [Data] = [imageData]
-        if let prepared = images {
+        if let prepared {
             variants = [
+                prepared.stampFocusJPEG,
                 prepared.stampBottomJPEG,
                 prepared.fullFrameJPEG
             ]
@@ -59,7 +61,7 @@ struct AppleVisionLabelLotExtractor: LabelLotExtractorProtocol, Sendable {
         return try await withThrowingTaskGroup(of: String.self) { group in
             for data in variants {
                 group.addTask {
-                    (try? await self.recognizeText(in: data)) ?? ""
+                    Self.recognizeTextBlocking(in: data)
                 }
             }
             var lines: [String] = []
@@ -70,7 +72,8 @@ struct AppleVisionLabelLotExtractor: LabelLotExtractorProtocol, Sendable {
         }
     }
 
-    private func recognizeText(in imageData: Data) async throws -> String {
+    /// `VNImageRequestHandler.perform` è sincrono: deve girare solo su thread di background.
+    private static func recognizeTextBlocking(in imageData: Data) -> String {
         guard let image = ImageProcessor.downsampledImage(
             from: imageData,
             maxPixel: PerformanceConfig.groqVisionMaxPixel
@@ -79,28 +82,21 @@ struct AppleVisionLabelLotExtractor: LabelLotExtractorProtocol, Sendable {
             return ""
         }
 
-        return try await withCheckedThrowingContinuation { continuation in
-            let request = VNRecognizeTextRequest { request, error in
-                if let error {
-                    continuation.resume(throwing: error)
-                    return
-                }
-                let observations = request.results as? [VNRecognizedTextObservation] ?? []
-                let text = observations
-                    .compactMap { $0.topCandidates(1).first?.string }
-                    .joined(separator: "\n")
-                continuation.resume(returning: text)
-            }
-            request.recognitionLevel = .accurate
-            request.recognitionLanguages = ["it-IT", "en-US", "en-GB"]
-            request.usesLanguageCorrection = false
+        let request = VNRecognizeTextRequest()
+        request.recognitionLevel = .accurate
+        request.recognitionLanguages = ["it-IT", "en-US", "en-GB"]
+        request.usesLanguageCorrection = false
 
-            let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
-            do {
-                try handler.perform([request])
-            } catch {
-                continuation.resume(throwing: error)
-            }
+        let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
+        do {
+            try handler.perform([request])
+        } catch {
+            return ""
         }
+
+        let observations = request.results ?? []
+        return observations
+            .compactMap { $0.topCandidates(1).first?.string }
+            .joined(separator: "\n")
     }
 }

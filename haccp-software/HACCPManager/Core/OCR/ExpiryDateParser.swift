@@ -4,12 +4,15 @@ import Foundation
 enum ExpiryDateParser {
 
     static func parse(from rawText: String) -> Date? {
-        let lines = rawText
+        // Evita lavoro eccessivo su dump OCR enormi (freeze percepito).
+        let capped = rawText.count > 6_000 ? String(rawText.prefix(6_000)) : rawText
+        let lines = capped
             .replacingOccurrences(of: "\r", with: "\n")
             .components(separatedBy: .newlines)
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
-        return parse(fromLines: lines.isEmpty ? [rawText] : lines)
+        let limited = Array(lines.prefix(80))
+        return parse(fromLines: limited.isEmpty ? [capped] : limited)
     }
 
     static func parse(fromLines lines: [String]) -> Date? {
@@ -18,6 +21,7 @@ enum ExpiryDateParser {
             .filter { !$0.isEmpty }
         let flat = normalizedLines.joined(separator: " ")
         if let gs1 = parseGS1Expiry(in: flat) { return gs1 }
+        if let industrial = parseIndustrialCompactStamp(in: flat) { return industrial }
 
         var best: (date: Date, score: Double)?
         for line in normalizedLines {
@@ -40,11 +44,27 @@ enum ExpiryDateParser {
         return best?.date
     }
 
-    /// `SELL BY 09/02` → 9 febbraio (GG/MM europeo); con anno opzionale `09/02/19`.
+    /// Stamp industriale implicito: `240526 14:32 4B22` → 2026-05-24.
+    private static func parseIndustrialCompactStamp(in text: String) -> Date? {
+        let pattern = #"\b(\d{6})\s+\d{1,2}:\d{2}(?::\d{2})?(?:\s+[A-Z0-9]{2,12})?\b"#
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive),
+              let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
+              match.numberOfRanges >= 2,
+              let range = Range(match.range(at: 1), in: text) else { return nil }
+        let digits = String(text[range])
+        guard digits.count == 6,
+              let day = Int(digits.prefix(2)),
+              let month = Int(digits.dropFirst(2).prefix(2)),
+              let yy = Int(digits.suffix(2)),
+              (1...31).contains(day), (1...12).contains(month) else { return nil }
+        return makeDate(day: day, month: month, year: expandTwoDigitYear(yy))
+    }
+
+    /// `SELL BY 09/02` o `DA CONSUMARSI … 09 10 26` → GG/MM europeo.
     static func parseSellByCompact(from rawText: String, referenceDate: Date = Date()) -> Date? {
         let text = normalizeExpiryLine(rawText)
         let pattern =
-            #"(?i)(?:sell\s*by|use\s*by|best\s*before|scad(?:e|enza)?|tmc|exp(?:iry)?|da\s+consumar\w*)\s+(\d{1,2})[\/\-\.](\d{1,2})(?:[\/\-\.](\d{2,4}))?\b"#
+            #"(?i)(?:sell\s*by|use\s*by|best\s*before|scad(?:e|enza)?|tmc|exp(?:iry)?|da\s+consumar\w*|consumar\w*\s+(?:pref\.?\s*)?entro|entro\s+il|fino\s+al|valido\s+fino)\s*[:.\-]?\s*(\d{1,2})[\s\/\-\.]+(\d{1,2})(?:[\s\/\-\.]+(\d{2,4}))?\b"#
         guard let regex = try? NSRegularExpression(pattern: pattern),
               let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
               match.numberOfRanges >= 3,
@@ -62,6 +82,7 @@ enum ExpiryDateParser {
         }
 
         if let explicitYear {
+            // Sempre GG/MM/AA europeo in contesto scadenza (mai AA/MM/GG → 2009).
             if let date = makeDate(day: a, month: b, year: explicitYear, referenceDate: referenceDate) {
                 return date
             }
@@ -128,33 +149,58 @@ enum ExpiryDateParser {
         let score: Double
     }
 
-    private static let gs1ExpiryPattern = #"(?i)\(17\)\s*(\d{6})"#
+    private static let gs1ExpiryPattern = #"(?i)(?:\(17\)|17\))\s*(\d{6})"#
 
     private static let fullDatePatterns: [(pattern: String, score: Double)] = [
-        (#"(?i)(?:lotto|lot\b|l\.).*?\bscad(?:e|enza)?\s*[:.\-]?\s*(\d{1,2})\s*[\/\-\.]\s*(\d{1,2})\s*[\/\-\.]?\s*(\d{2,4})"#, 0.96),
-        (#"(?i)(?:tmc|scad(?:e|enza)?|exp(?:iry)?|use\s*by|best\s*before|da\s+consumar\w*|consumar\w*\s+entro)\s*[:.\-]?\s*(\d{1,2})\s*[\/\-\.]\s*(\d{1,2})\s*[\/\-\.]?\s*(\d{2,4})"#, 0.95),
-        (#"(?i)(?:tmc|scad(?:e|enza)?|exp(?:iry)?)\s+(\d{1,2})\s+(\d{1,2})\s+(\d{2,4})"#, 0.90),
+        (#"(?i)(?:lotto|lot\b|l\.).{0,48}\bscad(?:e|enza)?\s*[:.\-]?\s*(\d{1,2})\s*[\/\-\.]\s*(\d{1,2})\s*[\/\-\.]?\s*(\d{2,4})"#, 0.96),
+        (#"(?i)(?:tmc|scad(?:e|enza)?|exp(?:iry)?|use\s*by|best\s*before|da\s+consumar\w*|consumar\w*\s+(?:pref\.?\s*)?entro|entro\s+il|fino\s+al|valido\s+fino|conservare\s+fino)\s*[:.\-]?\s*(\d{1,2})[\s\/\-\.]+(\d{1,2})[\s\/\-\.]+(\d{2,4})"#, 0.98),
+        (#"(?i)(?:tmc|scad(?:e|enza)?|exp(?:iry)?|use\s*by|best\s*before|da\s+consumar\w*|consumar\w*\s+entro|entro\s+il|fino\s+al)\s*[:.\-]?\s*(\d{1,2})\s*[\/\-\.]\s*(\d{1,2})\s*[\/\-\.]?\s*(\d{2,4})"#, 0.95),
+        (#"(?i)(?:tmc|scad(?:e|enza)?|exp(?:iry)?|entro\s+il|fino\s+al)\s+(\d{1,2})\s+(\d{1,2})\s+(\d{2,4})"#, 0.97),
+        // ISO YYYY-MM-DD / YYYY/MM/DD (gruppi: year, month, day — gestiti in collectMatches)
+        (#"(?i)(?:tmc|scad(?:e|enza)?|exp(?:iry)?|best\s*before|use\s*by|entro)\s*[:.\-]?\s*(\d{4})[\/\-\.](\d{1,2})[\/\-\.](\d{1,2})"#, 0.94),
+        (#"\b(20\d{2})[\/\-\.](\d{1,2})[\/\-\.](\d{1,2})\b"#, 0.52),
+        (#"(?i)\b(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2,4})\s*\(?\s*[PpTt]\s*\)?"#, 0.92),
+        (#"(?i)\b(\d{1,2})\s+(\d{1,2})\s+(\d{2,4})\s*\(?\s*[PpTt]\s*\)?"#, 0.92),
         (#"(\d{1,2})\s*[\/\-\.]\s*(\d{1,2})\s*[\/\-\.]+\s*(\d{2,4})(?!\d)"#, 0.55),
     ]
 
     private static let textMonthPatterns: [(pattern: String, score: Double)] = [
-        (#"(?i)(?:best\s+before|use\s+by|exp(?:iry)?|tmc|scad(?:e|enza)?)\s+(\d{1,2})\s+([A-Z]{3,9})\s+(\d{2,4})"#, 0.97),
-        (#"(?i)\b(\d{1,2})([A-Z]{3,9})\s+(\d{2,4})\b"#, 0.88),
+        (#"(?i)(?:best\s+before|use\s+by|sell\s+by|exp(?:iry)?|tmc|scad(?:e|enza)?|entro)\s+(\d{1,2})\s+([A-Za-z]{3,12})\s+(\d{2,4})"#, 0.97),
+        (#"(?i)\b(\d{1,2})\s+([A-Za-z]{3,12})\s+(\d{2,4})\b"#, 0.90),
+        (#"(?i)\b(\d{1,2})([A-Za-z]{3,9})\s*(\d{2,4})\b"#, 0.88),
+    ]
+
+    private static let monthYearTextPatterns: [(pattern: String, score: Double)] = [
+        (#"(?i)(?:best\s+before|use\s+by|exp(?:iry)?|tmc|scad(?:e|enza)?)\s+([A-Za-z]{3,12})\s+(\d{2,4})"#, 0.91),
     ]
 
     /// Solo mese/anno — tipico «SCADE: 12/2029» su spezie e conserve.
     private static let monthYearPatterns: [(pattern: String, score: Double)] = [
-        (#"(?i)(?:tmc|scad(?:e|enza)?|exp(?:iry)?|use\s*by|best\s*before|da\s+consumar\w*)\s*[:.\-]?\s*(\d{1,2})\s*[\/\-\.]\s*(\d{2,4})"#, 0.93),
+        (#"(?i)(?:tmc|scad(?:e|enza)?|exp(?:iry)?|use\s*by|best\s*before|da\s+consumar\w*|fino\s+al)\s*[:.\-]?\s*(\d{1,2})\s*[\/\-\.]\s*(\d{2,4})"#, 0.93),
         (#"(?i)\bscad(?:e|enza)?\s*[:.\-]?\s*(\d{1,2})\s*[\/\-\.]\s*(\d{2,4})"#, 0.94),
         (#"\b(\d{1,2})\s*[\/\-\.]\s*(\d{4})\b"#, 0.48),
         (#"\b(\d{1,2})\s*[\/\-\.]\s*(\d{2})\b"#, 0.46),
     ]
 
-    private static let expiryLinePatterns: [String] = [
-        #"(?i)da\s+consum"#, #"(?i)consumar"#, #"(?i)preferibilmente"#,
-        #"(?i)entro\s+il"#, #"(?i)scad(?:e|enza)?"#, #"(?i)best\s+before"#,
-        #"(?i)use\s+by"#, #"(?i)sell\s+by"#, #"(?i)exp(?:iry)?"#, #"(?i)\btmc\b"#
+    private static let compactDigitPatterns: [(pattern: String, score: Double)] = [
+        (#"(?i)(?:tmc|scad(?:e|enza)?|exp(?:iry)?|best\s*before|use\s*by|entro|consumar)\s*[:.\-]?\s*(\d{8})\b"#, 0.93),
+        (#"(?i)(?:tmc|scad(?:e|enza)?|exp(?:iry)?|best\s*before|use\s*by|entro|consumar)\s*[:.\-]?\s*(\d{6})\b"#, 0.90),
     ]
+
+    private static let expiryContextRegexes: [NSRegularExpression] = {
+        let patterns = [
+            #"(?i)da\s+consum"#, #"(?i)consumar"#, #"(?i)preferibilmente"#,
+            #"(?i)entro\s+il"#, #"(?i)scad(?:e|enza)?"#, #"(?i)best\s+before"#,
+            #"(?i)use\s+by"#, #"(?i)sell\s+by"#, #"(?i)exp(?:iry)?"#, #"(?i)\btmc\b"#,
+            #"(?i)fino\s+al"#, #"(?i)valido\s+fino"#, #"(?i)conservare\s+fino"#, #"(?i)\bbb\b"#
+        ]
+        return patterns.compactMap { try? NSRegularExpression(pattern: $0) }
+    }()
+
+    private static func isExpiryContextLine(_ line: String) -> Bool {
+        let range = NSRange(line.startIndex..., in: line)
+        return expiryContextRegexes.contains { $0.firstMatch(in: line, range: range) != nil }
+    }
 
     private static func parseGS1Expiry(in text: String) -> Date? {
         guard let regex = try? NSRegularExpression(pattern: gs1ExpiryPattern),
@@ -176,6 +222,10 @@ enum ExpiryDateParser {
             .replacingOccurrences(of: "\r", with: " ")
             .replacingOccurrences(of: #"\s{2,}"#, with: " ", options: .regularExpression)
 
+        // OCR tipico su date: O→0, l/I→1 solo tra cifre/separatori.
+        value = value.replacingOccurrences(of: #"(?<=\d)[Oo](?=\d)"#, with: "0", options: .regularExpression)
+        value = value.replacingOccurrences(of: #"(?<=[\d\/\-\.])[Il](?=[\d\/\-\.])"#, with: "1", options: .regularExpression)
+
         value = value.replacingOccurrences(
             of: #"(?i)\bscad(?:e|enza)?\b"#,
             with: "SCAD",
@@ -186,10 +236,21 @@ enum ExpiryDateParser {
             with: "TMC",
             options: .regularExpression
         )
+        value = value.replacingOccurrences(
+            of: #"(?i)\bexp(?:iry|ires)?\b"#,
+            with: "EXP",
+            options: .regularExpression
+        )
 
-        // Solo date tripartite dd/mm/yy — non toccare MM/YYYY (es. 12/2029).
+        // Date tripartite con slash/punto.
         value = value.replacingOccurrences(
             of: #"(\d{1,2})\s*[\/\-\.]\s*(\d{1,2})\s*[\/\-\.]+\s*(\d{2,4})(?!\d)"#,
+            with: "$1/$2/$3",
+            options: .regularExpression
+        )
+        // Tipico latte IT: "09 10 26" o "09 10 26 (P)" → 09/10/26 (GG MM AA).
+        value = value.replacingOccurrences(
+            of: #"\b(\d{1,2})\s+(\d{1,2})\s+(\d{2,4})\b(?!\s*:)"#,
             with: "$1/$2/$3",
             options: .regularExpression
         )
@@ -224,6 +285,12 @@ enum ExpiryDateParser {
         for (pattern, score) in textMonthPatterns {
             collectTextMonthMatches(pattern: pattern, in: line, score: score, into: &results)
         }
+        for (pattern, score) in monthYearTextPatterns {
+            collectMonthYearTextMatches(pattern: pattern, in: line, score: score, into: &results)
+        }
+        for (pattern, score) in compactDigitPatterns {
+            collectCompactDigitMatches(pattern: pattern, in: line, score: score, into: &results)
+        }
         return results
     }
 
@@ -249,17 +316,102 @@ enum ExpiryDateParser {
         }
     }
 
+    private static func collectMonthYearTextMatches(
+        pattern: String,
+        in line: String,
+        score: Double,
+        into results: inout [DateMatch]
+    ) {
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return }
+        let nsRange = NSRange(line.startIndex..., in: line)
+        regex.enumerateMatches(in: line, range: nsRange) { match, _, _ in
+            guard let match,
+                  match.numberOfRanges >= 3,
+                  let mRange = Range(match.range(at: 1), in: line),
+                  let yRange = Range(match.range(at: 2), in: line),
+                  let month = monthNumber(from: String(line[mRange])),
+                  let rawYear = Int(line[yRange]) else { return }
+            let year = rawYear < 100 ? expandTwoDigitYear(rawYear) : rawYear
+            results.append(DateMatch(shape: .monthYear(month: month, year: year), score: score))
+        }
+    }
+
+    private static func collectCompactDigitMatches(
+        pattern: String,
+        in line: String,
+        score: Double,
+        into results: inout [DateMatch]
+    ) {
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return }
+        let nsRange = NSRange(line.startIndex..., in: line)
+        regex.enumerateMatches(in: line, range: nsRange) { match, _, _ in
+            guard let match,
+                  match.numberOfRanges >= 2,
+                  let range = Range(match.range(at: 1), in: line) else { return }
+            let digits = String(line[range])
+            if digits.count == 6,
+               let day = Int(digits.prefix(2)),
+               let month = Int(digits.dropFirst(2).prefix(2)),
+               let yy = Int(digits.suffix(2)),
+               (1...31).contains(day), (1...12).contains(month) {
+                results.append(DateMatch(
+                    shape: .dayMonthYear(day: day, month: month, year: expandTwoDigitYear(yy)),
+                    score: score
+                ))
+            } else if digits.count == 8 {
+                // Preferisci YYYYMMDD se inizia con 20xx, altrimenti DDMMYYYY.
+                if let y = Int(digits.prefix(4)), (2000...2045).contains(y),
+                   let month = Int(digits.dropFirst(4).prefix(2)),
+                   let day = Int(digits.suffix(2)),
+                   (1...12).contains(month), (1...31).contains(day) {
+                    results.append(DateMatch(shape: .dayMonthYear(day: day, month: month, year: y), score: score))
+                } else if let day = Int(digits.prefix(2)),
+                          let month = Int(digits.dropFirst(2).prefix(2)),
+                          let year = Int(digits.suffix(4)),
+                          (1...31).contains(day), (1...12).contains(month) {
+                    results.append(DateMatch(shape: .dayMonthYear(day: day, month: month, year: year), score: score))
+                }
+            }
+        }
+    }
+
     private static func monthNumber(from token: String) -> Int? {
-        let key = token
+        let raw = token
             .trimmingCharacters(in: .whitespacesAndNewlines)
+            .folding(options: .diacriticInsensitive, locale: Locale(identifier: "it_IT"))
             .uppercased()
-            .prefix(3)
+        let key3 = String(raw.prefix(3))
         let map: [String: Int] = [
-            "JAN": 1, "FEB": 2, "MAR": 3, "APR": 4, "MAY": 5, "MAG": 5,
-            "JUN": 6, "GIU": 6, "JUL": 7, "LUG": 7, "AUG": 8, "AGO": 8,
-            "SEP": 9, "SET": 9, "OCT": 10, "OTT": 10, "NOV": 11, "DEC": 12, "DIC": 12
+            "JAN": 1, "GEN": 1,
+            "FEB": 2,
+            "MAR": 3,
+            "APR": 4,
+            "MAY": 5, "MAG": 5, "MAI": 5,
+            "JUN": 6, "GIU": 6,
+            "JUL": 7, "LUG": 7,
+            "AUG": 8, "AGO": 8,
+            "SEP": 9, "SET": 9,
+            "OCT": 10, "OTT": 10,
+            "NOV": 11,
+            "DEC": 12, "DIC": 12
         ]
-        return map[String(key)]
+        if let m = map[key3] { return m }
+        // Nomi mese interi IT/EN
+        let full: [String: Int] = [
+            "GENNAIO": 1, "JANUARY": 1,
+            "FEBBRAIO": 2, "FEBRUARY": 2,
+            "MARZO": 3, "MARCH": 3,
+            "APRILE": 4, "APRIL": 4,
+            "MAGGIO": 5,
+            "GIUGNO": 6, "JUNE": 6,
+            "LUGLIO": 7, "JULY": 7,
+            "AGOSTO": 8, "AUGUST": 8,
+            "SETTEMBRE": 9, "SEPTEMBER": 9,
+            "OTTOBRE": 10, "OCTOBER": 10,
+            "NOVEMBRE": 11, "NOVEMBER": 11,
+            "DICEMBRE": 12, "DECEMBER": 12
+        ]
+        return full[raw]
     }
 
     private static func collectMatches(
@@ -275,13 +427,18 @@ enum ExpiryDateParser {
             guard let match else { return }
             if groups == 3,
                match.numberOfRanges >= 4,
-               let dRange = Range(match.range(at: 1), in: line),
-               let mRange = Range(match.range(at: 2), in: line),
-               let yRange = Range(match.range(at: 3), in: line),
-               let day = Int(line[dRange]),
-               let month = Int(line[mRange]),
-               let year = Int(line[yRange]) {
-                results.append(DateMatch(shape: .dayMonthYear(day: day, month: month, year: year), score: score))
+               let aRange = Range(match.range(at: 1), in: line),
+               let bRange = Range(match.range(at: 2), in: line),
+               let cRange = Range(match.range(at: 3), in: line),
+               let a = Int(line[aRange]),
+               let b = Int(line[bRange]),
+               let c = Int(line[cRange]) {
+                // ISO: year-month-day quando il primo gruppo è un anno a 4 cifre.
+                if a >= 1990, a <= 2100, (1...12).contains(b), (1...31).contains(c) {
+                    results.append(DateMatch(shape: .dayMonthYear(day: c, month: b, year: a), score: score))
+                } else {
+                    results.append(DateMatch(shape: .dayMonthYear(day: a, month: b, year: c), score: score))
+                }
             } else if groups == 2,
                       match.numberOfRanges >= 3,
                       let mRange = Range(match.range(at: 1), in: line),
@@ -299,15 +456,6 @@ enum ExpiryDateParser {
             return makeDate(day: day, month: month, year: year, referenceDate: referenceDate)
         case let .monthYear(month, year):
             return endOfMonth(month: month, year: year, referenceDate: referenceDate)
-        }
-    }
-
-    private static func isExpiryContextLine(_ line: String) -> Bool {
-        expiryLinePatterns.contains { pattern in
-            (try? NSRegularExpression(pattern: pattern))?.firstMatch(
-                in: line,
-                range: NSRange(line.startIndex..., in: line)
-            ) != nil
         }
     }
 
@@ -388,12 +536,28 @@ enum ExpiryDateParserSelfCheck {
             ("TMC 12/11/2026", 12, 11, 2026),
             ("Scad. 05/07/26", 5, 7, 2026),
             ("Da consumarsi pref. entro il: 15/06/2027", 15, 6, 2027),
+            ("DA CONSUMARSI PREF. ENTRO IL: 09 10 26 (P)", 9, 10, 2026),
+            ("entro il 09 10 26", 9, 10, 2026),
             ("Scad 12-10- 26", 12, 10, 2026),
             ("TMC: 12/2026", 31, 12, 2026),
             ("Lotto e Scad: 12.10.26", 12, 10, 2026),
             ("BEST BEFORE 31 AUG 2018", 31, 8, 2018),
             ("26NOV 2025", 26, 11, 2025),
             ("SELL BY 09/02", 9, 2, 2026),
+            ("EXP 2026-10-09", 9, 10, 2026),
+            ("fino al 15 Maggio 2027", 15, 5, 2027),
+            ("SCAD 091026", 9, 10, 2026),
+            ("EXP 09102026", 9, 10, 2026),
+            ("(17)261009", 9, 10, 2026),
+            ("Best before AGO 2026", 31, 8, 2026),
+            ("03AGO26", 3, 8, 2026),
+            ("valido fino al 31/12/26", 31, 12, 2026),
+            ("DA CONSUMARSI ENTRO IL: 18 OTT 26 L1245A", 18, 10, 2026),
+            ("EXP: 12/2027", 31, 12, 2027),
+            ("BEST BEFORE MAI 25", 31, 5, 2025),
+            ("240526 14:32 4B22", 24, 5, 2026),
+            ("31/08/26\n08:18H-FYB", 31, 8, 2026),
+            ("31/08/26 08:18H-FYB", 31, 8, 2026),
         ]
         let calendar = Calendar.current
         for item in cases {

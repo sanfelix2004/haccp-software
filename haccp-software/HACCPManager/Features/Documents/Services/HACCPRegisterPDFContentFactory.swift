@@ -1036,13 +1036,13 @@ enum HACCPRegisterPDFContentFactory {
         case .decongelamento:
             let rows = DefrostRegister.rows(in: interval, records: operational.defrostRecords, df: formatter)
             let table: [[PDFTableCell]] = rows.map {
-                [.text($0.product), .text($0.method), .text($0.lot), .text($0.startedAt), .text($0.endedAt), .text($0.duration), .text($0.finalTemp), .text($0.status), .text($0.operatorName), .text($0.notes)]
+                [.text($0.product), .text($0.method), .text($0.lot), .text($0.startedAt), .text($0.endedAt), .text($0.duration), .text($0.initialTemp), .text($0.finalTemp), .text($0.status), .text($0.operatorName), .text($0.notes)]
             }
-            let body = table.isEmpty ? [emptyOperationalRow(columns: 10)] : table
+            let body = table.isEmpty ? [emptyOperationalRow(columns: 11)] : table
             sections.append(.dataTable(
                 title: "Registro decongelamento",
                 subtitle: "Gestione sicura del decongelamento prodotti",
-                headers: ["Prodotto", "Metodo", "Lotto", "Inizio", "Fine", "Durata", "T° finale", "Stato processo", "Operatore", "Note / azioni correttive"],
+                headers: ["Prodotto", "Metodo", "Lotto", "Inizio", "Fine", "Durata", "T° iniziale", "T° finale", "Stato processo", "Operatore", "Note / azioni correttive"],
                 rows: body
             ))
         case .controlloOlio:

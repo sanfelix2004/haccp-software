@@ -28,8 +28,14 @@ enum LabelLotSanitizer {
     private static let quoteCharacters = CharacterSet(charactersIn: "\"'")
 
     private static let reservedLotTokens: Set<String> = [
-        "SELL", "BY", "BEST", "BEFORE", "LOT", "LOTT", "LOTTO", "EXP", "EXPIRY",
-        "TMC", "BB", "USE", "SCAD", "SCADE", "SCADENZA", "ENTRO", "NULL"
+        "SELL", "BY", "BEST", "BEFORE", "END", "LOT", "LOTT", "LOTTO", "EXP", "EXPIRY",
+        "TMC", "BB", "USE", "SCAD", "SCADE", "SCADENZA", "ENTRO", "NULL",
+        // Etichetta inglese: "Batch number: 44464" — mai lotto = "number"/"batch"
+        "NUMBER", "BATCH", "NO", "NR", "CODE", "CODES",
+        // Marketing / prodotto — mai lotto
+        "LATTE", "YOGURT", "YOGHURT", "GRECO", "BIANCO", "FRESCO", "INTERO",
+        "PARZIALMENTE", "SCREMATO", "BIO", "ITALIANO", "SOLO", "DA", "CONSUMARSI",
+        "PREFERIBILMENTE", "INGREDIENTI", "VALORI", "NUTRIZIONALI"
     ]
 
     /// Pulisce prefissi comuni e scarta falsi positivi (EAN, date, rumore).
@@ -47,8 +53,9 @@ enum LabelLotSanitizer {
             return String(value[codeRange])
         }
 
-        // L6036BH099, L52400V757 — L fa parte del codice alfanumerico
-        if value.range(of: #"^[Ll][A-Z0-9]{2,}$"#, options: .regularExpression) != nil,
+        // L6036BH099, L52400V757 — L fa parte del codice alfanumerico (non "LOT"/"LOTTO" prefisso).
+        if !value.uppercased().hasPrefix("LOT"),
+           value.range(of: #"^[Ll][A-Z0-9]{2,}$"#, options: .regularExpression) != nil,
            value.dropFirst().contains(where: { $0.isLetter }) {
             return value
         }
@@ -62,7 +69,13 @@ enum LabelLotSanitizer {
         }
 
         let prefixPatterns = [
-            #"(?i)^(?:lot(?:to)?|batch|partita)\s*[:#.]?\s*"#,
+            // Dopo rimozione spazi "LOT 272019" → "LOT272019".
+            // "Batch number: 44464" → "Batchnumber:44464" → 44464.
+            // Ordine: lotto prima di lot; mai "lotto_found" → "to_found".
+            #"(?i)^lotto(?:[:#.\s]+|(?=\d))"#,
+            #"(?i)^lot(?!to)(?:number|no|nr)?(?:[:#.\s]+|(?=[0-9A-Z]))"#,
+            #"(?i)^(?:batch|partita)(?:number|no|nr)?(?:[:#.\s]+|(?=[0-9A-Z]))"#,
+            #"(?i)^(?:number|no|nr)(?:[:#.\s]+|(?=\d))"#,
             #"(?i)^cod\.?\s*[:#]?\s*"#,
             #"(?i)^(?:mfg|prod|conf)\.?\s*"#
         ]
@@ -97,6 +110,7 @@ enum LabelLotSanitizer {
         let cleaned = clean(raw)
         guard !cleaned.isEmpty, cleaned.lowercased() != "null" else { return nil }
         guard !isReservedLotToken(cleaned) else { return nil }
+        guard !looksLikeSchemaArtifact(cleaned) else { return nil }
         let context = rawContext.isEmpty ? raw : rawContext
         let normalized = restoreLeadingL
             ? restoreLeadingLIfMissing(in: cleaned, rawContext: context)
@@ -104,9 +118,40 @@ enum LabelLotSanitizer {
         guard !isConsumerBarcode(normalized) else { return nil }
         guard !looksLikeDate(normalized) else { return nil }
         guard !looksLikeISODate(normalized) else { return nil }
-        guard !looksLikeCompactDateDigits(normalized) else { return nil }
-        guard normalized.count >= 3, normalized.count <= 24 else { return nil }
+        // Scarta YYMMDD/DDMMYY solo se non c'è contesto lotto esplicito.
+        if looksLikeCompactDateDigits(normalized), !rawContextSuggestsLot(context) {
+            return nil
+        }
+        guard normalized.count >= 3, normalized.count <= 28 else { return nil }
+        // Solo lettere senza cifre = quasi sempre marketing OCR (LATTY, GRECO, BIANCO…).
+        if looksLikeMarketingWord(normalized) { return nil }
+        // Caratteri tipici codice lotto industriale (incluso `:` in stampigliature tipo 08:18H-FYB).
+        let allowed = CharacterSet.alphanumerics
+            .union(CharacterSet(charactersIn: "-_./#:"))
+        guard normalized.unicodeScalars.allSatisfy({ allowed.contains($0) }) else { return nil }
         return refineAmbiguousLotCharacters(normalized)
+    }
+
+    /// LATTE/YOGURT e garbles OCR (LATTY, LATTI, YOGU…) — mai lotto.
+    private static func looksLikeMarketingWord(_ value: String) -> Bool {
+        let upper = value.uppercased()
+        if upper.allSatisfy(\.isLetter), (3...12).contains(upper.count) {
+            if upper.hasPrefix("LATT") { return true } // LATTE, LATTY, LATTI…
+            if upper.hasPrefix("YOG") { return true }
+            if upper.hasPrefix("GREC") { return true }
+            if ["BIANCO", "FRESCO", "MAGRO", "DESPAR", "INTERO", "SCREMATO", "NUMBER", "BATCH"].contains(upper) {
+                return true
+            }
+            // Parola intera solo lettere senza cifre: rifiuta (i lotti industriali hanno quasi sempre cifre).
+            return true
+        }
+        return false
+    }
+
+    private static func rawContextSuggestsLot(_ context: String) -> Bool {
+        let pattern = #"(?i)\b(?:lot(?:to)?|batch|partita|\(10\)|n[°o]\.?|nr\.?)\b"#
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return false }
+        return regex.firstMatch(in: context, range: nsRange(for: context)) != nil
     }
 
     private static func nsRange(for string: String) -> NSRange {
@@ -117,6 +162,22 @@ enum LabelLotSanitizer {
         let upper = value.uppercased()
         if reservedLotTokens.contains(upper) { return true }
         if upper.hasPrefix("SELL") || upper.hasPrefix("BEST") { return true }
+        // Parole marketing lunghe senza cifre (es. "SOLOLATTEITALIANO")
+        if upper.count >= 5, !upper.contains(where: \.isNumber),
+           reservedLotTokens.contains(where: { upper.contains($0) && $0.count >= 4 }) {
+            return true
+        }
+        return false
+    }
+
+    /// Scarta artefatti JSON/schema (es. "to_found" da "lotto_found", "lotto_found", "true").
+    private static func looksLikeSchemaArtifact(_ value: String) -> Bool {
+        let upper = value.uppercased()
+        if upper == "TO_FOUND" || upper == "LOTTO_FOUND" || upper == "EXPIRATION_FOUND" { return true }
+        if upper.hasSuffix("_FOUND") { return true }
+        if upper == "TRUE" || upper == "FALSE" || upper == "NULL" { return true }
+        if upper == "ALTO" || upper == "MEDIO" || upper == "BASSO" { return true }
+        if upper == "HIGH" || upper == "MEDIUM" || upper == "LOW" { return true }
         return false
     }
 

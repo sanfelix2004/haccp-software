@@ -113,11 +113,14 @@ final class DocumentGenerationService {
         )
 
         // Mese corrente: report mensili aggiornati ad ogni sync (contenuto che cresce col tempo).
+        // `forceInitializeIfMissing: true` garantisce la creazione del documento placeholder
+        // anche se non ci sono ancora dati operativi, eliminando la schermata vuota ad inizio mese.
         if let currentMonth = calendar.dateInterval(of: .month, for: todayStart) {
             await generateFullMonthArchive(
                 context: batchContext,
                 monthInterval: currentMonth,
                 isOpenPeriod: true,
+                forceInitializeIfMissing: true,
                 keyIndex: &keyIndex,
                 scopedItems: &scopedItems
             )
@@ -283,6 +286,7 @@ final class DocumentGenerationService {
         module: DocumentModule,
         interval: DateInterval,
         isOpenPeriod: Bool,
+        forceInitializeIfMissing: Bool = false,
         keyIndex: inout [GenerationKey: DocumentItem],
         scopedItems: inout [DocumentItem]
     ) {
@@ -294,6 +298,7 @@ final class DocumentGenerationService {
             module: module,
             interval: interval,
             isOpenPeriod: isOpenPeriod,
+            forceInitializeIfMissing: forceInitializeIfMissing,
             keyIndex: &keyIndex,
             scopedItems: &scopedItems,
             receipts: context.receipts,
@@ -313,10 +318,12 @@ final class DocumentGenerationService {
 
     /// Report mensile per modulo + combinati + registro NC.
     /// Con `isOpenPeriod == true` rigenera sempre il mese corrente per riflettere i nuovi dati.
+    /// Con `forceInitializeIfMissing == true` crea i placeholder anche in assenza di dati operativi.
     private func generateFullMonthArchive(
         context: ArchiveBatchContext,
         monthInterval: DateInterval,
         isOpenPeriod: Bool,
+        forceInitializeIfMissing: Bool = false,
         keyIndex: inout [GenerationKey: DocumentItem],
         scopedItems: inout [DocumentItem]
     ) async {
@@ -333,6 +340,7 @@ final class DocumentGenerationService {
                 module: module,
                 interval: monthInterval,
                 isOpenPeriod: isOpenPeriod,
+                forceInitializeIfMissing: forceInitializeIfMissing,
                 keyIndex: &keyIndex,
                 scopedItems: &scopedItems
             )
@@ -346,6 +354,7 @@ final class DocumentGenerationService {
                 module: module,
                 interval: monthInterval,
                 isOpenPeriod: isOpenPeriod,
+                forceInitializeIfMissing: forceInitializeIfMissing,
                 keyIndex: &keyIndex,
                 scopedItems: &scopedItems
             )
@@ -384,6 +393,7 @@ final class DocumentGenerationService {
         module: DocumentModule,
         interval: DateInterval,
         isOpenPeriod: Bool,
+        forceInitializeIfMissing: Bool = false,
         keyIndex: inout [GenerationKey: DocumentItem],
         scopedItems: inout [DocumentItem],
         receipts: [GoodsReceipt],
@@ -411,16 +421,24 @@ final class DocumentGenerationService {
             return
         }
 
-        if isOpenPeriod, keyIndex[key] == nil,
-           !shouldGenerateForOpenPeriod(
-               module: module,
-               interval: interval,
-               receipts: receipts,
-               traceability: traceability,
-               images: images,
-               operational: operational
-           ) {
-            return
+        // Salta la generazione per il mese aperto solo se:
+        //   1. Il documento non esiste già nel keyIndex
+        //   2. Non si chiede la forzatura iniziale (forceInitializeIfMissing)
+        //   3. Non ci sono dati operativi per questo modulo
+        // Se forceInitializeIfMissing è true, crea sempre il placeholder mensile
+        // anche senza dati: l'utente non vedrà mai una schermata vuota ad inizio mese.
+        if isOpenPeriod, keyIndex[key] == nil {
+            let hasActivity = shouldGenerateForOpenPeriod(
+                module: module,
+                interval: interval,
+                receipts: receipts,
+                traceability: traceability,
+                images: images,
+                operational: operational
+            )
+            if !hasActivity && !forceInitializeIfMissing {
+                return
+            }
         }
 
         if let existing = keyIndex[key] {

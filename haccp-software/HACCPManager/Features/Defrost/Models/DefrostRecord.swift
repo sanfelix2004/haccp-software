@@ -17,6 +17,7 @@ final class DefrostRecord {
     var startAt: Date
     var expectedEndAt: Date?
     var endAt: Date?
+    var initialTemperature: Double?
     var finalTemperature: Double?
     var statusRaw: String = DefrostStatus.inProgress.rawValue
     var outcomeRaw: String?
@@ -43,6 +44,7 @@ final class DefrostRecord {
         startAt: Date = Date(),
         expectedEndAt: Date? = nil,
         endAt: Date? = nil,
+        initialTemperature: Double? = nil,
         finalTemperature: Double? = nil,
         status: DefrostStatus = .inProgress,
         outcome: DefrostOutcome? = nil,
@@ -67,6 +69,7 @@ final class DefrostRecord {
         self.startAt = startAt
         self.expectedEndAt = expectedEndAt
         self.endAt = endAt
+        self.initialTemperature = initialTemperature
         self.finalTemperature = finalTemperature
         self.statusRaw = status.rawValue
         self.outcomeRaw = outcome?.rawValue
@@ -172,10 +175,16 @@ struct DefrostNewDraft: Equatable {
     var productionId: UUID?
     var categoryName: String?
     var method: DefrostMethod = .frigorifero
+    var initialTemperature: String = ""
     var notes: String = ""
+
+    var parsedInitialTemperature: Double? {
+        Double(initialTemperature.replacingOccurrences(of: ",", with: ".").trimmingCharacters(in: .whitespacesAndNewlines))
+    }
 
     var isValid: Bool {
         !productName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && parsedInitialTemperature != nil
     }
 
     static func from(subject: KitchenProcessSubject) -> DefrostNewDraft {
@@ -196,6 +205,14 @@ struct DefrostCompleteDraft: Equatable {
     var notes: String = ""
     var correctiveAction: String = ""
     var criticalityReason: String = ""
+
+    var parsedFinalTemperature: Double? {
+        Double(finalTemperature.replacingOccurrences(of: ",", with: ".").trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+
+    var isValid: Bool {
+        parsedFinalTemperature != nil
+    }
 }
 
 struct DefrostFilter: Equatable {

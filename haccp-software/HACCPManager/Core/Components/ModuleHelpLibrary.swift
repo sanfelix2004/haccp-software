@@ -160,13 +160,13 @@ enum ModuleHelpLibrary {
         id: "blast",
         title: "Abbattimento",
         purpose: """
-        Registro del ciclo di abbattimento (raffreddamento rapido / surgelazione controllata): temperatura iniziale, tempi, temperatura finale, esito e operatore. Al termine puoi creare subito l’etichetta HACCP (formato 50×30 mm) con i dati essenziali (Abb., Scad, T, Op.) e QR.
+        Registro del ciclo di abbattimento (raffreddamento rapido / surgelazione controllata): temperatura iniziale, tempi, temperatura finale, esito e operatore. Al termine puoi creare subito l’etichetta HACCP (formato 50×30 mm) con i dati essenziali (Abb., Scad, Ti/Tf, Dur.) e QR.
         """,
         steps: [
             "Premi Nuovo abbattimento e scegli il piatto dal Catalogo piatti.",
             "Inserisci la temperatura iniziale e avvia il processo / timer.",
             "Al termine registra temperatura finale, note ed eventuali azioni correttive, poi conferma con firma/operatore.",
-            "Se proposto, crea e stampa l’etichetta: sull’adesivo compaiono nome, data abbattimento (Abb.), scadenza, temperatura e operatore, più QR.",
+            "Se proposto, crea e stampa l’etichetta: sull’adesivo compaiono nome, data abbattimento (Abb.), scadenza, temperature iniziale/finale, durata e QR.",
             "Gli abbattimenti in corso restano visibili (overlay / elenco attivi) finché non li chiudi.",
             "Ritrovi le etichette anche in Etichette di produzione → Abbattimento."
         ],
@@ -239,14 +239,14 @@ enum ModuleHelpLibrary {
         id: "defrost",
         title: "Decongelamento",
         purpose: """
-        Traccia i cicli di decongelamento: prodotto, lotto, metodo, orari, temperatura finale e conformità. Al completamento puoi stampare l’etichetta 50×30 con Dec., Scad (di solito entro 24h), Lotto e Operatore, più QR.
+        Traccia i cicli di decongelamento: prodotto, lotto, metodo, orari, temperatura iniziale e finale, durata e conformità. Al completamento puoi stampare l’etichetta 50×30 con Dec., Scad (di solito entro 24h), Ti/Tf, Dur. e QR.
         """,
         steps: [
             "Premi Nuovo decongelamento.",
             "Scegli la fonte: lotto da Tracciabilità, template Alimenti in ingresso, o inserimento manuale.",
-            "Seleziona il metodo (es. frigorifero) e avvia: il timer / stato attivo parte alla conferma.",
+            "Seleziona il metodo, inserisci la temperatura iniziale e avvia: il timer / stato attivo parte alla conferma.",
             "Al termine registra temperatura finale, esito e eventuali azioni correttive.",
-            "Crea/stampa l’etichetta se proposto: i dati essenziali restano leggibili sull’adesivo; i dettagli restano in app.",
+            "Crea/stampa l’etichetta se proposto: sull’adesivo compaiono Ti, Tf e durata del decongelamento.",
             "I processi attivi compaiono nell’overlay cucina finché non chiusi."
         ],
         notes: [
@@ -283,8 +283,8 @@ enum ModuleHelpLibrary {
 
         Layout tipici:
         • Produzione: nome, Scad, Prod, Lotto, Op.
-        • Abbattimento: nome, Abb., Scad, T, Op.
-        • Decongelamento: nome, Dec., Scad, Lotto, Op.
+        • Abbattimento: nome, Abb., Scad, Ti/Tf, Dur.
+        • Decongelamento: nome, Dec., Scad, Ti/Tf, Dur.
 
         La scansione del QR per riaprire la scheda avviene dall’app su iPad (non è pensata come flusso telefono).
         """,

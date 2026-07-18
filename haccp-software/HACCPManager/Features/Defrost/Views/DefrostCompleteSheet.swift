@@ -23,7 +23,7 @@ struct DefrostCompleteSheet: View {
         draft.outcome == .nonConforme
             || service.isTemperatureNonConforme(
                 method: record.defrostMethod,
-                temperature: Double(draft.finalTemperature.replacingOccurrences(of: ",", with: "."))
+                temperature: draft.parsedFinalTemperature
             )
     }
 
@@ -39,7 +39,18 @@ struct DefrostCompleteSheet: View {
                                 .font(theme.typography.caption)
                                 .foregroundStyle(theme.colorTextSecondary)
 
-                            TextField("Temperatura finale °C (opzionale)", text: $draft.finalTemperature)
+                            if let initial = record.initialTemperature {
+                                HStack {
+                                    Text("Temperatura iniziale")
+                                        .font(theme.typography.caption)
+                                        .foregroundStyle(theme.colorTextSecondary)
+                                    Spacer()
+                                    Text(String(format: "%.1f °C", initial))
+                                        .font(theme.typography.subheadline.weight(.semibold))
+                                }
+                            }
+
+                            TextField("Temperatura finale °C *", text: $draft.finalTemperature)
                                 .keyboardType(.decimalPad)
                                 .textFieldStyle(.roundedBorder)
 
@@ -77,6 +88,7 @@ struct DefrostCompleteSheet: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Salva") { complete() }
+                        .disabled(!draft.isValid)
                 }
             }
             .alert("Decongelamento", isPresented: Binding(

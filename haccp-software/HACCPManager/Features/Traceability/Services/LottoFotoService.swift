@@ -329,13 +329,14 @@ struct LottoFotoService {
 
     func associateWithProductions(
         lottoFotos: [LottoFoto],
+        reusedRecords: [TraceabilityRecord] = [],
         productions: [Production],
         user: LocalUser,
         modelContext: ModelContext,
         productionShelfLifeDays: Int? = nil,
         ignoreIngredientConstraint: Bool = false
     ) throws {
-        guard !lottoFotos.isEmpty, !productions.isEmpty else {
+        guard (!lottoFotos.isEmpty || !reusedRecords.isEmpty), !productions.isEmpty else {
             throw NSError(
                 domain: "LottoFotoService",
                 code: 2,
@@ -352,6 +353,7 @@ struct LottoFotoService {
                 modelContext: modelContext
             )
 
+            // 1. Associa i nuovi scatti via LottoFoto
             for lotto in lottoFotos {
                 let link = LottoFotoProductionLink(
                     lottoFotoId: lotto.id,
@@ -373,20 +375,58 @@ struct LottoFotoService {
                 }
             }
 
+            // 2. Associa i record riutilizzati (sia con che senza LottoFoto)
+            for record in reusedRecords {
+                if let lottoId = record.lottoFotoId {
+                    let link = LottoFotoProductionLink(
+                        lottoFotoId: lottoId,
+                        productionId: production.id,
+                        produzioneBatchId: batch.id
+                    )
+                    modelContext.insert(link)
+                }
+
+                try productionLibraryService.associate(
+                    record: record,
+                    production: production,
+                    quantityUsed: nil,
+                    operatorName: user.name,
+                    links: traceabilityLinks,
+                    modelContext: modelContext
+                )
+                traceabilityLinks = (try? modelContext.fetch(FetchDescriptor<TraceabilityLink>())) ?? traceabilityLinks
+            }
+
+            // 3. Calcola la scadenza combinando tutti i record degli ingredienti
             let shelfDays = productionShelfLifeDays ?? production.defaultShelfLifeDays
-            let ingredientRecords = lottoFotos.compactMap {
+            
+            var ingredientRecords: [TraceabilityRecord] = []
+            ingredientRecords += lottoFotos.compactMap {
                 traceabilityRecord(for: $0, modelContext: modelContext)
             }
+            ingredientRecords += reusedRecords
+            
+            // Rendi univoci per ID
+            var uniqueIngredients: [TraceabilityRecord] = []
+            var seenIds = Set<UUID>()
+            for rec in ingredientRecords {
+                if !seenIds.contains(rec.id) {
+                    seenIds.insert(rec.id)
+                    uniqueIngredients.append(rec)
+                }
+            }
+
             let constraint = ScadenzaCalculator.resolvedProductionExpiry(
                 shelfLifeDays: shelfDays,
-                ingredientRecords: ingredientRecords,
+                ingredientRecords: uniqueIngredients,
                 ignoreIngredientConstraint: ignoreIngredientConstraint
             )
             let internalExpiry = constraint.suggestedExpiryDate
+            
             try batchService.completeBatch(
                 batch: batch,
                 internalExpiryAt: internalExpiry,
-                ingredientCount: lottoFotos.count,
+                ingredientCount: uniqueIngredients.count,
                 user: user,
                 modelContext: modelContext
             )
@@ -403,7 +443,9 @@ struct LottoFotoService {
         }
 
         try modelContext.save()
-        if let restaurantId = lottoFotos.first?.restaurantId {
+        
+        let restaurantId = lottoFotos.first?.restaurantId ?? reusedRecords.first?.restaurantId
+        if let restaurantId {
             HACCPArchiveSyncCoordinator.requestDeferredSync(
                 restaurantId: restaurantId,
                 user: user,

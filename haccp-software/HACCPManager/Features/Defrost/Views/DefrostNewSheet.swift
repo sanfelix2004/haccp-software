@@ -27,6 +27,7 @@ struct DefrostNewSheet: View {
         categoryName: nil
     )
     @State private var method: DefrostMethod = .frigorifero
+    @State private var initialTemperature = ""
     @State private var notes = ""
     @State private var errorMessage: String?
 
@@ -59,6 +60,10 @@ struct DefrostNewSheet: View {
                             }
                             .pickerStyle(.menu)
 
+                            TextField("Temperatura iniziale °C *", text: $initialTemperature)
+                                .keyboardType(.decimalPad)
+                                .textFieldStyle(.roundedBorder)
+
                             Text("Il timer parte quando premi Avvia, non prima.")
                                 .font(theme.typography.caption)
                                 .foregroundStyle(theme.colorTextSecondary)
@@ -84,7 +89,7 @@ struct DefrostNewSheet: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Avvia") { save() }
-                        .disabled(!subject.isValid)
+                        .disabled(!subject.isValid || Double(initialTemperature.replacingOccurrences(of: ",", with: ".")) == nil)
                 }
             }
             .alert("Decongelamento", isPresented: Binding(
@@ -101,6 +106,7 @@ struct DefrostNewSheet: View {
     private func save() {
         var draft = DefrostNewDraft.from(subject: subject)
         draft.method = method
+        draft.initialTemperature = initialTemperature
         draft.notes = notes
         do {
             _ = try service.startDefrost(

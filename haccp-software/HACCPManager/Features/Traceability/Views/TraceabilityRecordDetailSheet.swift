@@ -245,7 +245,7 @@ struct TraceabilityRecordDetailSheet: View {
                 ) {
                     onAssociate()
                 }
-                .disabled(!display.isActionable)
+                .disabled(!display.isActionable && !record.isNonCompliant)
 
                 if record.productStatus != .rejected {
                     SecondaryButton(

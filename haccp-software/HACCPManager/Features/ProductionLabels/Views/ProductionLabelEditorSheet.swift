@@ -192,7 +192,7 @@ struct ProductionLabelEditorSheet: View {
             VStack(spacing: 14) {
                 TextField("Conservazione", text: $draft.storageInstructions, axis: .vertical)
                     .lineLimit(2...4)
-                TextField("Temperatura", text: $draft.temperatureNote)
+                TextField("Temperatura (es. Ti -18 · Tf 3 · Dur 45m)", text: $draft.temperatureNote)
                 HStack {
                     TextField("Quantità", text: $draft.quantity)
                         .keyboardType(.decimalPad)

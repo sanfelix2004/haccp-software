@@ -1,12 +1,15 @@
 import SwiftUI
 import SwiftData
+import LabelScanningContract
+import LabelScannerV2
 
 /// Flusso tracciabilità: scatta → etichetta/alimento → produzione.
 struct TraceabilityLotCaptureFlowView: View {
     let restaurantId: UUID
     let user: LocalUser
     var resumeSessionId: UUID? = nil
-    let onDismiss: () -> Void
+    /// `leavePending == true` mantiene la sessione riprendibile; `sessionId` è la sessione da tenere/chiudere.
+    let onDismiss: (_ leavePending: Bool, _ sessionId: UUID?) -> Void
     let onUpdated: () -> Void
 
     @Environment(\.modelContext) private var modelContext
@@ -42,6 +45,8 @@ struct TraceabilityLotCaptureFlowView: View {
     @State private var selectedProductionCategoryId: UUID?
     @State private var errorMessage: String?
     @State private var showExitWithoutProductionAlert = false
+    @State private var selectedScanEngine: LabelScanEngineSelection = .current
+    @State private var selectedReusedRecordIds: Set<UUID> = []
 
     private var sessionIngredientRecords: [TraceabilityRecord] {
         sessionItems.compactMap { lottoService.traceabilityRecord(for: $0, modelContext: modelContext) }
@@ -57,12 +62,13 @@ struct TraceabilityLotCaptureFlowView: View {
 
     private let lottoService = LottoFotoService()
     private let libraryService = ProductionLibraryService()
+    private let productionLibraryService = ProductionLibraryService()
 
     init(
         restaurantId: UUID,
         user: LocalUser,
         resumeSessionId: UUID? = nil,
-        onDismiss: @escaping () -> Void,
+        onDismiss: @escaping (_ leavePending: Bool, _ sessionId: UUID?) -> Void,
         onUpdated: @escaping () -> Void
     ) {
         self.restaurantId = restaurantId
@@ -160,12 +166,29 @@ struct TraceabilityLotCaptureFlowView: View {
 
             VStack {
                 captureHeader
+                if pendingCapture == nil && !isProductionPickerPresented {
+                    enginePicker
+                        .padding(.top, 8)
+                }
                 Spacer()
                     .allowsHitTesting(false)
                 if pendingCapture == nil, !sessionItems.isEmpty, !isProductionPickerPresented {
                     TraceabilitySessionDock(items: sessionItems, onFinish: presentProductionPicker)
                         .padding(.horizontal, 12)
                         .padding(.bottom, 100)
+                } else if pendingCapture == nil, sessionItems.isEmpty, !isProductionPickerPresented {
+                    // Accesso rapido al magazzino (senza scattare foto)
+                    Button(action: presentProductionPickerFromWarehouse) {
+                        Label("Usa solo dal magazzino", systemImage: "archivebox.fill")
+                            .font(theme.typography.caption.weight(.semibold))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 10)
+                            .background(.black.opacity(0.5), in: Capsule())
+                            .overlay(Capsule().strokeBorder(.white.opacity(0.25), lineWidth: 1))
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.bottom, 110)
                 }
             }
 
@@ -208,11 +231,21 @@ struct TraceabilityLotCaptureFlowView: View {
         } message: {
             Text(errorMessage ?? "")
         }
-        .alert("Foto non associate", isPresented: $showExitWithoutProductionAlert) {
-            Button("Scegli produzione") { presentProductionPicker() }
-            Button("Continua a scattare", role: .cancel) {}
+        .alert("Uscire dalla tracciabilità?", isPresented: $showExitWithoutProductionAlert) {
+            Button("Lascia in sospeso") {
+                exitCapture(leavePending: true)
+            }
+            Button("Chiudi sessione", role: .destructive) {
+                exitCapture(leavePending: false)
+            }
+            Button("Resta qui", role: .cancel) {
+                if pendingCapture == nil, !isProductionPickerPresented {
+                    camera.resetCaptureBuffer()
+                    camera.start()
+                }
+            }
         } message: {
-            Text("Hai \(sessionItems.count) foto in sessione. Collegale a un piatto prima di uscire.")
+            Text("Hai \(sessionItems.count) foto non ancora collegate a un piatto. Puoi lasciarle in sospeso e riprendere dopo, oppure chiudere la sessione.")
         }
         .alert("Prodotto scaduto", isPresented: $showExpiredProductAlert) {
             Button("Annulla", role: .cancel) {
@@ -264,6 +297,23 @@ struct TraceabilityLotCaptureFlowView: View {
         }
         .padding(.horizontal, 12)
         .padding(.top, 52)
+    }
+
+    private var enginePicker: some View {
+        Picker("Motore OCR", selection: $selectedScanEngine) {
+            ForEach(LabelScanEngineSelection.allCases) { engine in
+                Text(engine.title).tag(engine)
+            }
+        }
+        .pickerStyle(.segmented)
+        .frame(maxWidth: 160)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(.black.opacity(0.45), in: Capsule())
+        .onChange(of: selectedScanEngine) { _, newValue in
+            LabelScanEngineSelection.current = newValue
+        }
+        .accessibilityLabel("Motore scansione etichetta V1 o V2")
     }
 
     // MARK: - Revisione scatto
@@ -635,6 +685,15 @@ struct TraceabilityLotCaptureFlowView: View {
                             .foregroundStyle(theme.colorTextSecondary)
                     }
 
+                    // Pannello riutilizzo alimenti già in magazzino
+                    TraceabilityIngredientReusePanel(
+                        restaurantId: restaurantId,
+                        sessionLottoIds: Set(sessionItems.map(\.id)),
+                        selectedRecordIds: $selectedReusedRecordIds
+                    )
+
+                    Divider()
+
                     TraceabilityInlineSearchField(
                         placeholder: "Cerca piatto…",
                         text: $productionSearchText
@@ -694,21 +753,29 @@ struct TraceabilityLotCaptureFlowView: View {
                         }
                     }
                     .fontWeight(.semibold)
-                    .disabled(selectedProduction == nil)
+                    .disabled(selectedProduction == nil && selectedReusedRecordIds.isEmpty)
                 }
             }
             .safeAreaInset(edge: .bottom) {
                 if let production = selectedProduction {
                     let constraint = productionConstraint(for: production)
+                    let totalCount = sessionItems.count + selectedReusedRecordIds.count
                     VStack(alignment: .leading, spacing: 10) {
                         HStack {
                             Image(systemName: "fork.knife")
                             Text(production.name)
                                 .font(theme.typography.subheadline.weight(.semibold))
                             Spacer()
-                            Text("\(sessionItems.count) etichette")
-                                .font(theme.typography.caption)
-                                .foregroundStyle(theme.colorTextSecondary)
+                            VStack(alignment: .trailing, spacing: 2) {
+                                Text("\(totalCount) alimenti totali")
+                                    .font(theme.typography.caption.weight(.semibold))
+                                    .foregroundStyle(theme.colorTextPrimary)
+                                if !selectedReusedRecordIds.isEmpty {
+                                    Text("\(sessionItems.count) nuovi · \(selectedReusedRecordIds.count) dal magazzino")
+                                        .font(theme.typography.caption2)
+                                        .foregroundStyle(theme.colorTextSecondary)
+                                }
+                            }
                         }
 
                         HStack {
@@ -846,12 +913,15 @@ struct TraceabilityLotCaptureFlowView: View {
     private func applyLotOutcome(_ outcome: ProductionLotCaptureOutcome, to captureId: UUID, isFinal: Bool) {
         guard var current = pendingCapture, current.id == captureId else { return }
 
+        let sanitizedLot = outcome.lotCode.flatMap {
+            LabelLotSanitizer.validateLot($0, rawContext: outcome.rawText)
+        }
         if !lotDraftUserEdited,
-           let lot = outcome.lotCode?.trimmingCharacters(in: .whitespacesAndNewlines),
+           let lot = sanitizedLot?.trimmingCharacters(in: .whitespacesAndNewlines),
            !lot.isEmpty {
             current.lotDraft = lot
         }
-        current.testoLottoOCR = outcome.lotCode
+        current.testoLottoOCR = sanitizedLot
         let raw = outcome.rawText.trimmingCharacters(in: .whitespacesAndNewlines)
         current.ocrRawText = raw.isEmpty ? nil : raw
         current.ocrConfidence = outcome.confidence
@@ -865,13 +935,20 @@ struct TraceabilityLotCaptureFlowView: View {
         }
 
         if let labelExpiry = outcome.expiryDate {
-            current.labelExpiryDate = labelExpiry
-            current.expiryFromLabel = true
-            suppressExpiryEditTracking = true
-            expiryDate = labelExpiry
-            suppressExpiryEditTracking = false
-            expiryFromLabel = true
-            expiryUserEdited = false
+            let year = Calendar.current.component(.year, from: labelExpiry)
+            let currentYear = Calendar.current.component(.year, from: Date())
+            // Rete di sicurezza UI: mai bindare allucinazioni 2031+ sul DatePicker.
+            if year > currentYear + 3 || year < currentYear - 1 {
+                // Ignora — lascia scadenza manuale / valore precedente non allucinato.
+            } else {
+                current.labelExpiryDate = labelExpiry
+                current.expiryFromLabel = true
+                suppressExpiryEditTracking = true
+                expiryDate = labelExpiry
+                suppressExpiryEditTracking = false
+                expiryFromLabel = true
+                expiryUserEdited = false
+            }
         }
 
         pendingCapture = current
@@ -883,11 +960,22 @@ struct TraceabilityLotCaptureFlowView: View {
         }
     }
 
+    /// OCR/AI su thread di background; aggiornamenti UI sul MainActor (niente freeze).
     @MainActor
     private func extractLotInBackground(captureId: UUID, photoData: Data) async {
+        if selectedScanEngine == .v2 {
+            await extractLotWithSelectedEngine(captureId: captureId, photoData: photoData)
+            return
+        }
+
+        let service = LottoFotoService()
         var previewOutcome: ProductionLotCaptureOutcome?
 
-        if let preview = await lottoService.extractLotLocalPreview(from: photoData) {
+        let preview = await Task.detached(priority: .userInitiated) {
+            await service.extractLotLocalPreview(from: photoData)
+        }.value
+
+        if let preview {
             previewOutcome = preview
             applyLotOutcome(preview, to: captureId, isFinal: false)
             if preview.lotCode != nil, preview.expiryDate != nil {
@@ -898,13 +986,15 @@ struct TraceabilityLotCaptureFlowView: View {
 
         if GroqApiKeyService.hasAnyKey() {
             do {
-                let enhanced = try await lottoService.extractLotGroqOnly(from: photoData)
+                let enhanced = try await Task.detached(priority: .userInitiated) {
+                    try await service.extractLotGroqOnly(from: photoData)
+                }.value
                 let merged = mergeLotOutcomes(preview: previewOutcome, enhanced: enhanced)
                 applyLotOutcome(merged, to: captureId, isFinal: true)
                 return
             } catch {
-                if previewOutcome != nil {
-                    applyLotOutcome(previewOutcome!, to: captureId, isFinal: true)
+                if let previewOutcome {
+                    applyLotOutcome(previewOutcome, to: captureId, isFinal: true)
                     return
                 }
                 guard var current = pendingCapture, current.id == captureId else { return }
@@ -921,8 +1011,26 @@ struct TraceabilityLotCaptureFlowView: View {
         }
 
         do {
-            let outcome = try await lottoService.extractLot(from: photoData)
+            let outcome = try await Task.detached(priority: .userInitiated) {
+                try await service.extractLot(from: photoData)
+            }.value
             applyLotOutcome(outcome, to: captureId, isFinal: true)
+        } catch {
+            guard var current = pendingCapture, current.id == captureId else { return }
+            current.isLotExtracting = false
+            current.lotExtractionError = friendlyLotExtractionError(error)
+            pendingCapture = current
+        }
+    }
+
+    @MainActor
+    private func extractLotWithSelectedEngine(captureId: UUID, photoData: Data) async {
+        let engine = LabelScanningEngineFactory.make(selection: selectedScanEngine)
+        do {
+            let result = try await Task.detached(priority: .userInitiated) {
+                try await engine.scan(imageData: photoData)
+            }.value
+            applyLotOutcome(LabelScanResultBridge.toCaptureOutcome(result), to: captureId, isFinal: true)
         } catch {
             guard var current = pendingCapture, current.id == captureId else { return }
             current.isLotExtracting = false
@@ -936,15 +1044,64 @@ struct TraceabilityLotCaptureFlowView: View {
         enhanced: ProductionLotCaptureOutcome
     ) -> ProductionLotCaptureOutcome {
         guard let preview else { return enhanced }
+
+        // Groq vince sul lotto solo se valido; scarta etichette tipo "number"/"LATTY".
+        let mergedLot: String? = {
+            let context = [preview.rawText, enhanced.rawText].joined(separator: "\n")
+            let groq = enhanced.lotCode.flatMap {
+                LabelLotSanitizer.validateLot($0, rawContext: context)
+            }
+            if let groq, !groq.isEmpty { return groq }
+            return preview.lotCode.flatMap {
+                LabelLotSanitizer.validateLot($0, rawContext: context)
+            }
+        }()
+
+        // Scadenza: mai far vincere un'allucinazione Groq (nil o anno folle) sulla data Apple Vision.
+        let mergedExpiry = preferredMergedExpiry(
+            preview: preview.expiryDate,
+            enhanced: enhanced.expiryDate
+        )
+
         return ProductionLotCaptureOutcome(
             rawText: [preview.rawText, enhanced.rawText].filter { !$0.isEmpty }.joined(separator: "\n"),
-            lotCode: enhanced.lotCode ?? preview.lotCode,
+            lotCode: mergedLot,
             ingredientName: enhanced.ingredientName ?? preview.ingredientName,
-            expiryDate: enhanced.expiryDate ?? preview.expiryDate,
+            expiryDate: mergedExpiry,
             confidence: max(preview.confidence, enhanced.confidence),
-            lotParseAudit: preview.lotParseAudit + enhanced.lotParseAudit,
+            lotParseAudit: preview.lotParseAudit + enhanced.lotParseAudit + [
+                mergedExpiryAudit(preview: preview.expiryDate, enhanced: enhanced.expiryDate, chosen: mergedExpiry)
+            ].compactMap { $0 },
             analysisNote: enhanced.analysisNote ?? preview.analysisNote
         )
+    }
+
+    /// Se Groq non ha scadenza (scartata dal guardrail) o ha un anno folle, prevale Apple Vision.
+    private func preferredMergedExpiry(preview: Date?, enhanced: Date?) -> Date? {
+        guard let enhanced else { return preview }
+        guard let preview else { return enhanced }
+
+        let currentYear = Calendar.current.component(.year, from: Date())
+        let enhancedYear = Calendar.current.component(.year, from: enhanced)
+        if enhancedYear > currentYear + 3 || enhancedYear < currentYear - 1 {
+            return preview
+        }
+        // Entrambi plausibili: preferisci Groq (visione multi-crop) ma non azzerare il locale.
+        return enhanced
+    }
+
+    private func mergedExpiryAudit(preview: Date?, enhanced: Date?, chosen: Date?) -> String? {
+        let df = DateFormatter()
+        df.dateFormat = "dd/MM/yyyy"
+        df.locale = Locale(identifier: "it_IT")
+        func fmt(_ d: Date?) -> String { d.map { df.string(from: $0) } ?? "nil" }
+        if enhanced == nil, preview != nil, chosen == preview {
+            return "Merge scadenza: Groq nil → preservata anteprima locale \(fmt(preview))"
+        }
+        if let enhanced, let preview, chosen == preview, enhanced != preview {
+            return "Merge scadenza: scartata allucinazione Groq \(fmt(enhanced)) → locale \(fmt(preview))"
+        }
+        return nil
     }
 
     private func selectTemplate(_ template: ProductTemplate) {
@@ -956,7 +1113,7 @@ struct TraceabilityLotCaptureFlowView: View {
         HapticManager.shared.selection()
     }
 
-    private func discardPending() {
+    private func discardPending(resumeCamera: Bool = true) {
         pendingCapture = nil
         lotDraftUserEdited = false
         selectedTemplate = nil
@@ -964,7 +1121,9 @@ struct TraceabilityLotCaptureFlowView: View {
         expiryFromLabel = false
         expiryUserEdited = false
         camera.resetCaptureBuffer()
-        camera.start()
+        if resumeCamera {
+            camera.start()
+        }
     }
 
     private func confirmPending(_ pending: PendingLottoCapture) {
@@ -1024,13 +1183,22 @@ struct TraceabilityLotCaptureFlowView: View {
     }
 
     private func attemptClose() {
-        guard pendingCapture == nil else { return }
+        if pendingCapture != nil {
+            discardPending(resumeCamera: false)
+        }
         if sessionItems.isEmpty {
-            camera.stop()
-            onDismiss()
+            exitCapture(leavePending: false)
         } else {
             showExitWithoutProductionAlert = true
         }
+    }
+
+    private func exitCapture(leavePending: Bool) {
+        camera.stop()
+        pendingCapture = nil
+        presentedSheet = nil
+        let sid: UUID? = sessionItems.isEmpty ? nil : sessionId
+        onDismiss(leavePending, sid)
     }
 
     private func presentAddIncomingFood() {
@@ -1056,6 +1224,20 @@ struct TraceabilityLotCaptureFlowView: View {
         productionSearchText = ""
         forcesCatalogDuration = false
         showAddProductionInPicker = false
+        selectedReusedRecordIds = []
+        camera.stop()
+        presentedSheet = .productionPicker
+    }
+
+    /// Apre il picker anche senza aver scattato foto (solo per riutilizzo dal magazzino)
+    private func presentProductionPickerFromWarehouse() {
+        guard pendingCapture == nil, presentedSheet == nil else { return }
+        selectedProduction = nil
+        selectedProductionCategoryId = nil
+        productionSearchText = ""
+        forcesCatalogDuration = false
+        showAddProductionInPicker = false
+        selectedReusedRecordIds = []
         camera.stop()
         presentedSheet = .productionPicker
     }
@@ -1068,8 +1250,24 @@ struct TraceabilityLotCaptureFlowView: View {
 
     private func associateProduction(_ production: Production) {
         do {
+            // Raccogli i record riutilizzati dal database
+            var reusedRecords: [TraceabilityRecord] = []
+            if !selectedReusedRecordIds.isEmpty {
+                for recordId in selectedReusedRecordIds {
+                    var descriptor = FetchDescriptor<TraceabilityRecord>(
+                        predicate: #Predicate<TraceabilityRecord> { $0.id == recordId }
+                    )
+                    descriptor.fetchLimit = 1
+                    if let record = (try? modelContext.fetch(descriptor))?.first {
+                        reusedRecords.append(record)
+                    }
+                }
+            }
+
+            // Chiama l'associazione unificata nel service (gestisce sia nuovi scatti che riutilizzati)
             try lottoService.associateWithProductions(
                 lottoFotos: sessionItems,
+                reusedRecords: reusedRecords,
                 productions: [production],
                 user: user,
                 modelContext: modelContext,
@@ -1078,16 +1276,17 @@ struct TraceabilityLotCaptureFlowView: View {
                     : nil,
                 ignoreIngredientConstraint: forcesCatalogDuration
             )
+
             presentedSheet = nil
             selectedProduction = nil
             selectedProductionCategoryId = nil
+            selectedReusedRecordIds = []
             sessionId = UUID()
             sessionItems = []
             supplierName = ""
             onUpdated()
             HapticManager.shared.notification(.success)
-            camera.stop()
-            onDismiss()
+            exitCapture(leavePending: false)
         } catch {
             errorMessage = error.localizedDescription
         }

@@ -37,6 +37,17 @@ struct DefrostRecordCardView: View {
                 infoColumn(icon: "clock", title: "Inizio", value: record.startAt.formatted(date: .abbreviated, time: .shortened))
             }
 
+            if record.initialTemperature != nil || record.finalTemperature != nil {
+                HStack(spacing: 16) {
+                    if let initial = record.initialTemperature {
+                        infoColumn(icon: "thermometer.low", title: "T iniziale", value: String(format: "%.1f °C", initial))
+                    }
+                    if let final = record.finalTemperature {
+                        infoColumn(icon: "thermometer.high", title: "T finale", value: String(format: "%.1f °C", final))
+                    }
+                }
+            }
+
             if isActiveProcess {
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {

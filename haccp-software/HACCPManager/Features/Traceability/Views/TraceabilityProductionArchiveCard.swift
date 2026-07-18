@@ -11,6 +11,8 @@ struct TraceabilityProductionArchiveCard: View, Equatable {
     let isExpanded: Bool
     let onToggleExpanded: () -> Void
     let onOpenIngredient: (UUID) -> Void
+    /// Swipe elimina sul singolo alimento (se consentito).
+    var onDeleteIngredient: ((UUID) -> Void)? = nil
 
     @Environment(\.theme) private var theme
 
@@ -18,6 +20,7 @@ struct TraceabilityProductionArchiveCard: View, Equatable {
         lhs.group == rhs.group
             && lhs.isExpanded == rhs.isExpanded
             && lhs.searchText == rhs.searchText
+            && (lhs.onDeleteIngredient == nil) == (rhs.onDeleteIngredient == nil)
     }
 
     private var searchTokens: [String] {
@@ -118,16 +121,31 @@ struct TraceabilityProductionArchiveCard: View, Equatable {
 
     @ViewBuilder
     private func ingredientRow(_ ingredient: TraceabilityArchiveIngredientItem) -> some View {
-        if let recordId = ingredient.recordId {
-            Button {
-                onOpenIngredient(recordId)
-            } label: {
-                ingredientRowContent(ingredient, showsChevron: true)
+        if let recordId = ingredient.recordId, let onDeleteIngredient {
+            SwipeToDeleteRow(
+                enabled: true,
+                deleteTitle: "Elimina",
+                onDelete: { onDeleteIngredient(recordId) }
+            ) {
+                ingredientTapRow(ingredient, recordId: recordId)
             }
-            .buttonStyle(PremiumPressButtonStyle())
+        } else if let recordId = ingredient.recordId {
+            ingredientTapRow(ingredient, recordId: recordId)
         } else {
             ingredientRowContent(ingredient, showsChevron: false)
         }
+    }
+
+    private func ingredientTapRow(
+        _ ingredient: TraceabilityArchiveIngredientItem,
+        recordId: UUID
+    ) -> some View {
+        Button {
+            onOpenIngredient(recordId)
+        } label: {
+            ingredientRowContent(ingredient, showsChevron: true)
+        }
+        .buttonStyle(PremiumPressButtonStyle())
     }
 
     private func ingredientRowContent(_ ingredient: TraceabilityArchiveIngredientItem, showsChevron: Bool) -> some View {
