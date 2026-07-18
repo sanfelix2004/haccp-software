@@ -9,15 +9,19 @@ struct ProductionSelectionView: View {
     @Query private var productions: [Production]
     @Query private var links: [TraceabilityLink]
     @Query private var blastRecords: [BlastChillingRecord]
+    @Environment(\.theme) private var theme
     @StateObject private var vm = ProductionSelectionViewModel()
+    @StateObject private var camera = FinalizeReceiptCameraViewModel()
     @State private var masterAuth = MasterAuthCoordinator()
     @State private var showMasterAuthForDelete = false
     @State private var productionPendingDeletion: Production?
+    @State private var productionPhotoData: Data?
+    @State private var showCamera = false
     private let service = ProductionLibraryService()
     let initialSelectedIds: Set<UUID>
 
     let onCancel: () -> Void
-    let onConfirm: ([Production]) -> Void
+    let onConfirm: ([Production], Data?) -> Void
 
     private var scopedCategories: [ProductionCategory] {
         guard let rid = appState.activeRestaurantId else { return [] }
@@ -67,6 +71,8 @@ struct ProductionSelectionView: View {
                         }
                     }
                 }
+
+                productionDishPhotoSection
 
                 ScrollView {
                     ProductionGrid(
@@ -127,7 +133,7 @@ struct ProductionSelectionView: View {
                         .tint(ThemeManager.shared.colorPrimary)
                     Button("Ho finito") {
                         let selected = scopedProductions.filter { vm.selectedProductionIds.contains($0.id) }
-                        onConfirm(selected)
+                        onConfirm(selected, productionPhotoData)
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(vm.selectedProductionIds.isEmpty ? .gray : .green)
@@ -170,7 +176,81 @@ struct ProductionSelectionView: View {
             } message: {
                 Text(vm.errorMessage ?? "")
             }
+            .fullScreenCover(isPresented: $showCamera) {
+                productionCameraSheet
+            }
             .masterAuthCover(coordinator: masterAuth, master: users.first(where: { $0.role == .master }))
+        }
+    }
+
+    private var productionDishPhotoSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Foto piatto finito (opzionale)")
+                .font(theme.typography.subheadline.weight(.semibold))
+            Text("Non usa la foto dell’alimento in ingresso: scatta solo se vuoi documentare il piatto.")
+                .font(theme.typography.caption)
+                .foregroundStyle(theme.colorTextSecondary)
+            if let productionPhotoData,
+               let thumb = HACCPZoomablePhotoThumbnail(
+                data: productionPhotoData,
+                size: 80,
+                zoomTitle: "Piatto finito"
+               ) {
+                HStack(spacing: 12) {
+                    thumb
+                    VStack(alignment: .leading, spacing: 8) {
+                        Button("Scatta di nuovo") { showCamera = true }
+                            .font(theme.typography.caption.weight(.semibold))
+                        Button("Rimuovi") { self.productionPhotoData = nil }
+                            .font(theme.typography.caption)
+                            .foregroundStyle(theme.colorError)
+                    }
+                }
+            } else {
+                Button {
+                    showCamera = true
+                } label: {
+                    Label("Scatta foto del piatto", systemImage: "camera.fill")
+                        .font(theme.typography.subheadline.weight(.semibold))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                }
+                .buttonStyle(.bordered)
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(theme.colorSurface)
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+
+    private var productionCameraSheet: some View {
+        NavigationStack {
+            ZStack {
+                FinalizeCameraSessionPreview(session: camera.session, cameraViewModel: camera)
+                    .ignoresSafeArea()
+                VStack {
+                    Spacer()
+                    Button("Scatta") { camera.capturePhoto() }
+                        .buttonStyle(.borderedProminent)
+                        .padding(.bottom, 28)
+                }
+            }
+            .navigationTitle("Foto piatto")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Chiudi") { showCamera = false }
+                }
+            }
+            .onAppear { camera.start() }
+            .onDisappear { camera.stop() }
+            .onReceive(camera.$capturedPhotoData) { data in
+                guard let data, !data.isEmpty else { return }
+                camera.resetCaptureBuffer()
+                showCamera = false
+                productionPhotoData = data
+            }
         }
     }
 

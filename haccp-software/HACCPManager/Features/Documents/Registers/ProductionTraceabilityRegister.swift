@@ -17,6 +17,7 @@ enum ProductionTraceabilityRegister {
         let lotDetail: String
         let expiryDetail: String
         let ingredients: [IngredientLine]
+        let batchId: UUID?
     }
 
     struct GiacenzaRow {
@@ -46,7 +47,7 @@ enum ProductionTraceabilityRegister {
         let dayFormatter = dayOnlyFormatter()
 
         let scopedBatches = batches
-            .filter { !$0.isArchived && interval.contains($0.producedAt) }
+            .filter { interval.contains($0.producedAt) }
             .sorted { $0.producedAt > $1.producedAt }
 
         var blocks: [MasterBlock] = []
@@ -71,6 +72,9 @@ enum ProductionTraceabilityRegister {
                 ingredientRecords: ingredientRecords
             )
             let dateLine = "\(dayFormatter.string(from: batch.producedAt)) · \(batch.createdByNameSnapshot)"
+            let dishName = batch.isArchived
+                ? "\(batch.productionNameSnapshot) [conservata in documenti — nascosta dallo storico]"
+                : batch.productionNameSnapshot
             let ingredients = ingredientRecords.map {
                 ingredientLine(
                     from: $0,
@@ -82,12 +86,13 @@ enum ProductionTraceabilityRegister {
             blocks.append(MasterBlock(
                 dateOperator: dateLine,
                 productionDetail: productionFoodLine(
-                    name: batch.productionNameSnapshot,
+                    name: dishName,
                     expiry: dishExpiryDate
                 ),
                 lotDetail: internalLot,
                 expiryDetail: "—",
-                ingredients: ingredients
+                ingredients: ingredients,
+                batchId: batch.id
             ))
         }
 
@@ -131,7 +136,8 @@ enum ProductionTraceabilityRegister {
                 ),
                 lotDetail: HACCPRegisterCopy.notAvailable,
                 expiryDetail: "—",
-                ingredients: ingredients
+                ingredients: ingredients,
+                batchId: nil
             ))
         }
 
@@ -307,8 +313,10 @@ enum ProductionTraceabilityRegister {
     private static func formattedBatchLot(_ code: String) -> String {
         let trimmed = code.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return HACCPRegisterCopy.notAvailable }
-        if trimmed.hasPrefix("#") { return trimmed }
-        return "#\(trimmed)"
+        if InternalLotCodeGenerator.isInternalLotCode(trimmed) || trimmed.hasPrefix("Batch #") {
+            return trimmed
+        }
+        return trimmed.hasPrefix("#") ? trimmed : "#\(trimmed)"
     }
 
     private static func formattedExpiry(_ date: Date?, prefix: String = "") -> String {

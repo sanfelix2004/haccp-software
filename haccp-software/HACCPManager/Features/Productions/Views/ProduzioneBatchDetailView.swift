@@ -17,6 +17,7 @@ struct ProduzioneBatchDetailView: View {
                 onUpdated: onUpdated,
                 onCompleted: { dismiss() }
             )
+            .navigationTitle("Lotto \(batch.batchCode)")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {

@@ -357,6 +357,9 @@ struct DocumentsView: View {
     }
 
     private func reloadDocumentsData() {
+        if let rid = appState.activeRestaurantId {
+            DocumentPDFPathResolver.healAll(restaurantId: rid, modelContext: modelContext)
+        }
         dataStore.reload(context: modelContext, restaurantId: appState.activeRestaurantId)
     }
 
@@ -431,22 +434,23 @@ struct DocumentsView: View {
 
     @ViewBuilder
     private func documentRow(_ doc: DocumentItem) -> some View {
-        let fileURL = URL(fileURLWithPath: doc.filePath)
-        let pdfExists = doc.localFilePresent
-            && FileManager.default.fileExists(atPath: doc.filePath)
-            && doc.fileName.lowercased().hasSuffix(".pdf")
+        let resolvedURL = DocumentPDFPathResolver.existingURL(for: doc)
+        let pdfExists = resolvedURL != nil && doc.fileName.lowercased().hasSuffix(".pdf")
+        let fileURL = resolvedURL ?? URL(fileURLWithPath: doc.filePath)
 
         DocumentItemCard(
             document: doc,
             pdfExists: pdfExists,
             canManageDocuments: canManageDocuments,
             onOpen: {
-                guard pdfExists else { return }
-                documentPreviewItem = DocumentPreviewSheetItem(url: fileURL)
+                guard let url = DocumentPDFPathResolver.resolveAndHeal(doc) else { return }
+                documentPreviewItem = DocumentPreviewSheetItem(url: url)
             },
             onShare: {
-                shareURLs = [fileURL]
-                showShareSheet = true
+                if let url = DocumentPDFPathResolver.resolveAndHeal(doc) {
+                    shareURLs = [url]
+                    showShareSheet = true
+                }
             },
             onExportCSV: { exportCSV(doc) },
             onExportCopy: { exportTemporaryCopy(doc) },
@@ -508,7 +512,9 @@ struct DocumentsView: View {
     }
 
     private func performDelete(_ doc: DocumentItem) {
-        if FileManager.default.fileExists(atPath: doc.filePath) {
+        if let url = DocumentPDFPathResolver.resolveAndHeal(doc) {
+            try? FileManager.default.removeItem(at: url)
+        } else if FileManager.default.fileExists(atPath: doc.filePath) {
             try? FileManager.default.removeItem(atPath: doc.filePath)
         }
         doc.localFilePresent = false

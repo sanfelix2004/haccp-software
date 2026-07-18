@@ -15,7 +15,9 @@ struct TraceabilityRecordHistoryDetailSheet: View {
 
     @State private var record: TraceabilityRecord?
     @State private var photoData: Data?
+    @State private var extraPhotos: [Data] = []
     @State private var linkedProductions: [Production] = []
+    @State private var productionLotCode: String?
     @State private var isLoading = true
 
     var body: some View {
@@ -28,6 +30,9 @@ struct TraceabilityRecordHistoryDetailSheet: View {
                     ScrollView {
                         VStack(alignment: .leading, spacing: theme.spacing.sectionSpacing) {
                             headerBlock(record)
+                            if let productionLotCode, !productionLotCode.isEmpty {
+                                ProductionInternalLotBadge(batchCode: productionLotCode, compact: true)
+                            }
                             infoCard(record)
                             
                             if record.isNonCompliant {
@@ -39,7 +44,10 @@ struct TraceabilityRecordHistoryDetailSheet: View {
                             }
                             
                             if let photo = photoData {
-                                photoCard(photo)
+                                photoCard(photo, title: "Documentazione fotografica")
+                            }
+                            if !extraPhotos.isEmpty {
+                                extraPhotosCard
                             }
                         }
                         .padding(theme.spacing.screenPadding + 8)
@@ -82,13 +90,23 @@ struct TraceabilityRecordHistoryDetailSheet: View {
         }
         self.record = fetchedRecord
         
-        // 2. Fetch associated photo (ProductImage)
+        // 2. Fetch associated photos (ProductImage / inline / disco)
         var imageDescriptor = FetchDescriptor<ProductImage>(
-            predicate: #Predicate<ProductImage> { $0.receivedItemId == targetId && !$0.isArchived }
+            predicate: #Predicate<ProductImage> { !$0.isArchived }
         )
-        imageDescriptor.fetchLimit = 1
-        if let image = (try? modelContext.fetch(imageDescriptor))?.first {
-            self.photoData = image.imageData
+        let allImages = (try? modelContext.fetch(imageDescriptor)) ?? []
+        let lottoFotos = (try? modelContext.fetch(FetchDescriptor<LottoFoto>())) ?? []
+        let photos = ProductImageBytesResolver.allPhotos(
+            record: fetchedRecord,
+            images: allImages,
+            lottoFotos: lottoFotos
+        )
+        self.photoData = photos.first
+        if photos.count > 1 {
+            // Conserva tutte le foto per la griglia sotto (prima già in photoData).
+            extraPhotos = Array(photos.dropFirst())
+        } else {
+            extraPhotos = []
         }
         
         // 3. Fetch linked productions
@@ -102,6 +120,37 @@ struct TraceabilityRecordHistoryDetailSheet: View {
             let allProductions = (try? modelContext.fetch(FetchDescriptor<Production>())) ?? []
             self.linkedProductions = allProductions.filter { productionIds.contains($0.id) }
         }
+
+        // 4. Lotto produzione (batch collegato o codice interno sul record)
+        if let batchId = fetchedRecord.produzioneBatchId {
+            var batchDescriptor = FetchDescriptor<ProduzioneBatch>(
+                predicate: #Predicate<ProduzioneBatch> { $0.id == batchId }
+            )
+            batchDescriptor.fetchLimit = 1
+            if let batch = (try? modelContext.fetch(batchDescriptor))?.first {
+                productionLotCode = batch.batchCode
+            }
+        }
+        if productionLotCode == nil {
+            let links = (try? modelContext.fetch(FetchDescriptor<LottoFotoProductionLink>())) ?? []
+            let matchingLinks = links.filter { link in
+                if let lottoId = fetchedRecord.lottoFotoId {
+                    return link.lottoFotoId == lottoId && link.produzioneBatchId != nil
+                }
+                return false
+            }
+            if let batchId = matchingLinks.compactMap(\.produzioneBatchId).first {
+                var batchDescriptor = FetchDescriptor<ProduzioneBatch>(
+                    predicate: #Predicate<ProduzioneBatch> { $0.id == batchId }
+                )
+                batchDescriptor.fetchLimit = 1
+                productionLotCode = (try? modelContext.fetch(batchDescriptor))?.first?.batchCode
+            }
+        }
+        if productionLotCode == nil,
+           InternalLotCodeGenerator.isInternalLotCode(fetchedRecord.lotCode) {
+            productionLotCode = fetchedRecord.lotCode
+        }
         
         isLoading = false
     }
@@ -109,7 +158,10 @@ struct TraceabilityRecordHistoryDetailSheet: View {
     // MARK: - Components
 
     private func headerBlock(_ record: TraceabilityRecord) -> some View {
-        HStack(alignment: .center, spacing: 16) {
+        let isProductionLot = productionLotCode != nil
+            || record.produzioneBatchId != nil
+            || InternalLotCodeGenerator.isInternalLotCode(record.lotCode)
+        return HStack(alignment: .center, spacing: 16) {
             ZStack {
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
                     .fill(theme.colorPrimary.opacity(0.14))
@@ -125,7 +177,9 @@ struct TraceabilityRecordHistoryDetailSheet: View {
                     .foregroundStyle(theme.colorTextPrimary)
                 
                 HStack(spacing: 8) {
-                    Text("Lotto \(record.lotCode)")
+                    Text(isProductionLot
+                         ? "Lotto produzione \(record.lotCode)"
+                         : "Lotto \(record.lotCode)")
                         .font(theme.typography.caption.weight(.bold).monospaced())
                         .foregroundStyle(theme.colorPrimary)
                     
@@ -144,12 +198,25 @@ struct TraceabilityRecordHistoryDetailSheet: View {
     }
 
     private func infoCard(_ record: TraceabilityRecord) -> some View {
-        VStack(alignment: .leading, spacing: 14) {
+        let isProductionLot = productionLotCode != nil
+            || record.produzioneBatchId != nil
+            || InternalLotCodeGenerator.isInternalLotCode(record.lotCode)
+        return VStack(alignment: .leading, spacing: 14) {
             Text("Informazioni generali")
                 .font(theme.typography.headline)
                 .foregroundStyle(theme.colorTextPrimary)
             
             VStack(spacing: 8) {
+                if let productionLotCode, !productionLotCode.isEmpty {
+                    infoRow(label: "Lotto produzione", value: productionLotCode, icon: "number")
+                }
+                if !isProductionLot || record.lotCode != (productionLotCode ?? "") {
+                    infoRow(
+                        label: isProductionLot ? "Lotto produzione" : "Lotto fornitore",
+                        value: record.lotCode.isEmpty ? "—" : record.lotCode,
+                        icon: "barcode"
+                    )
+                }
                 infoRow(label: "Fornitore", value: record.supplier.isEmpty ? "—" : record.supplier, icon: "building.2")
                 infoRow(label: "Data ricezione", value: record.receivedAt.formatted(date: .long, time: .shortened), icon: "calendar")
                 if let expiry = record.expiryDate {
@@ -259,19 +326,50 @@ struct TraceabilityRecordHistoryDetailSheet: View {
         .clipShape(RoundedRectangle(cornerRadius: theme.spacing.cornerLarge, style: .continuous))
     }
 
-    private func photoCard(_ data: Data) -> some View {
+    private func photoCard(_ data: Data, title: String = "Foto allegata") -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Foto allegata")
+            Text(title)
                 .font(theme.typography.headline)
                 .foregroundStyle(theme.colorTextPrimary)
-            
-            if let image = UIImage(data: data) {
+
+            if let thumb = HACCPZoomablePhotoThumbnail(
+                data: data,
+                size: 220,
+                zoomTitle: title
+            ) {
+                thumb
+                    .frame(maxWidth: .infinity, alignment: .center)
+            } else if let image = UIImage(data: data) {
                 Image(uiImage: image)
                     .resizable()
                     .scaledToFit()
                     .frame(maxHeight: 280)
                     .cornerRadius(12)
                     .frame(maxWidth: .infinity, alignment: .center)
+            }
+        }
+        .padding(16)
+        .background(theme.colorSurfaceElevated)
+        .clipShape(RoundedRectangle(cornerRadius: theme.spacing.cornerLarge, style: .continuous))
+    }
+
+    private var extraPhotosCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Altre foto")
+                .font(theme.typography.headline)
+                .foregroundStyle(theme.colorTextPrimary)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
+                    ForEach(Array(extraPhotos.enumerated()), id: \.offset) { index, data in
+                        if let thumb = HACCPZoomablePhotoThumbnail(
+                            data: data,
+                            size: 96,
+                            zoomTitle: "Foto \(index + 2)"
+                        ) {
+                            thumb
+                        }
+                    }
+                }
             }
         }
         .padding(16)

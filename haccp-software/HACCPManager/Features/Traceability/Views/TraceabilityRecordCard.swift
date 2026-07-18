@@ -32,10 +32,13 @@ struct TraceabilityRecordDisplay: Equatable {
     let defrostCount: Int
     let isActionable: Bool
     let needsProductionLink: Bool
+    /// True se il codice è un lotto di produzione (YYYYMMDD-XX / batch output).
+    var isProductionLot: Bool = false
 }
 
 struct TraceabilityRecordCard: View {
     let display: TraceabilityRecordDisplay
+    var photoData: Data? = nil
     let onTap: () -> Void
     var onQuickAssociate: (() -> Void)? = nil
 
@@ -56,7 +59,12 @@ struct TraceabilityRecordCard: View {
                     }
 
                     VStack(alignment: .leading, spacing: 4) {
-                        metaRow(icon: "barcode", text: "Lotto \(display.lot)")
+                        metaRow(
+                            icon: "barcode",
+                            text: display.isProductionLot
+                                ? "Lotto produzione \(display.lot)"
+                                : "Lotto \(display.lot)"
+                        )
                         if display.supplier != "—" {
                             metaRow(icon: "building.2", text: display.supplier)
                         }
@@ -142,14 +150,23 @@ struct TraceabilityRecordCard: View {
 
     @ViewBuilder
     private var photo: some View {
-        RoundedRectangle(cornerRadius: 12, style: .continuous)
-            .fill(theme.colorPrimary.opacity(0.1))
-            .frame(width: 72, height: 72)
-            .overlay {
-                Image(systemName: "shippingbox.fill")
-                    .font(.title3)
-                    .foregroundStyle(theme.colorPrimary)
-            }
+        if let photoData,
+           let thumb = HACCPZoomablePhotoThumbnail(
+            data: photoData,
+            size: 72,
+            zoomTitle: display.productName
+           ) {
+            thumb
+        } else {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(theme.colorPrimary.opacity(0.1))
+                .frame(width: 72, height: 72)
+                .overlay {
+                    Image(systemName: "shippingbox.fill")
+                        .font(.title3)
+                        .foregroundStyle(theme.colorPrimary)
+                }
+        }
     }
 
     private func metaRow(icon: String, text: String, tint: Color? = nil) -> some View {

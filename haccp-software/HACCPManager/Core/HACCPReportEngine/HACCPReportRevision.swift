@@ -151,9 +151,8 @@ final class HACCPHistoryManager {
         let fm = FileManager.default
 
         // Senza PDF locale non posso archiviare nulla.
-        guard item.localFilePresent,
-              fm.fileExists(atPath: item.filePath),
-              let pdfData = try? Data(contentsOf: URL(fileURLWithPath: item.filePath)) else {
+        guard let resolved = DocumentPDFPathResolver.resolveAndHeal(item),
+              let pdfData = try? Data(contentsOf: resolved) else {
             return nil
         }
 

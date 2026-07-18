@@ -11,6 +11,7 @@ enum TraceabilityRegister {
         let productions: String
         let nonCompliance: String
         let operatorName: String
+        let photoData: Data?
     }
 
     static func rows(
@@ -48,6 +49,8 @@ enum TraceabilityRegister {
                 ncParts.append("Ricezione: \(st.label)")
             }
 
+            let photo = ProductImageBytesResolver.resolve(record: t, images: images)
+
             return Row(
                 product: t.productName,
                 lot: t.lotCode.isEmpty ? "—" : t.lotCode,
@@ -56,7 +59,8 @@ enum TraceabilityRegister {
                 status: t.productStatus.label,
                 productions: productionsLabel,
                 nonCompliance: ncParts.isEmpty ? "—" : ncParts.joined(separator: "; "),
-                operatorName: t.createdByNameSnapshot
+                operatorName: t.createdByNameSnapshot,
+                photoData: photo
             )
         }
     }

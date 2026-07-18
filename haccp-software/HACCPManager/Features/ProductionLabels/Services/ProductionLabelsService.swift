@@ -160,10 +160,29 @@ struct ProductionLabelsService {
         d.lotCode = trace.lotCode
         d.supplier = trace.supplier
         d.productionDate = trace.receivedAt
-        d.expiryDate = trace.expiryDate ?? trace.receivedAt
+        d.expiryDate = trace.expiryDate
+            ?? Calendar.current.date(byAdding: .day, value: 3, to: trace.receivedAt)
+            ?? trace.receivedAt
         d.sourceModule = .traceability
         d.traceabilityRecordId = trace.id
         d.goodsReceiptId = trace.goodsReceiptId
+        return d
+    }
+
+    /// Draft etichetta da batch produzione completato (lotto interno + TMC + allergeni catalogo).
+    func draft(from batch: ProduzioneBatch, production: Production?) -> ProductionLabelDraft {
+        var d = ProductionLabelDraft()
+        d.productName = batch.productionNameSnapshot
+        d.lotCode = batch.batchCode
+        d.productionDate = batch.producedAt
+        let shelfDays = production.map { ScadenzaCalculator.shelfLifeDays(for: $0) } ?? 3
+        d.expiryDate = batch.internalExpiryAt
+            ?? ScadenzaCalculator.productionExpiryDate(fromDays: shelfDays, referenceDate: batch.producedAt)
+        d.allergens = production?.allergens ?? ""
+        d.category = production?.categoryNameSnapshot ?? ""
+        d.sourceModule = .production
+        d.productionId = batch.productionId
+        d.operatorName = batch.createdByNameSnapshot
         return d
     }
 
@@ -228,8 +247,12 @@ struct ProductionLabelsService {
     func draft(from production: Production) -> ProductionLabelDraft {
         var d = ProductionLabelDraft()
         d.productName = production.name
+        d.allergens = production.allergens ?? ""
+        d.category = production.categoryNameSnapshot
         d.sourceModule = .production
         d.productionId = production.id
+        let shelfDays = ScadenzaCalculator.shelfLifeDays(for: production)
+        d.expiryDate = ScadenzaCalculator.productionExpiryDate(fromDays: shelfDays, referenceDate: Date())
         return d
     }
 

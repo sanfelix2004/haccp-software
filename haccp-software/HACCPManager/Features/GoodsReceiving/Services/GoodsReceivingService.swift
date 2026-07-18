@@ -119,7 +119,8 @@ struct GoodsReceivingService {
                 localPath: nil,
                 type: .nonComplianceRequired,
                 createdByUserId: user.id,
-                createdByNameSnapshot: user.name
+                createdByNameSnapshot: user.name,
+                goodsReceiptId: receipt.id
             )
             modelContext.insert(productImage)
         }

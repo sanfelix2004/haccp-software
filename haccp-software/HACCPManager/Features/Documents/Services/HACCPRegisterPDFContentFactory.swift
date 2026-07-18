@@ -108,9 +108,13 @@ enum HACCPRegisterPDFContentFactory {
 
     // MARK: - Ricezione / Tracciabilità / NC
 
-    static func sectionsRicezione(interval: DateInterval, receipts: [GoodsReceipt]) -> [HACCPPDFSection] {
+    static func sectionsRicezione(
+        interval: DateInterval,
+        receipts: [GoodsReceipt],
+        images: [ProductImage] = []
+    ) -> [HACCPPDFSection] {
         let formatter = df()
-        let rows = GoodsReceiptRegister.rows(in: interval, receipts: receipts, df: formatter)
+        let rows = GoodsReceiptRegister.rows(in: interval, receipts: receipts, images: images, df: formatter)
         let table: [[PDFTableCell]] = rows.map { r in
             [
                 .text(r.product),
@@ -125,19 +129,21 @@ enum HACCPRegisterPDFContentFactory {
                 .text(r.checklist),
                 .text(r.conformity),
                 .text(r.notes),
-                .text(r.operatorName)
+                .text(r.operatorName),
+                .image(r.photoData.flatMap { HACCPPDFImageCompression.compressedJPEGData(from: $0) }),
+                .text(r.photoCount > 1 ? "\(r.photoCount) foto" : (r.photoData == nil ? "—" : "1 foto"))
             ]
         }
-        let body = table.isEmpty ? [emptyOperationalRow(columns: 13)] : table
+        let body = table.isEmpty ? [emptyOperationalRow(columns: 15)] : table
         let headers = [
             "Denominazione prodotto", "Categoria", "Fornitore", "N. lotto", "Data scadenza", "Data e ora ricezione",
             "Temperatura rilevata", "Range ammesso", "Esito temperatura", "Esito checklist", "Esito complessivo",
-            "Annotazioni", "Operatore addetto"
+            "Annotazioni", "Operatore addetto", "Foto", "N. foto"
         ]
         return [
             .dataTable(
                 title: "Registro ricezione merci e materie prime",
-                subtitle: "Controllo in ingresso — temperatura, checklist e conformità",
+                subtitle: "Controllo in ingresso — temperatura, checklist, conformità e documentazione fotografica",
                 headers: headers,
                 rows: body
             )
@@ -171,13 +177,14 @@ enum HACCPRegisterPDFContentFactory {
                 .text(r.status),
                 .text(r.productions),
                 .text(r.nonCompliance),
+                .image(r.photoData.flatMap { HACCPPDFImageCompression.compressedJPEGData(from: $0) }),
                 .text(r.operatorName)
             ]
         }
-        let body = table.isEmpty ? [emptyOperationalRow(columns: 8)] : table
+        let body = table.isEmpty ? [emptyOperationalRow(columns: 9)] : table
         let headers = [
             "Denominazione prodotto", "N. lotto / codice", "Fornitore", "Data ricezione", "Stato prodotto",
-            "Produzioni collegate", "Annotazioni NC", "Operatore addetto"
+            "Produzioni collegate", "Annotazioni NC", "Foto etichetta", "Operatore addetto"
         ]
         return [
             .dataTable(
@@ -215,37 +222,59 @@ enum HACCPRegisterPDFContentFactory {
             "Data / Operatore",
             "Produzione / Alimento",
             "Lotto",
-            "Scadenze"
+            "Scadenze",
+            "Foto"
         ]
 
         if blocks.isEmpty {
             tableRows.append(emptyOperationalRow(columns: headers.count))
         } else {
             for block in blocks {
+                let batchPhoto = block.batchId.flatMap { batchId in
+                    ProductImageBytesResolver.productionDishPhoto(
+                        batchId: batchId,
+                        images: operational.productImages,
+                        records: traceability
+                    )
+                }
                 tableRows.append([
                     .text(block.dateOperator),
                     .text(block.productionDetail),
                     .text(block.lotDetail),
-                    .text(block.expiryDetail)
+                    .text(block.expiryDetail),
+                    .image(batchPhoto.flatMap { HACCPPDFImageCompression.compressedJPEGData(from: $0) })
                 ])
                 if block.ingredients.isEmpty {
                     tableRows.append([
                         .text("↳ Ingredienti"),
                         .text(HACCPRegisterCopy.notAvailable),
                         .text("—"),
+                        .text("—"),
                         .text("—")
                     ])
                 } else {
                     for line in block.ingredients {
+                        let lotKey = line.lot
+                        let photo = traceability
+                            .first(where: { $0.lotCode == lotKey || (!$0.lotCode.isEmpty && lotKey.contains($0.lotCode)) })
+                            .flatMap { record in
+                                ProductImageBytesResolver.resolve(
+                                    record: record,
+                                    images: operational.productImages,
+                                    lottoFotos: operational.lottoFotos
+                                )
+                            }
                         tableRows.append([
                             .text(line.dateOperator),
                             .text(line.foodDetail),
                             .text(line.lot),
-                            .text(line.expiryDetail)
+                            .text(line.expiryDetail),
+                            .image(photo.flatMap { HACCPPDFImageCompression.compressedJPEGData(from: $0) })
                         ])
                     }
                 }
                 tableRows.append([
+                    .text(" "),
                     .text(" "),
                     .text(" "),
                     .text(" "),
@@ -254,14 +283,45 @@ enum HACCPRegisterPDFContentFactory {
             }
         }
 
-        return [
+        var sections: [HACCPPDFSection] = [
             .dataTable(
                 title: "Registro produzioni e tracciabilità",
-                subtitle: "Produzione e ingredienti con lotto, fornitore e scadenze nel medesimo prospetto",
+                subtitle: "Produzione e ingredienti con lotto, fornitore e scadenze nel medesimo prospetto (include voci nascoste dallo storico operativo)",
                 headers: headers,
                 rows: tableRows
             )
         ]
+
+        let movements = operational.documentMovements
+            .filter { interval.contains($0.occurredAt) }
+            .sorted { $0.occurredAt > $1.occurredAt }
+        let movementHeaders = ["Data / Operatore", "Evento", "Produzione / Lotto", "Dettaglio"]
+        let movementRows: [[PDFTableCell]] = {
+            if movements.isEmpty {
+                return [emptyOperationalRow(columns: movementHeaders.count)]
+            }
+            return movements.map { m in
+                let title = [m.productionName, m.lotCode.map { "Lotto \($0)" }]
+                    .compactMap { $0 }
+                    .filter { !$0.isEmpty }
+                    .joined(separator: " · ")
+                return [
+                    .text("\(df.string(from: m.occurredAt)) · \(m.operatorName)"),
+                    .text(m.kindLabel),
+                    .text(title.isEmpty ? "—" : title),
+                    .text(m.summary)
+                ]
+            }
+        }()
+        sections.append(
+            .dataTable(
+                title: "Registro movimenti (permanente)",
+                subtitle: "Ogni completamento, correzione o rimozione dallo storico resta documentata qui",
+                headers: movementHeaders,
+                rows: movementRows
+            )
+        )
+        return sections
     }
 
     static func sectionsProduzioniConIngredienti(
@@ -979,7 +1039,7 @@ enum HACCPRegisterPDFContentFactory {
     ) {
         switch module {
         case .ricezioneMerci:
-            sections.append(contentsOf: sectionsRicezione(interval: interval, receipts: receipts))
+            sections.append(contentsOf: sectionsRicezione(interval: interval, receipts: receipts, images: images))
             flags.insert(.ricezioneMerci)
         case .tracciabilita:
             sections.append(contentsOf: sectionsTracciabilita(
@@ -1149,7 +1209,7 @@ enum HACCPRegisterPDFContentFactory {
 
         switch flavor {
         case .giornalieroRicezione:
-            sections.append(contentsOf: sectionsRicezione(interval: interval, receipts: receipts))
+            sections.append(contentsOf: sectionsRicezione(interval: interval, receipts: receipts, images: images))
             flags.insert(.ricezioneMerci)
         case .giornalieroTracciabilita:
             sections.append(contentsOf: sectionsTracciabilita(

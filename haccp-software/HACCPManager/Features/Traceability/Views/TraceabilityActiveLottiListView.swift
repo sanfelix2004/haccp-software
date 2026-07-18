@@ -13,6 +13,7 @@ struct TraceabilityActiveLottiListView: View {
     @Environment(\.theme) private var theme
 
     @State private var records: [TraceabilityRecord] = []
+    @State private var photoByRecordId: [UUID: Data] = [:]
     @State private var searchText = ""
     @State private var isLoading = true
     @State private var selectedRecordForDetail: IdentifiableUUID? = nil
@@ -66,7 +67,10 @@ struct TraceabilityActiveLottiListView: View {
                         ScrollView {
                             LazyVStack(spacing: 12) {
                                 ForEach(filteredRecords) { record in
-                                    LottoActiveRow(record: record) {
+                                    LottoActiveRow(
+                                        record: record,
+                                        photoData: photoByRecordId[record.id]
+                                    ) {
                                         selectedRecordForDetail = IdentifiableUUID(id: record.id)
                                     }
                                 }
@@ -126,6 +130,21 @@ struct TraceabilityActiveLottiListView: View {
             return true
         }
 
+        let images = ((try? modelContext.fetch(FetchDescriptor<ProductImage>())) ?? [])
+            .filter { !$0.isArchived }
+        let lottos = (try? modelContext.fetch(FetchDescriptor<LottoFoto>())) ?? []
+        var map: [UUID: Data] = [:]
+        for record in records {
+            if let data = ProductImageBytesResolver.resolve(
+                record: record,
+                images: images,
+                lottoFotos: lottos
+            ) {
+                map[record.id] = data
+            }
+        }
+        photoByRecordId = map
+
         isLoading = false
     }
 }
@@ -134,6 +153,7 @@ struct TraceabilityActiveLottiListView: View {
 
 private struct LottoActiveRow: View {
     let record: TraceabilityRecord
+    var photoData: Data? = nil
     let onTap: () -> Void
 
     @Environment(\.theme) private var theme
@@ -148,14 +168,22 @@ private struct LottoActiveRow: View {
     var body: some View {
         Button(action: onTap) {
             HStack(spacing: 12) {
-                // Icona o miniatura
-                ZStack {
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .fill(isExpired ? theme.colorError.opacity(0.12) : theme.colorPrimary.opacity(0.12))
-                        .frame(width: 44, height: 44)
-                    Image(systemName: "shippingbox.fill")
-                        .font(.body.weight(.semibold))
-                        .foregroundStyle(isExpired ? theme.colorError : theme.colorPrimary)
+                if let photoData,
+                   let thumb = HACCPZoomablePhotoThumbnail(
+                    data: photoData,
+                    size: 44,
+                    zoomTitle: record.productName
+                   ) {
+                    thumb
+                } else {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .fill(isExpired ? theme.colorError.opacity(0.12) : theme.colorPrimary.opacity(0.12))
+                            .frame(width: 44, height: 44)
+                        Image(systemName: "shippingbox.fill")
+                            .font(.body.weight(.semibold))
+                            .foregroundStyle(isExpired ? theme.colorError : theme.colorPrimary)
+                    }
                 }
 
                 // Info lotto

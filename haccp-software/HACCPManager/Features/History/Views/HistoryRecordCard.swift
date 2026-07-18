@@ -50,7 +50,16 @@ struct HistoryRecordCard: View, Equatable {
     @ViewBuilder
     private var standardCard: some View {
         VStack(alignment: .leading, spacing: 10) {
-            header(showExpandHint: entry.requiresClosureAction || !entry.details.isEmpty)
+            header(showExpandHint: entry.requiresClosureAction || !entry.details.isEmpty || entry.photoData != nil)
+            if let photo = entry.photoData,
+               let thumb = HACCPZoomablePhotoThumbnail(
+                data: photo,
+                size: 96,
+                zoomTitle: entry.title
+               ) {
+                thumb
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
             if entry.requiresClosureAction {
                 Button {
                     if let recordId = entry.pendingTraceabilityRecordId {
@@ -82,7 +91,7 @@ struct HistoryRecordCard: View, Equatable {
                 }
                 return
             }
-            guard !entry.details.isEmpty else { return }
+            guard !entry.details.isEmpty || entry.photoData != nil else { return }
             withAnimation(.spring(response: 0.28, dampingFraction: 0.86)) {
                 isExpanded.toggle()
             }
@@ -98,13 +107,22 @@ struct HistoryRecordCard: View, Equatable {
         } label: {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(alignment: .center, spacing: 12) {
-                    ZStack {
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .fill(accent.opacity(0.14))
-                            .frame(width: 44, height: 44)
-                        Image(systemName: "fork.knife")
-                            .font(.body.weight(.semibold))
-                            .foregroundStyle(accent)
+                    if let photo = entry.photoData,
+                       let thumb = HACCPZoomablePhotoThumbnail(
+                        data: photo,
+                        size: 52,
+                        zoomTitle: entry.title
+                       ) {
+                        thumb
+                    } else {
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .fill(accent.opacity(0.14))
+                                .frame(width: 44, height: 44)
+                            Image(systemName: "fork.knife")
+                                .font(.body.weight(.semibold))
+                                .foregroundStyle(accent)
+                        }
                     }
 
                     VStack(alignment: .leading, spacing: 4) {
@@ -112,6 +130,11 @@ struct HistoryRecordCard: View, Equatable {
                             .font(theme.typography.headline)
                             .foregroundStyle(theme.colorTextPrimary)
                             .multilineTextAlignment(.leading)
+                        if let lot = entry.internalLotCode?.trimmingCharacters(in: .whitespacesAndNewlines), !lot.isEmpty {
+                            Text("Lotto produzione \(lot)")
+                                .font(theme.typography.caption.weight(.bold).monospaced())
+                                .foregroundStyle(theme.colorPrimary)
+                        }
                         Text(entry.status)
                             .font(theme.typography.caption)
                             .foregroundStyle(theme.colorTextSecondary)
@@ -130,14 +153,22 @@ struct HistoryRecordCard: View, Equatable {
                 }
 
                 if isExpanded {
-                    VStack(spacing: 8) {
-                        ForEach(ingredients) { ingredient in
-                            Button {
-                                selectedIngredientId = IdentifiableUUID(id: ingredient.id)
-                            } label: {
-                                ingredientRow(ingredient)
+                    VStack(alignment: .leading, spacing: 10) {
+                        if let lot = entry.internalLotCode?.trimmingCharacters(in: .whitespacesAndNewlines), !lot.isEmpty {
+                            ProductionInternalLotBadge(batchCode: lot, compact: true)
+                        }
+                        if let photo = entry.photoData {
+                            photoCard(photo)
+                        }
+                        VStack(spacing: 8) {
+                            ForEach(ingredients) { ingredient in
+                                Button {
+                                    selectedIngredientId = IdentifiableUUID(id: ingredient.id)
+                                } label: {
+                                    ingredientRow(ingredient)
+                                }
+                                .buttonStyle(.plain)
                             }
-                            .buttonStyle(.plain)
                         }
                     }
                     .padding(.top, 4)
@@ -150,11 +181,20 @@ struct HistoryRecordCard: View, Equatable {
 
     private func ingredientRow(_ ingredient: HistoryTraceabilityIngredient) -> some View {
         HStack(alignment: .top, spacing: 10) {
-            Image(systemName: "shippingbox.fill")
-                .font(.caption)
-                .foregroundStyle(theme.colorPrimary)
-                .frame(width: 20)
-                .padding(.top, 2)
+            if let photo = ingredient.photoData,
+               let thumb = HACCPZoomablePhotoThumbnail(
+                data: photo,
+                size: 44,
+                zoomTitle: ingredient.name
+               ) {
+                thumb
+            } else {
+                Image(systemName: "shippingbox.fill")
+                    .font(.caption)
+                    .foregroundStyle(theme.colorPrimary)
+                    .frame(width: 20)
+                    .padding(.top, 2)
+            }
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(ingredient.name)
@@ -230,6 +270,16 @@ struct HistoryRecordCard: View, Equatable {
                         .foregroundStyle(theme.colorTextSecondary)
                     HACCPBadge(title: entry.status, style: entry.statusBadgeStyle, showIcon: false)
                 }
+            }
+
+            if let lot = entry.internalLotCode?.trimmingCharacters(in: .whitespacesAndNewlines), !lot.isEmpty {
+                Text("Lotto produzione \(lot)")
+                    .font(theme.typography.caption.weight(.bold).monospaced())
+                    .foregroundStyle(theme.colorPrimary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(theme.colorPrimary.opacity(0.1))
+                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
             }
 
             HStack(spacing: 8) {

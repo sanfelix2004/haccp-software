@@ -12,7 +12,7 @@ public struct LabelPrinterSettings: Codable {
     var showExpiryDate: Bool = true
     var showLotNumber: Bool = true
     var showOperatorName: Bool = true
-    var showAllergenWarning: Bool = false
+    var showAllergenWarning: Bool = true
     var showQRCode: Bool = true
     var qrRotationRaw: Int = LabelQRCodeRotation.r0.rawValue
     var qrCornerRaw: String = LabelQRCodeCorner.topRight.rawValue
@@ -59,7 +59,7 @@ public struct LabelPrinterSettings: Codable {
         qrCorner = .topRight
         qrRotation = .r0
         showOperatorName = true
-        showAllergenWarning = false
+        showAllergenWarning = true
         showProductName = true
         showPrepDate = true
         showExpiryDate = true

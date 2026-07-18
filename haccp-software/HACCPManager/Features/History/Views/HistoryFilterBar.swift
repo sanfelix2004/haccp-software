@@ -19,18 +19,33 @@ struct HistoryFilterBar: View {
         ["Tutte"] + Array(Set(entries.map(\.category))).sorted()
     }
 
+    private var searchPlaceholder: String {
+        switch filter.lotSearchMode {
+        case .all: return "Cerca titolo, lotto produzione o fornitore…"
+        case .internalLot: return "Cerca lotto produzione (es. 20260718-01)…"
+        case .supplierLot: return "Cerca lotto fornitore (rintracciabilità inversa)…"
+        }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 10) {
                 Image(systemName: "magnifyingglass")
                     .foregroundStyle(theme.colorTextSecondary)
-                TextField("Cerca titolo, operatore, dettagli…", text: $filter.searchText)
+                TextField(searchPlaceholder, text: $filter.searchText)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
             }
             .padding(12)
             .background(theme.colorSurface)
             .clipShape(RoundedRectangle(cornerRadius: theme.spacing.cornerMedium, style: .continuous))
+
+            Picker("Tipo lotto", selection: $filter.lotSearchMode) {
+                ForEach(HistoryLotSearchMode.allCases) { mode in
+                    Text(mode.rawValue).tag(mode)
+                }
+            }
+            .pickerStyle(.segmented)
 
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {

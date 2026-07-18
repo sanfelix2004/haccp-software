@@ -131,8 +131,9 @@ private struct HACCPOperativitySection: View {
                     range: 1...15,
                     unit: "gg"
                 )
-                Toggle("Lotto obbligatorio in tracciabilità", isOn: $storage.haccp.lotEntryMandatory)
-                    .font(theme.typography.subheadline)
+                Text("In tracciabilità la foto etichetta è obbligatoria; il codice lotto è opzionale se assente sull'etichetta.")
+                    .font(theme.typography.caption)
+                    .foregroundStyle(theme.colorTextSecondary)
                 SettingsCompactStepperRow(
                     title: "Conservazione dati",
                     value: $storage.haccp.storageDurationYears,
@@ -142,7 +143,6 @@ private struct HACCPOperativitySection: View {
             }
         }
         .onChange(of: storage.haccp.productExpiryThreshold) { storage.saveAll() }
-        .onChange(of: storage.haccp.lotEntryMandatory) { storage.saveAll() }
         .onChange(of: storage.haccp.storageDurationYears) { storage.saveAll() }
     }
 }

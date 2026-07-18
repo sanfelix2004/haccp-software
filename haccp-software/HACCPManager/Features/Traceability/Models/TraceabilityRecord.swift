@@ -29,6 +29,8 @@ enum ProductImageType: String, Codable {
     case nonComplianceRequired = "NON_COMPLIANCE_REQUIRED"
     /// Foto etichetta lotto per OCR in produzione/tracciabilità.
     case lotLabelOCR = "LOT_LABEL_OCR"
+    /// Foto del piatto finito scattata in associazione / completamento produzione.
+    case productionDish = "PRODUCTION_DISH"
     @available(*, deprecated, message: "Usare receiptOptional")
     case generic = "GENERIC"
     @available(*, deprecated, message: "Usare nonComplianceRequired")
@@ -156,7 +158,10 @@ final class TraceabilityRecord {
 @Model
 final class ProductImage {
     @Attribute(.unique) var id: UUID
-    var receivedItemId: UUID
+    /// Lotto/voce di tracciabilità collegata. NULL se la foto è scattata prima della conferma lotto.
+    var receivedItemId: UUID?
+    /// Batch di produzione in corso (foto estemporanee / ingredienti live).
+    var produzioneBatchId: UUID?
     /// Dati immagine inline (preferito). Alternativa: `localPath`.
     var imageData: Data?
     /// Percorso file locale se l’immagine non è salvata in `imageData`.
@@ -172,7 +177,8 @@ final class ProductImage {
 
     init(
         id: UUID = UUID(),
-        receivedItemId: UUID,
+        receivedItemId: UUID? = nil,
+        produzioneBatchId: UUID? = nil,
         imageData: Data? = nil,
         localPath: String? = nil,
         type: ProductImageType,
@@ -183,6 +189,7 @@ final class ProductImage {
     ) {
         self.id = id
         self.receivedItemId = receivedItemId
+        self.produzioneBatchId = produzioneBatchId
         self.imageData = imageData
         self.localPath = localPath
         self.typeRaw = type.storageRawValue
@@ -205,6 +212,7 @@ extension ProductImageType {
         case .receiptOptional: return ProductImageType.receiptOptional.rawValue
         case .nonComplianceRequired: return ProductImageType.nonComplianceRequired.rawValue
         case .lotLabelOCR: return ProductImageType.lotLabelOCR.rawValue
+        case .productionDish: return ProductImageType.productionDish.rawValue
         case .generic: return "RECEIPT_OPTIONAL"
         case .nonCompliance: return "NON_COMPLIANCE_REQUIRED"
         }
@@ -218,6 +226,8 @@ extension ProductImageType {
             return .nonComplianceRequired
         case ProductImageType.lotLabelOCR.rawValue:
             return .lotLabelOCR
+        case ProductImageType.productionDish.rawValue:
+            return .productionDish
         default:
             return .receiptOptional
         }

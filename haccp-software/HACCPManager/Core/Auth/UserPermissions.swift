@@ -30,6 +30,8 @@ enum AppPermission: Hashable {
     case manageIncomingFoodCatalog
     case deleteOperationalRecords
     case deleteTraceabilityRecords
+    /// MASTER: nasconde/corregge voci nello storico operativo (Documenti restano intatti).
+    case manageHistory
     case manageDocuments
     case clearCleaningHistory
     case switchRestaurant
@@ -91,6 +93,9 @@ struct UserPermissions: Equatable {
 
         case .deleteOperationalRecords, .deleteTraceabilityRecords:
             return role != .viewer
+
+        case .manageHistory:
+            return role == .master || role == .boss
 
         case .manageDocuments:
             return role == .master || role == .boss
@@ -223,7 +228,7 @@ struct UserPermissions: Equatable {
         }
         guard isExternalCollaborator else { return false }
         switch permission {
-        case .deleteOperationalRecords, .deleteTraceabilityRecords, .clearCleaningHistory, .manageDataAndBackup:
+        case .deleteOperationalRecords, .deleteTraceabilityRecords, .manageHistory, .clearCleaningHistory, .manageDataAndBackup:
             return true
         default:
             return false

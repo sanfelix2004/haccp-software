@@ -26,8 +26,18 @@ final class HistoryModuleDetailViewModel: ObservableObject {
             let operatorOk = appliedFilter.operatorName == "Tutti" || entry.operatorName == appliedFilter.operatorName
             let periodOk = entry.date >= start && entry.date <= end
             let search = appliedFilter.searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-            let searchOk = search.isEmpty
-                || entry.searchText.localizedCaseInsensitiveContains(search)
+            let searchOk: Bool = {
+                guard !search.isEmpty else { return true }
+                switch appliedFilter.lotSearchMode {
+                case .all:
+                    return entry.searchText.localizedCaseInsensitiveContains(search)
+                case .internalLot:
+                    return entry.internalLotSearchText.localizedCaseInsensitiveContains(search)
+                        || (entry.internalLotCode?.localizedCaseInsensitiveContains(search) == true)
+                case .supplierLot:
+                    return entry.supplierLotSearchText.localizedCaseInsensitiveContains(search)
+                }
+            }()
             return categoryOk && statusOk && operatorOk && periodOk && searchOk
         }
     }

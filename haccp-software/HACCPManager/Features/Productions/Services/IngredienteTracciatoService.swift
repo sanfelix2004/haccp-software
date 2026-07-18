@@ -93,7 +93,7 @@ struct IngredienteTracciatoService {
             .map { RecipeIngredientOption(name: $0.name, productTemplateId: $0.id) }
     }
 
-    /// Scatta foto etichetta → Groq AI → legame automatico Produzione+Foto+Lotto.
+    /// Scatta foto etichetta → salva su disco/DB (lotto ancora nullable) → OCR → legame Produzione+Foto+Lotto.
     @discardableResult
     func appendFromPhoto(
         batch: ProduzioneBatch,
@@ -109,12 +109,33 @@ struct IngredienteTracciatoService {
 
         let existing = ingredients(batchId: batch.id, modelContext: modelContext)
         let sequenceIndex = (existing.map(\.sequenceIndex).max() ?? -1) + 1
+        let photoId = UUID()
+        let stored = try LottoFotoImageStorage.save(
+            photoData: photoData,
+            restaurantId: batch.restaurantId,
+            lottoFotoId: photoId
+        )
+        let inline = StoredImageCompression.preparedForStorage(photoData) ?? photoData
+
+        // Foto senza lotto confermato: receivedItemId NULL, collegata al batch.
+        modelContext.insert(
+            ProductImage(
+                id: photoId,
+                receivedItemId: nil,
+                produzioneBatchId: batch.id,
+                imageData: inline,
+                localPath: stored.originalPath,
+                type: .lotLabelOCR,
+                createdByUserId: user.id,
+                createdByNameSnapshot: user.name
+            )
+        )
 
         var trace = IngredienteTracciato(
             produzioneBatchId: batch.id,
             restaurantId: batch.restaurantId,
             sequenceIndex: sequenceIndex,
-            photoId: nil,
+            photoId: photoId,
             ingredientNameHint: ingredientNameHint?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty,
             stato: .ocrInAttesa
         )
@@ -131,6 +152,85 @@ struct IngredienteTracciatoService {
         }
 
         try modelContext.save()
+        KitchenProcessNotifications.postRecordsDidChange()
+        return trace
+    }
+
+    /// Collega una foto temporanea del batch al lotto/voce di tracciabilità definitiva.
+    func attachPhotoToTraceabilityRecord(
+        photoId: UUID?,
+        record: TraceabilityRecord,
+        modelContext: ModelContext
+    ) {
+        guard let photoId else { return }
+        let images = (try? modelContext.fetch(FetchDescriptor<ProductImage>())) ?? []
+        guard let image = images.first(where: { $0.id == photoId }) else { return }
+        image.receivedItemId = record.id
+        if record.photoData == nil || record.photoData?.isEmpty == true {
+            record.photoData = image.imageData
+        }
+    }
+
+    /// Foto extra senza nuovo ingrediente (documentazione estemporanea della produzione).
+    @discardableResult
+    func addExtraPhoto(
+        batch: ProduzioneBatch,
+        photoData: Data,
+        user: LocalUser,
+        modelContext: ModelContext
+    ) throws -> ProductImage {
+        guard batch.status == .inCorso else {
+            throw NSError(domain: "IngredienteTracciatoService", code: 1, userInfo: [NSLocalizedDescriptionKey: "La produzione non è più modificabile."])
+        }
+        guard !photoData.isEmpty else { throw LabelLotError.invalidImage }
+        let photoId = UUID()
+        let stored = try LottoFotoImageStorage.save(
+            photoData: photoData,
+            restaurantId: batch.restaurantId,
+            lottoFotoId: photoId
+        )
+        let inline = StoredImageCompression.preparedForStorage(photoData) ?? photoData
+        let image = ProductImage(
+            id: photoId,
+            receivedItemId: nil,
+            produzioneBatchId: batch.id,
+            imageData: inline,
+            localPath: stored.originalPath,
+            type: .receiptOptional,
+            createdByUserId: user.id,
+            createdByNameSnapshot: user.name
+        )
+        modelContext.insert(image)
+        try modelContext.save()
+        KitchenProcessNotifications.postRecordsDidChange()
+        return image
+    }
+
+    /// Ingrediente extra non in ricetta: stesso flusso foto, nome libero.
+    @discardableResult
+    func appendExtraIngredient(
+        batch: ProduzioneBatch,
+        photoData: Data,
+        ingredientName: String,
+        supplierLot: String?,
+        user: LocalUser,
+        modelContext: ModelContext
+    ) async throws -> IngredienteTracciato {
+        let trace = try await appendFromPhoto(
+            batch: batch,
+            photoData: photoData,
+            ingredientNameHint: ingredientName,
+            user: user,
+            modelContext: modelContext
+        )
+        try assignIngredientManually(
+            ingredient: trace,
+            name: ingredientName,
+            modelContext: modelContext
+        )
+        if let supplierLot {
+            try confirmLot(ingredient: trace, editedLot: supplierLot, modelContext: modelContext)
+        }
         return trace
     }
 
@@ -172,14 +272,12 @@ struct IngredienteTracciatoService {
         modelContext: ModelContext
     ) throws {
         let lot = editedLot.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !lot.isEmpty else {
-            throw NSError(domain: "IngredienteTracciatoService", code: 2, userInfo: [NSLocalizedDescriptionKey: "Inserisci il codice lotto."])
-        }
-        ingredient.lotCodeExtracted = lot
+        // Lotto fornitore opzionale: se manca si conferma comunque (prova = foto).
+        ingredient.lotCodeExtracted = lot.nilIfEmpty
         ingredient.lotRegisteredAt = Date()
         ingredient.stato = resolveStateAfterLotRegistration(
             ingredientName: ingredient.ingredientNameAssigned,
-            lotCode: lot
+            lotCode: lot.nilIfEmpty
         )
         try modelContext.save()
     }
@@ -209,16 +307,17 @@ struct IngredienteTracciatoService {
     }
 
     private func resolveStateAfterLotRegistration(ingredientName: String?, lotCode: String?) -> IngredienteTracciatoStato {
-        let hasLot = lotCode?.nilIfEmpty != nil
         let hasIngredient = ingredientName?.nilIfEmpty != nil
-        guard hasLot else { return .richiedeLotto }
+        // Lotto opzionale: dopo conferma (anche senza testo) si può procedere.
         if hasIngredient { return .completo }
         return .lottoRegistrato
     }
 
     private func resolveStateAfterIngredientAssignment(lotCode: String?, hadLotRegistered: Bool) -> IngredienteTracciatoStato {
-        if lotCode?.nilIfEmpty != nil || hadLotRegistered { return .completo }
-        return .richiedeLotto
+        _ = lotCode
+        // Lotto non obbligatorio: bastano alimento assegnato e foto.
+        if hadLotRegistered { return .completo }
+        return .completo
     }
 
     private func expectedIngredientNames(for batch: ProduzioneBatch, modelContext: ModelContext) -> [String] {

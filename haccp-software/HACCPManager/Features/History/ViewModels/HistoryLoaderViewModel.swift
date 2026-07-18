@@ -72,6 +72,8 @@ final class HistoryLoaderViewModel: ObservableObject {
                 lottoProductionLinks: data.lottoProductionLinks,
                 lottoFotos: data.lottoFotos,
                 productions: data.productions,
+                produzioneBatches: data.produzioneBatches,
+                productImages: data.productImages,
                 oilRecords: data.oilRecords
             )
 

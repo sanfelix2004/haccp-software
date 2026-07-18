@@ -12,6 +12,8 @@ final class Production {
     var isCustom: Bool
     /// Giorni di conservazione del prodotto finito (opzionale; se `nil` si usa `ProductionShelfLifeDefaults`).
     var shelfLifeDays: Int?
+    /// Allergeni del piatto (virgola-separati) per etichetta di produzione.
+    var allergens: String?
 
     init(
         id: UUID = UUID(),
@@ -21,7 +23,8 @@ final class Production {
         categoryNameSnapshot: String,
         createdAt: Date = Date(),
         isCustom: Bool,
-        shelfLifeDays: Int? = nil
+        shelfLifeDays: Int? = nil,
+        allergens: String? = nil
     ) {
         self.id = id
         self.restaurantId = restaurantId
@@ -31,5 +34,6 @@ final class Production {
         self.createdAt = createdAt
         self.isCustom = isCustom
         self.shelfLifeDays = shelfLifeDays
+        self.allergens = allergens
     }
 }

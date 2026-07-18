@@ -22,6 +22,8 @@ struct HistoryFetchedData {
     var lottoProductionLinks: [LottoFotoProductionLink] = []
     var lottoFotos: [LottoFoto] = []
     var productions: [Production] = []
+    var produzioneBatches: [ProduzioneBatch] = []
+    var productImages: [ProductImage] = []
     var oilRecords: [OilControlRecord] = []
 }
 
@@ -60,6 +62,8 @@ enum HistoryDataFetcher {
             limit: limit * 3
         )
         data.productions = fetchLimited(context, restaurantId: rid, limit: 500, sort: SortDescriptor(\Production.name, order: .forward))
+        data.produzioneBatches = fetchLimited(context, restaurantId: rid, limit: limit, sort: SortDescriptor(\ProduzioneBatch.producedAt, order: .reverse))
+        data.productImages = fetchProductImages(context, restaurantId: rid, limit: limit * 3)
         data.oilRecords = fetchLimited(context, restaurantId: rid, limit: limit, sort: SortDescriptor(\OilControlRecord.checkedAt, order: .reverse))
         return data
     }
@@ -144,6 +148,20 @@ enum HistoryDataFetcher {
         let batch = (try? context.fetch(descriptor)) ?? []
         return batch.filter { runIds.contains($0.checklistRunId) }
     }
+
+    private static func fetchProductImages(
+        _ context: ModelContext,
+        restaurantId: UUID,
+        limit: Int
+    ) -> [ProductImage] {
+        _ = restaurantId
+        var descriptor = FetchDescriptor<ProductImage>(
+            predicate: #Predicate { !$0.isArchived },
+            sortBy: [SortDescriptor(\ProductImage.createdAt, order: .reverse)]
+        )
+        descriptor.fetchLimit = limit
+        return (try? context.fetch(descriptor)) ?? []
+    }
 }
 
 /// Modelli con `restaurantId` per fetch mirati.
@@ -160,6 +178,7 @@ extension DefrostRecord: RestaurantScoped {}
 extension BlastChillingRecord: RestaurantScoped {}
 extension ProductionLabelRecord: RestaurantScoped {}
 extension Production: RestaurantScoped {}
+extension ProduzioneBatch: RestaurantScoped {}
 extension GoodsReceipt: RestaurantScoped {}
 extension TraceabilityRecord: RestaurantScoped {}
 extension ScheduledTask: RestaurantScoped {}

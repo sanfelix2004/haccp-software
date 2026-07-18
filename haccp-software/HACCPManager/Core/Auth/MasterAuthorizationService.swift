@@ -18,6 +18,7 @@ final class MasterAuthorizationService {
         case manageChecklistTemplates
         case manageCleaningTasks
         case clearCleaningHistory
+        case manageHistory
         case deleteTraceabilityEntry
         case deleteDocument
         case regenerateDocument
@@ -51,6 +52,8 @@ final class MasterAuthorizationService {
                 return "Autorizza la gestione delle aree e task del controllo pulizia"
             case .clearCleaningHistory:
                 return "Autorizza la cancellazione dello storico controllo pulizia"
+            case .manageHistory:
+                return "Autorizza la modifica dello storico operativo (le tracce restano nei Documenti)"
             case .deleteTraceabilityEntry:
                 return "Autorizza l'eliminazione della voce di tracciabilità e della ricezione collegata"
             case .deleteDocument:

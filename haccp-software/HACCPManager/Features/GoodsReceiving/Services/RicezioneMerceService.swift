@@ -115,6 +115,11 @@ struct RicezioneMerceService {
                 user: user,
                 modelContext: modelContext
             )
+            // Garantisce foto anche sul record tracciabilità (storico + documenti).
+            if let traceRecord, (traceRecord.photoData == nil || traceRecord.photoData?.isEmpty == true),
+               let first = anomalyPhotos.first.flatMap({ StoredImageCompression.preparedForStorage($0) }) {
+                traceRecord.photoData = first
+            }
         }
 
         try modelContext.save()

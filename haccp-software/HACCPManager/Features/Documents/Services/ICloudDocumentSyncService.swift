@@ -118,11 +118,8 @@ final class ICloudDocumentSyncService: ObservableObject, ICloudDocumentSyncServi
         guard isUbiquityContainerAvailable else {
             return
         }
-        guard item.format == .pdf, item.localFilePresent else {
-            return
-        }
-        let localURL = URL(fileURLWithPath: item.filePath)
-        guard fileManager.fileExists(atPath: localURL.path) else {
+        guard item.format == .pdf else { return }
+        guard let localURL = DocumentPDFPathResolver.resolveAndHeal(item) else {
             return
         }
         guard let relative = item.iCloudRelativePath?.trimmingCharacters(in: CharacterSet(charactersIn: "/")),

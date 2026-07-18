@@ -119,7 +119,7 @@ struct GoodsReceiptControlSheet: View {
                                (requirement.defaultMaxTemp.map { temp > $0 } ?? false)
             return (isOutOfRange, true)
         case .lotExpiry:
-            let lotValid = !requirement.requiresLot || !vm.lotNumber.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            let lotValid = true // Lotto opzionale anche se il template lo segnalava.
             let expiryValid = !requirement.requiresExpiryDate || vm.includeExpiryDate
             let prodValid = !requirement.requiresProductionDate || vm.includeProductionDate
             let qtyValid = !vm.quantityText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
