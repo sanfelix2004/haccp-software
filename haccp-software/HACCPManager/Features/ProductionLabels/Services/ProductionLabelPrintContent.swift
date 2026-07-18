@@ -89,6 +89,17 @@ enum ProductionLabelPrintContent {
                 priority: 170
             ))
         }
+        if settings.showLotNumber,
+           let lot = label.lotCode?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !lot.isEmpty {
+            lines.append(.init(
+                id: "lot",
+                text: LabelStickerText.printerFit("Lotto \(lot)", maxLength: maxChars),
+                fontSize: profile.detailFontSize,
+                bold: false,
+                priority: 165
+            ))
+        }
         appendProcessTempDurationLines(
             to: &lines,
             temperatureNote: label.temperatureNote,
@@ -133,6 +144,17 @@ enum ProductionLabelPrintContent {
                 fontSize: profile.detailFontSize,
                 bold: false,
                 priority: 170
+            ))
+        }
+        if settings.showLotNumber,
+           let lot = label.lotCode?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !lot.isEmpty {
+            lines.append(.init(
+                id: "lot",
+                text: LabelStickerText.printerFit("Lotto \(lot)", maxLength: maxChars),
+                fontSize: profile.detailFontSize,
+                bold: false,
+                priority: 165
             ))
         }
         appendProcessTempDurationLines(
