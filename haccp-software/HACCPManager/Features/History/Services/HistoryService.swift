@@ -45,6 +45,7 @@ struct HistoryService {
                         .init(label: "Fine", value: $0.endAt?.formatted(date: .abbreviated, time: .shortened) ?? "—"),
                         .init(label: "Durata", value: $0.durationText),
                         .init(label: "Metodo", value: $0.method),
+                        .init(label: "Temperatura iniziale", value: $0.initialTemperature.map { String(format: "%.1f °C", $0) } ?? "—"),
                         .init(label: "Temperatura finale", value: $0.finalTemperature.map { String(format: "%.1f °C", $0) } ?? "—"),
                         .init(label: "Esito", value: $0.outcome?.label ?? ($0.endAt == nil ? "In corso" : "—")),
                         .init(label: "Azione correttiva", value: $0.correctiveAction ?? "—"),

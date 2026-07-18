@@ -174,7 +174,7 @@ struct TraceabilityHistoryProvider {
             records.filter { $0.restaurantId == restaurantId }.map { ($0.id, $0) }
         )
         let productionsById = HACCPSafeParse.dictionary(productions.map { ($0.id, $0) })
-        let meaningful: Set<TraceabilityActionType> = [.withdrawn, .nonCompliance, .rejected, .linkedToProduction]
+        let meaningful: Set<TraceabilityActionType> = [.withdrawn, .nonCompliance, .rejected]
 
         return logs.compactMap { log -> HistoryEntry? in
             guard meaningful.contains(log.actionType),

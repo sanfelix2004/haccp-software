@@ -139,6 +139,7 @@ enum DefrostRegister {
         let startedAt: String
         let endedAt: String
         let duration: String
+        let initialTemp: String
         let finalTemp: String
         let status: String
         let operatorName: String
@@ -157,6 +158,7 @@ enum DefrostRegister {
                     startedAt: df.string(from: r.startAt),
                     endedAt: r.endAt.map { df.string(from: $0) } ?? "—",
                     duration: r.durationText,
+                    initialTemp: r.initialTemperature.map { String(format: "%.1f °C", $0) } ?? "—",
                     finalTemp: r.finalTemperature.map { String(format: "%.1f °C", $0) } ?? "—",
                     status: r.defrostStatus.label,
                     operatorName: r.createdByNameSnapshot,

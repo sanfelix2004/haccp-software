@@ -41,6 +41,8 @@ struct TraceabilityView: View {
     @State private var errorMessage: String?
     @State private var openSessions: [TraceabilityOpenSession] = []
     @State private var masterAuth = MasterAuthCoordinator()
+    @State private var showActiveLottiList = false
+    @State private var sessionToDelete: TraceabilityOpenSession? = nil
 
     private let productionLibraryService = ProductionLibraryService()
     private let service = TraceabilityService()
@@ -174,6 +176,24 @@ struct TraceabilityView: View {
         .sheet(isPresented: Binding(get: { labelDraft != nil }, set: { if !$0 { labelDraft = nil } })) {
             labelEditorSheet
         }
+        .sheet(isPresented: $showActiveLottiList) {
+            if let rid = appState.activeRestaurantId {
+                TraceabilityActiveLottiListView(restaurantId: rid) {
+                    showActiveLottiList = false
+                    reloadAll()
+                }
+            }
+        }
+        .alert("Eliminare la sessione?", isPresented: Binding(get: { sessionToDelete != nil }, set: { _ in sessionToDelete = nil })) {
+            Button("Annulla", role: .cancel) {}
+            Button("Elimina", role: .destructive) {
+                if let session = sessionToDelete {
+                    performDeleteSession(session)
+                }
+            }
+        } message: {
+            Text("Tutte le foto scattate in questa sessione verranno rimosse permanentemente.")
+        }
         .masterAuthCover(
             coordinator: masterAuth,
             master: session.masterUser
@@ -215,7 +235,7 @@ struct TraceabilityView: View {
                             showLotCapture = true
                         },
                         onDismiss: {
-                            dismissedSessionIds.insert(session.id)
+                            sessionToDelete = session
                         }
                     )
                 }
@@ -291,6 +311,15 @@ struct TraceabilityView: View {
                 showLotCapture = true
             }
 
+            Button {
+                showActiveLottiList = true
+            } label: {
+                Label("Visualizza lotti in magazzino", systemImage: "archivebox.fill")
+                    .font(theme.typography.caption.weight(.semibold))
+                    .foregroundStyle(theme.colorPrimary)
+            }
+            .buttonStyle(.plain)
+
             if metrics.todayCount > 0 {
                 Button {
                     selectedFilter = .today
@@ -364,7 +393,10 @@ struct TraceabilityView: View {
                         },
                         onOpenIngredient: { recordId in
                             openRecord(id: recordId)
-                        }
+                        },
+                        onDeleteIngredient: canDeleteRecords
+                            ? { recordId in requestDeleteRecord(id: recordId) }
+                            : nil
                     )
                     .equatable()
                     .contextMenu {
@@ -400,7 +432,7 @@ struct TraceabilityView: View {
                     let display = hubContext.display(for: record)
                     SwipeToDeleteRow(
                         enabled: canDeleteRecords,
-                        deleteTitle: "Elimina lotto",
+                        deleteTitle: "Elimina",
                         onDelete: { requestDeleteUnlinkedRecord(record) }
                     ) {
                         TraceabilityRecordCard(
@@ -433,13 +465,19 @@ struct TraceabilityView: View {
             LazyVStack(spacing: 10) {
                 ForEach(visibleCriticalRecords) { record in
                     let display = hubContext.display(for: record)
-                    TraceabilityRecordCard(
-                        display: display,
-                        onTap: { detailRecord = record },
-                        onQuickAssociate: display.needsProductionLink ? {
-                            quickAssociateRecord = record
-                        } : nil
-                    )
+                    SwipeToDeleteRow(
+                        enabled: canDeleteRecords,
+                        deleteTitle: "Elimina",
+                        onDelete: { requestDeleteUnlinkedRecord(record) }
+                    ) {
+                        TraceabilityRecordCard(
+                            display: display,
+                            onTap: { detailRecord = record },
+                            onQuickAssociate: display.needsProductionLink ? {
+                                quickAssociateRecord = record
+                            } : nil
+                        )
+                    }
                 }
 
                 if criticalRecords.count > visibleCriticalRecords.count {
@@ -625,7 +663,14 @@ struct TraceabilityView: View {
                 restaurantId: rid,
                 user: user,
                 resumeSessionId: resumeSessionId,
-                onDismiss: {
+                onDismiss: { leavePending, sessionId in
+                    if let sessionId {
+                        if leavePending {
+                            dismissedSessionIds.remove(sessionId)
+                        } else {
+                            dismissedSessionIds.insert(sessionId)
+                        }
+                    }
                     showLotCapture = false
                     resumeSessionId = nil
                     reloadAll()
@@ -673,6 +718,23 @@ struct TraceabilityView: View {
         }
     }
 
+    private func performDeleteSession(_ session: TraceabilityOpenSession) {
+        do {
+            let targetSessionId = session.id
+            let descriptor = FetchDescriptor<LottoFoto>()
+            let allLottos = (try? modelContext.fetch(descriptor)) ?? []
+            let sessionLottos = allLottos.filter { $0.traceabilitySessionId == targetSessionId }
+            for lotto in sessionLottos {
+                try lottoService.delete(lotto, modelContext: modelContext)
+            }
+            dismissedSessionIds.insert(session.id)
+            reloadAll()
+            HapticManager.shared.notification(.success)
+        } catch {
+            errorMessage = "Impossibile eliminare la sessione: \(error.localizedDescription)"
+        }
+    }
+
     private func requestDeleteUnlinkedRecord(_ record: TraceabilityRecord) {
         masterAuth.request(
             permission: .deleteTraceabilityRecords,
@@ -682,6 +744,11 @@ struct TraceabilityView: View {
                 performPendingDelete()
             }
         )
+    }
+
+    private func requestDeleteRecord(id: UUID) {
+        guard let record = dataStore.records.first(where: { $0.id == id }) else { return }
+        requestDeleteUnlinkedRecord(record)
     }
 
     private func requestDeleteProductionGroup(_ group: TraceabilityProductionArchiveGroup) {

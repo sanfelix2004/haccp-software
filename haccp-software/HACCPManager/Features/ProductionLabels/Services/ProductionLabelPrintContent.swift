@@ -53,7 +53,7 @@ enum ProductionLabelPrintContent {
         }
     }
 
-    /// Abbattimento: nome, data abb., scad, temp finale, operatore.
+    /// Abbattimento: nome, data abb., scad, Ti/Tf, durata.
     private static func blastPrintLines(
         for label: ProductionLabelRecord,
         settings: LabelPrinterSettings,
@@ -89,20 +89,17 @@ enum ProductionLabelPrintContent {
                 priority: 170
             ))
         }
-        if let temp = compactTemperature(label.temperatureNote) {
-            lines.append(.init(
-                id: "temp",
-                text: LabelStickerText.printerFit("T \(temp)", maxLength: maxChars),
-                fontSize: profile.detailFontSize,
-                bold: false,
-                priority: 160
-            ))
-        }
+        appendProcessTempDurationLines(
+            to: &lines,
+            temperatureNote: label.temperatureNote,
+            maxChars: maxChars,
+            profile: profile
+        )
         appendOperatorLine(to: &lines, label: label, settings: settings, maxChars: maxChars, profile: profile)
         return lines
     }
 
-    /// Decongelamento: nome, data dec., scad (+24h), lotto, operatore.
+    /// Decongelamento: nome, data dec., scad, Ti/Tf, durata.
     private static func defrostPrintLines(
         for label: ProductionLabelRecord,
         settings: LabelPrinterSettings,
@@ -138,17 +135,12 @@ enum ProductionLabelPrintContent {
                 priority: 170
             ))
         }
-        if settings.showLotNumber,
-           let lot = label.lotCode?.trimmingCharacters(in: .whitespacesAndNewlines),
-           !lot.isEmpty {
-            lines.append(.init(
-                id: "lot",
-                text: LabelStickerText.printerFit("Lotto \(lot)", maxLength: maxChars),
-                fontSize: profile.detailFontSize,
-                bold: false,
-                priority: 160
-            ))
-        }
+        appendProcessTempDurationLines(
+            to: &lines,
+            temperatureNote: label.temperatureNote,
+            maxChars: maxChars,
+            profile: profile
+        )
         appendOperatorLine(to: &lines, label: label, settings: settings, maxChars: maxChars, profile: profile)
         return lines
     }
@@ -218,13 +210,49 @@ enum ProductionLabelPrintContent {
             text: LabelStickerText.printerFit("Op. \(op)", maxLength: maxChars),
             fontSize: profile.smallFontSize,
             bold: false,
-            priority: 155
+            priority: 140
         ))
+    }
+
+    private static func appendProcessTempDurationLines(
+        to lines: inout [PrintLine],
+        temperatureNote: String?,
+        maxChars: Int,
+        profile: ClabelLabelLayoutProfile
+    ) {
+        let fragments = ProcessLabelDetailNote.printFragments(from: temperatureNote)
+        if fragments.isEmpty {
+            if let temp = compactTemperature(temperatureNote) {
+                lines.append(.init(
+                    id: "temp",
+                    text: LabelStickerText.printerFit("T \(temp)", maxLength: maxChars),
+                    fontSize: profile.detailFontSize,
+                    bold: false,
+                    priority: 165
+                ))
+            }
+            return
+        }
+
+        for (index, fragment) in fragments.enumerated() {
+            let priority = 165 - index
+            lines.append(.init(
+                id: "process-\(index)",
+                text: LabelStickerText.printerFit(printerSafe(fragment), maxLength: maxChars),
+                fontSize: profile.detailFontSize,
+                bold: false,
+                priority: priority
+            ))
+        }
     }
 
     /// Es. " -18.0 C" / "-18C" per stampa termica.
     private static func compactTemperature(_ raw: String?) -> String? {
         guard let raw = raw?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty else { return nil }
+        // Nuovo formato strutturato: non trattarlo come singola temperatura.
+        if raw.localizedCaseInsensitiveContains("Ti") || raw.localizedCaseInsensitiveContains("Tf") {
+            return nil
+        }
         let cleaned = printerSafe(raw)
             .replacingOccurrences(of: " ", with: "")
         guard !cleaned.isEmpty else { return nil }

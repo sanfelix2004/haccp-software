@@ -1,9 +1,9 @@
 import SwiftUI
 
-/// Riga con swipe verso sinistra per mostrare azione elimina (funziona dentro ScrollView).
+/// Riga con swipe verso sinistra per mostrare azione elimina dedicata (funziona dentro ScrollView).
 struct SwipeToDeleteRow<Content: View>: View {
     let enabled: Bool
-    let deleteTitle: String
+    var deleteTitle: String = "Elimina"
     let onDelete: () -> Void
     @ViewBuilder let content: () -> Content
 
@@ -12,7 +12,7 @@ struct SwipeToDeleteRow<Content: View>: View {
     @State private var isRevealed = false
     @State private var dragAxis: SwipeDragAxis = .undecided
 
-    private let actionWidth: CGFloat = 96
+    private let actionWidth: CGFloat = 88
 
     private enum SwipeDragAxis {
         case undecided
@@ -23,13 +23,17 @@ struct SwipeToDeleteRow<Content: View>: View {
     var body: some View {
         ZStack(alignment: .trailing) {
             if enabled {
-                Button(action: onDelete) {
+                Button {
+                    settle(open: false)
+                    onDelete()
+                } label: {
                     VStack(spacing: 4) {
                         Image(systemName: "trash.fill")
                             .font(.body.weight(.semibold))
                         Text(deleteTitle)
                             .font(.caption2.weight(.bold))
-                            .multilineTextAlignment(.center)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.8)
                     }
                     .foregroundStyle(.white)
                     .frame(width: actionWidth)
@@ -42,19 +46,19 @@ struct SwipeToDeleteRow<Content: View>: View {
 
             content()
                 .offset(x: offset)
-                .gesture(enabled ? swipeGesture : nil, including: .subviews)
+                .highPriorityGesture(enabled ? swipeGesture : nil)
         }
-        .clipShape(RoundedRectangle(cornerRadius: theme.spacing.cornerMedium, style: .continuous))
+        .clipped()
     }
 
     private var swipeGesture: some Gesture {
-        DragGesture(minimumDistance: 16, coordinateSpace: .local)
+        DragGesture(minimumDistance: 12, coordinateSpace: .local)
             .onChanged { value in
                 if dragAxis == .undecided {
                     let width = abs(value.translation.width)
                     let height = abs(value.translation.height)
-                    guard width > 8 || height > 8 else { return }
-                    dragAxis = width > height * 1.25 ? .horizontal : .vertical
+                    guard width > 6 || height > 6 else { return }
+                    dragAxis = width > height * 1.15 ? .horizontal : .vertical
                 }
                 guard dragAxis == .horizontal else { return }
                 let proposed = (isRevealed ? -actionWidth : 0) + value.translation.width
@@ -66,8 +70,8 @@ struct SwipeToDeleteRow<Content: View>: View {
                     settle(open: isRevealed)
                     return
                 }
-                let shouldOpen = offset < -actionWidth * 0.45
-                    || value.predictedEndTranslation.width < -actionWidth
+                let shouldOpen = offset < -actionWidth * 0.4
+                    || value.predictedEndTranslation.width < -actionWidth * 0.8
                 settle(open: shouldOpen)
             }
     }

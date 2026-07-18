@@ -328,7 +328,7 @@ struct TraceabilityHubContext {
                 productionId: productionId,
                 productionName: production.name,
                 batchId: latestBatch?.id,
-                registeredAt: ingredients.map(\.receivedAt).max() ?? latestBatch?.producedAt ?? Date(),
+                registeredAt: latestBatch?.producedAt ?? ingredients.map(\.receivedAt).max() ?? Date(),
                 ingredients: ingredients
             )
         }

@@ -273,13 +273,14 @@ final class HACCPReportEngine: ObservableObject {
 
     private func fetchArchiveSource(in modelContext: ModelContext, restaurantId: UUID) -> ArchiveSourceData {
         let receipts = fetchReceipts(in: modelContext, restaurantId: restaurantId)
+        let receiptIds = Set(receipts.map(\.id))
         let traceability = fetchTraceability(in: modelContext, restaurantId: restaurantId)
         let traceIds = Set(traceability.map(\.id))
         let productions = fetchProductions(in: modelContext, restaurantId: restaurantId)
         let productionIds = Set(productions.map(\.id))
 
         let allImages = (try? modelContext.fetch(FetchDescriptor<ProductImage>())) ?? []
-        let images = allImages.filter { traceIds.contains($0.receivedItemId) }
+        let images = allImages.filter { traceIds.contains($0.receivedItemId) || receiptIds.contains($0.receivedItemId) }
 
         let allLinks = (try? modelContext.fetch(FetchDescriptor<TraceabilityLink>())) ?? []
         let links = allLinks.filter { traceIds.contains($0.receivedItemId) || productionIds.contains($0.productionId) }

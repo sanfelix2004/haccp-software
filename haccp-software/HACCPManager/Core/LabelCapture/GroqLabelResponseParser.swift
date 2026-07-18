@@ -29,9 +29,9 @@ enum GroqLabelResponseParser {
 
         private func rank(_ value: String?) -> Int {
             switch value?.lowercased() {
-            case "high", "alta": return 3
-            case "medium", "media": return 2
-            case "low", "bassa": return 1
+            case "high", "alta", "alto": return 3
+            case "medium", "media", "medio": return 2
+            case "low", "bassa", "basso": return 1
             default: return 0
             }
         }
@@ -80,35 +80,71 @@ enum GroqLabelResponseParser {
         var rawStampLine: String?
 
         if let dict = jsonDictionary(from: payload) {
-            let lotFound = boolValue(dict["lotto_found"])
-                ?? boolValue(dict["lotto_trovato"])
-            let expiryFound = boolValue(dict["expiration_found"])
-                ?? boolValue(dict["scadenza_trovata"])
+            // MARK: Guardrail a monte — solo chiavi canoniche, lista nera, ISO rigoroso
+            var lottoEstratto = stringValue(dict["lotto"])
+            if let candidate = lottoEstratto {
+                let lowerLotto = candidate.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+                let listaNera = [
+                    "to_found", "lotto_found", "expiration_found", "not_found",
+                    "todo", "null", "undefined", "n/a", "none", "non trovato", "non_trovato"
+                ]
+                if lowerLotto.isEmpty || listaNera.contains(where: { lowerLotto.contains($0) }) {
+                    lottoEstratto = nil
+                    audit.append("Guardrail: lotto scartato (placeholder/artefatto schema)")
+                }
+            }
+
+            var scadenzaEstratta = stringValue(dict["scadenza"])
+                ?? stringValue(dict["expiration_date"])
+            if let dataScadenza = scadenzaEstratta {
+                let regexData = #"^\d{4}-\d{2}-\d{2}$"#
+                if dataScadenza.range(of: regexData, options: .regularExpression) == nil {
+                    audit.append("Guardrail: scadenza non in ISO YYYY-MM-DD — normalizzazione locale")
+                } else if let year = Int(dataScadenza.prefix(4)) {
+                    let currentYear = Calendar.current.component(.year, from: Date())
+                    // Allucinazione tipica da crop troncato (es. 2031). Tabula rasa → fallback locale.
+                    if year > (currentYear + 3) || year < (currentYear - 1) {
+                        scadenzaEstratta = nil
+                        audit.append("Guardrail Critico: Rilevata allucinazione anno AI (\(year)). Forza azzeramento.")
+                    }
+                }
+            }
+
+            lot = lottoEstratto
+            expiryRaw = scadenzaEstratta
+                ?? extractExpiryRaw(from: dict)
+
+            // Compatibilità residua se il modello ignora ancora lo schema a 2 chiavi.
+            if lot == nil {
+                lot = extractLot(from: dict)
+            }
 
             rawStampLine = stringValue(dict["raw_stamp_line"])
                 ?? stringValue(dict["riga_stampa"])
-
-            if lotFound != false {
-                lot = extractLot(from: dict)
-            } else {
-                audit.append("Model: lotto_found=false")
-            }
-
-            if expiryFound != false {
-                expiryRaw = extractExpiryRaw(from: dict)
-            } else {
-                audit.append("Model: expiration_found=false")
-            }
-
             expiryKind = stringValue(dict["expiration_type"])
                 ?? stringValue(dict["tipo_scadenza"])
             modelConfidence = stringValue(dict["confidence_score"])
-                ?? stringValue(dict["confidenza_estrazione"])
+                ?? stringValue(dict["livello_di_sicurezza"])
+            if let reason = stringValue(dict["ragionamento_visivo"]), !reason.isEmpty {
+                audit.append("OCR: \(reason)")
+            }
         }
 
         if lot == nil {
             lot = extractLotRegex(from: payload)
             if lot != nil { audit.append("Lotto da estrazione JSON parziale") }
+            // Ri-applica lista nera anche sul fallback regex.
+            if let candidate = lot {
+                let lower = candidate.lowercased()
+                let listaNera = [
+                    "to_found", "lotto_found", "not_found", "todo", "null", "undefined",
+                    "number", "batch", "before", "expiry"
+                ]
+                if listaNera.contains(where: { lower.contains($0) }) {
+                    lot = nil
+                    audit.append("Guardrail: lotto regex scartato (artefatto)")
+                }
+            }
         }
 
         let sanitizerContext = [payload, rawStampLine ?? ""].filter { !$0.isEmpty }.joined(separator: "\n")
@@ -140,6 +176,23 @@ enum GroqLabelResponseParser {
                 audit.append("Scadenza scartata: probabile orario produzione")
             } else {
                 validatedExpiry = LabelLotSanitizer.validateExpiry(candidate)
+            }
+            // Blindatura anno folle (allucinazione Vision su crop troncato).
+            if let date = validatedExpiry, isHallucinatedExpiryYear(date) {
+                validatedExpiry = nil
+                audit.append("Guardrail Critico: scadenza AI con anno folle — azzerata")
+            }
+        }
+
+        // Fallback / correzione locale: Apple Vision / testo OCR quando Groq è nil o allucina.
+        if let localExpiry = ExpiryDateParser.parse(from: sanitizerContext)
+            .flatMap({ LabelLotSanitizer.validateExpiry($0) }) {
+            if validatedExpiry == nil {
+                validatedExpiry = localExpiry
+                audit.append("Scadenza da testo etichetta (parser locale)")
+            } else if shouldPreferLocalExpiry(model: validatedExpiry!, local: localExpiry) {
+                validatedExpiry = localExpiry
+                audit.append("Scadenza corretta a GG/MM/AA europeo (parser locale)")
             }
         }
         expiry = validatedExpiry
@@ -185,11 +238,11 @@ enum GroqLabelResponseParser {
         case (false, false): score = 0
         }
         switch parsed.modelConfidence?.lowercased() {
-        case "high", "alta":
+        case "high", "alta", "alto":
             score = max(score, 0.90)
-        case "medium", "media":
+        case "medium", "media", "medio":
             score = min(score, 0.82)
-        case "low", "bassa":
+        case "low", "bassa", "basso":
             score = min(score, 0.65)
         default:
             break
@@ -220,8 +273,9 @@ enum GroqLabelResponseParser {
     }
 
     private static let lotKeys = [
-        "lotto", "l", "lot", "lotcode", "lot_code", "batch", "partita", "codice", "codice_lotto"
+        "lotto", "lot_code", "lotcode", "batch", "partita", "codice_lotto"
     ]
+    // Chiavi corte "l"/"lot" rimosse: catturavano artefatti schema / campi sbagliati.
     private static let expiryKeys = [
         "expiration_date", "scadenza", "e", "exp", "expiry", "expirydate", "expiry_date",
         "tmc", "data", "data_scadenza"
@@ -258,20 +312,6 @@ enum GroqLabelResponseParser {
         return nil
     }
 
-    private static func boolValue(_ value: Any?) -> Bool? {
-        guard let value else { return nil }
-        if let flag = value as? Bool { return flag }
-        if let number = value as? NSNumber { return number.boolValue }
-        if let text = value as? String {
-            switch text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
-            case "true", "1", "yes", "si", "sì": return true
-            case "false", "0", "no": return false
-            default: return nil
-            }
-        }
-        return nil
-    }
-
     static func parseExpiryString(_ raw: String) -> Date? {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, trimmed.lowercased() != "null" else { return nil }
@@ -291,12 +331,32 @@ enum GroqLabelResponseParser {
         return nil
     }
 
+    /// Preferisce la data locale se il modello ha allucinato l'anno (troppo passato O troppo futuro).
+    private static func shouldPreferLocalExpiry(model: Date, local: Date) -> Bool {
+        if isHallucinatedExpiryYear(model) { return true }
+        let calendar = Calendar.current
+        let refYear = calendar.component(.year, from: Date())
+        let modelYear = calendar.component(.year, from: model)
+        let localYear = calendar.component(.year, from: local)
+        if modelYear < refYear - 5, localYear >= refYear - 1 { return true }
+        if modelYear > refYear + 3, localYear >= refYear - 1, localYear <= refYear + 3 { return true }
+        return false
+    }
+
+    /// Anni palesemente fuori range operativo HACCP (allucinazione tipica 2031 da crop).
+    private static func isHallucinatedExpiryYear(_ date: Date) -> Bool {
+        let year = Calendar.current.component(.year, from: date)
+        let currentYear = Calendar.current.component(.year, from: Date())
+        return year > (currentYear + 3) || year < (currentYear - 1)
+    }
+
     private static func extractLotRegex(from payload: String) -> String? {
+        // Chiavi esatte — NON usare "lot(?:to)?" che matcha dentro "lotto_found".
         let patterns = [
             #""lotto"\s*:\s*"([^"]+)""#,
-            #""l"\s*:\s*"([^"]+)""#,
-            #""lot(?:to|Code)?"\s*:\s*"([^"]+)""#,
-            #""batch"\s*:\s*"([^"]+)"#
+            #""lot_code"\s*:\s*"([^"]+)""#,
+            #""batch"\s*:\s*"([^"]+)""#,
+            #""codice_lotto"\s*:\s*"([^"]+)""#
         ]
         for pattern in patterns {
             guard let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive),
@@ -304,6 +364,7 @@ enum GroqLabelResponseParser {
                   match.numberOfRanges > 1,
                   let range = Range(match.range(at: 1), in: payload) else { continue }
             let candidate = String(payload[range])
+            if candidate.lowercased() == "null" { continue }
             if LabelLotSanitizer.validateLot(candidate) != nil { return candidate }
         }
         return nil

@@ -269,7 +269,8 @@ struct ProductionLibraryService {
         links: [TraceabilityLink],
         modelContext: ModelContext
     ) throws {
-        guard record.productStatus != .expired, record.productStatus != .rejected else {
+        // Consenti l'associazione se non è scaduto o respinto, ma fai un'eccezione per i lotti non conformi per tracciarne l'utilizzo
+        guard record.productStatus != .expired, (record.productStatus != .rejected || record.isNonCompliant) else {
             throw NSError(domain: "ProductionLibraryService", code: 7001, userInfo: [NSLocalizedDescriptionKey: "Prodotto non associabile: scaduto o respinto."])
         }
         if links.contains(where: { $0.receivedItemId == record.id && $0.productionId == production.id }) {

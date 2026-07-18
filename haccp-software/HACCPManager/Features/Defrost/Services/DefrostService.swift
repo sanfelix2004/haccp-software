@@ -24,6 +24,9 @@ struct DefrostService {
 
         let startAt = Date()
         let expectedEndAt = draft.method.expectedEndAt(from: startAt, settings: settings)
+        guard let initialTemperature = draft.parsedInitialTemperature else {
+            throw defrostError("Inserisci la temperatura iniziale.")
+        }
 
         let record = DefrostRecord(
             restaurantId: restaurantId,
@@ -36,6 +39,7 @@ struct DefrostService {
             categoryNameSnapshot: draft.categoryName,
             startAt: startAt,
             expectedEndAt: expectedEndAt,
+            initialTemperature: initialTemperature,
             status: .inProgress,
             createdByUserId: user.id,
             createdByNameSnapshot: user.name,
@@ -59,7 +63,10 @@ struct DefrostService {
             throw defrostError("Questo decongelamento è già stato completato.")
         }
 
-        let temp = Double(draft.finalTemperature.replacingOccurrences(of: ",", with: "."))
+        let temp = draft.parsedFinalTemperature
+        guard let temp else {
+            throw defrostError("Inserisci la temperatura finale.")
+        }
         let tempNonConforme = isTemperatureNonConforme(
             method: record.defrostMethod,
             temperature: temp

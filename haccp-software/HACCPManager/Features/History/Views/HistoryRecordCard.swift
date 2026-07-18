@@ -11,6 +11,7 @@ struct HistoryRecordCard: View, Equatable {
 
     @Environment(\.theme) private var theme
     @State private var isExpanded = false
+    @State private var selectedIngredientId: IdentifiableUUID? = nil
 
     private var accent: Color {
         entry.module.accentColor(theme: theme)
@@ -38,6 +39,11 @@ struct HistoryRecordCard: View, Equatable {
                         lineWidth: 1
                     )
             )
+        }
+        .sheet(item: $selectedIngredientId) { wrapper in
+            TraceabilityRecordHistoryDetailSheet(recordId: wrapper.id) {
+                selectedIngredientId = nil
+            }
         }
     }
 
@@ -120,7 +126,12 @@ struct HistoryRecordCard: View, Equatable {
                 if isExpanded {
                     VStack(spacing: 8) {
                         ForEach(ingredients) { ingredient in
-                            ingredientRow(ingredient)
+                            Button {
+                                selectedIngredientId = IdentifiableUUID(id: ingredient.id)
+                            } label: {
+                                ingredientRow(ingredient)
+                            }
+                            .buttonStyle(.plain)
                         }
                     }
                     .padding(.top, 4)
@@ -257,3 +268,9 @@ struct HistoryRecordCard: View, Equatable {
         entry.hasCriticality ? theme.colorError.opacity(0.07) : theme.colorSurfaceElevated
     }
 }
+
+// MARK: - IdentifiableUUID
+struct IdentifiableUUID: Identifiable {
+    let id: UUID
+}
+

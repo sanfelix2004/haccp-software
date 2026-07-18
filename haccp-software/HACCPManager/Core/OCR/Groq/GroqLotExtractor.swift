@@ -44,7 +44,7 @@ struct GroqLotExtractor: LabelLotExtractorProtocol, Sendable {
 
         var audit = [
             "Groq \(Self.model)",
-            "Varianti immagine: ritaglio alto/basso + invertiti + panorama",
+            "Varianti: focus alto + basso + frame intero",
             "Risoluzione max \(Int(PerformanceConfig.groqVisionMaxPixel))px"
         ]
 
@@ -151,10 +151,12 @@ struct GroqLotExtractor: LabelLotExtractorProtocol, Sendable {
         expectedIngredients: [String],
         audit: inout [String]
     ) async throws -> GroqLabelResponseParser.Parsed {
+        // Tre viste: focus alto, stampigliatura basso, panorama — come da system prompt.
         let variants = limitedVariants([
+            images.stampFocusJPEG,
             images.stampBottomJPEG,
             images.fullFrameJPEG
-        ])
+        ], maxCount: 3)
         let raw = try await chatCompletion(
             jpegVariants: variants,
             system: Self.systemPrompt,
@@ -182,76 +184,66 @@ struct GroqLotExtractor: LabelLotExtractorProtocol, Sendable {
 
     private static let jsonOutputSchema = """
     {
-      "lotto_found": boolean,
-      "lotto": "EXACT_LOT_AS_PRINTED" or null,
-      "raw_stamp_line": "verbatim stamp text line" or null,
-      "expiration_found": boolean,
-      "expiration_date": "YYYY-MM-DD" or null,
-      "expiration_type": "perentoria" or "tmc" or null,
-      "confidence_score": "high" or "medium" or "low"
+      "lotto": "stringa alfanumerica industriale o null",
+      "scadenza": "YYYY-MM-DD o null"
     }
     """
 
     private static let systemPrompt = """
-    You are a highly precise JSON extractor for HACCP food safety systems. Your sole task is to analyze printed text visible in food label photos and extract the LOT NUMBER (Lotto) and EXPIRATION DATE (Scadenza).
+    SEI UN OCR INDUSTRIALE DI LIVELLO AUTOMOTIVE, PROGRAMMATO PER LA TRACCIABILITA ALIMENTARE HACCP.
+    TI VENGONO FORNITE MULTIPLE VARIANTI DELLA STESSA FOTO (RITAGLI FOCUS + FRAME INTERO). ANALIZZALE TUTTE PER TROVARE LA STAMPIGLIATURA A GETTO D'INCHIOSTRO.
 
-    RULES FOR EXTRACTION:
+    Image 1 = ritaglio FOCUS alto (etichetta/retro). Image 2 = ritaglio STAMPIGLIATURA basso (tappo/fondo). Image 3 = FRAME INTERO.
 
-    1. EXPIRATION DATE (Scadenza / TMC):
-    - Look for keywords: "Da consumarsi entro", "Entro il", "Best before", "EXP", "Expiry", "TMC", "Scad", "Sca", "BB", "Use by", "Consumare preferibilmente entro".
-    - Normalize ANY date format (GG/MM/AAAA, GG.MM.AA, GG-MM-AA, MM/AAAA, or text like "03 AGO 26", "26NOV 2025", "03 AUG 26") into ISO: "YYYY-MM-DD".
-    - If only Month and Year (e.g. "08/2026"), set to LAST day of that month ("2026-08-31").
-    - CRITICAL: "23/08/2026 06:08" → "2026-08-23" — IGNORE time HH:MM (not a date).
-    - "SELL BY 09/02" or "USE BY 09/02" → European DD/MM: 9 February; infer year from context (NOT September 2002).
-    - expiration_type: "perentoria" if "entro il" / "use by" / "sell by"; "tmc" if "preferibilmente" / "best before".
+    REGOLA D'ORO DI ESCLUSIONE:
+    IGNORA QUALSIASI SCRITTA STAMPATA SUL PACKAGING COMMERCIALE (Nomi prodotti come "LATTE", "YOGURT", "GRECO", marchi, ingredienti, tabelle nutrizionali).
+    Concentrati SOLO sui caratteri puntiformi neri o laser impressi in fabbrica.
 
-    2. LOT NUMBER (Lotto) — CRITICAL ACCURACY:
-    - Copy the lot EXACTLY as printed on the stamp, character by character. Do NOT drop leading letters.
-    - "LOT 272019" → lotto "272019" (digits after LOT word). NEVER use label words (SELL, BY, BEST, BEFORE) as lot.
-    - If the stamp shows "L9330 B8" or "L9330B8", output "L9330B8" (keep the leading L, remove spaces only).
-    - If the stamp shows "L6036BH099" or "L52400V757", keep the full code including the initial L.
-    - ONLY strip label WORDS like "Lotto:", "Lot:", "Batch:", "Partita:" — never strip L when it is part of the code.
-    - Do NOT confuse production time (00:09, 06:08) with lot or expiry.
-    - Matrix print on jar lids / dark backgrounds: read every character carefully (L vs 1, O vs 0, V vs Y).
-    - Put the full visible stamp line in raw_stamp_line (e.g. "L9330 B8 00:09").
+    CONVERSIONE DATE:
+    - "31/08/26" -> "2026-08-31" (sempre GG/MM europeo).
+    - Solo mese/anno "08/26" o "08/2026" -> ultimo giorno del mese "2026-08-31".
+    - "09 10 26" -> "2026-10-09". MAI anno-first (2009/2031 inventati).
+    - Ignora orari di produzione accanto alla data (es. "23/08/2026 06:08" -> "2026-08-23").
 
-    3. OCR ERROR CORRECTION:
-    - Fix typos: "o"/"O" → "0" in dates, "I"/"l" → "1" only when clearly wrong in dates.
-    - In lot codes, preserve letters; fix Y→V only when context suggests matrix misprint.
+    LOTTO:
+    - Stringa alfanumerica isolata di produzione (es. "08:18H-FYB", "4B22", "L9330B8", "15701", "44464").
+    - Yogurt/vaschetta tipico: riga1 "31/08/26" = scadenza, riga2 "08:18H-FYB" = lotto. MAI "LATTE"/"LATTY"/"YOGURT"/"GRECO".
+    - "Batch number: 44464" → lotto "44464". MAI "number"/"batch"/"Batch number".
+    - "Best Before End: 11/2027" → scadenza fine mese "2027-11-30", NON e' il lotto.
+    - NON usare mai "to_found", "lotto_found", "not_found", "number", nomi prodotto, EAN 12-14 cifre.
 
-    OUTPUT: ONLY a valid JSON object. No markdown, greetings, or explanations. Missing/unreadable → null and boolean false.
-    Schema:
+    FORMATO DI OUTPUT (RIGIDO):
+    Restituisci ESCLUSIVAMENTE un oggetto JSON. Nessun testo prima/dopo. Nessun markdown. Nessun placeholder.
+    Se un dato manca: null. NON inventare chiavi extra (niente lotto_found, expiration_found, ragionamento, ecc.).
+
+    Usa TASSATIVAMENTE solo queste due chiavi:
     \(jsonOutputSchema)
     """
 
     private static func primaryPrompt(expectedIngredients: [String]) -> String {
         var lines = [
-            "Image 1 = bottom stamp zoom (jar lid / base). Image 2 = top stamp zoom. Image 3 = full label.",
-            "Extract lot and expiry per system rules. Preserve every character of the lot code.",
-            "Output ONLY JSON: lotto_found, lotto, raw_stamp_line, expiration_found, expiration_date, expiration_type, confidence_score."
+            "Analizza TUTTE le immagini (focus + stampigliatura basso + frame intero).",
+            "Cerca SOLO stampigliatura industriale a getto/matrice/laser.",
+            "Output ONLY JSON con esattamente due chiavi: lotto, scadenza."
         ]
         if let first = expectedIngredients.first?.trimmingCharacters(in: .whitespacesAndNewlines),
            !first.isEmpty {
-            lines.insert("Expected product: \(first.prefix(48)).", at: 1)
+            lines.insert("Contesto prodotto (NON e' il lotto): \(first.prefix(40)).", at: 1)
         }
         return lines.joined(separator: "\n")
     }
 
-    private static let lotOnlyPrompt = """
-    LOT NUMBER only from matrix print on lid or label stamp.
-    Set expiration_found: false, expiration_date: null, expiration_type: null.
-    CRITICAL: keep leading L when printed (L9330 B8 → L9330B8, L6036BH099 → L6036BH099).
-    Ignore production time after the lot (00:09, 06:08 are NOT part of the lot).
-    Fill raw_stamp_line with the verbatim stamp line.
-    Full JSON with all seven fields.
+    private static let expiryOnlyPrompt = """
+    Solo SCADENZA. lotto=null.
+    ISO YYYY-MM-DD. "31/08/26" -> "2026-08-31". "08/26" -> "2026-08-31". "09 10 26" -> "2026-10-09".
+    Output ONLY {"lotto":null,"scadenza":"YYYY-MM-DD"} o scadenza null.
     """
 
-    private static let expiryOnlyPrompt = """
-    EXPIRATION DATE / TMC only. Set lotto_found: false, lotto: null.
-    Ignore production time (06:08 is not a date). "23/08/2026 06:08" → "2026-08-23".
-    "SELL BY 09/02" → DD/MM European: 9 February (infer plausible year), NOT Sep 2002.
-    MM/YYYY → last day of month in ISO.
-    Full JSON with all six fields.
+    private static let lotOnlyPrompt = """
+    Solo LOTTO industriale. scadenza=null.
+    Mai LATTE/YOGURT/GRECO/number/batch/to_found/lotto_found.
+    "Batch number: 44464" -> lotto "44464".
+    Output ONLY {"lotto":"...","scadenza":null} o lotto null.
     """
 
     private static func verifyPrompt(lot: String?, expiry: Date?) -> String {
@@ -261,10 +253,10 @@ struct GroqLotExtractor: LabelLotExtractorProtocol, Sendable {
         let lotText = lot ?? "null"
         let expiryText = expiry.map { df.string(from: $0) } ?? "null"
         return """
-        Verify in the image (check bottom stamp / jar lid carefully):
-        - proposed lot: \(lotText)
-        - proposed expiration: \(expiryText)
-        If lot is missing leading L but stamp shows L (e.g. L9330 B8), fix it. Preserve exact characters. Full JSON in standard schema.
+        Verifica stampigliatura industriale (ignora packaging):
+        - lotto proposto: \(lotText)
+        - scadenza proposta: \(expiryText)
+        Correggi se errato. Output ONLY {"lotto":...,"scadenza":...}.
         """
     }
 
@@ -373,7 +365,7 @@ struct GroqLotExtractor: LabelLotExtractorProtocol, Sendable {
                 ["role": "user", "content": content]
             ],
             "temperature": 0,
-            "max_tokens": 160,
+            "max_tokens": 320,
             "response_format": ["type": "json_object"]
         ]
 
