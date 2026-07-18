@@ -40,9 +40,7 @@ struct GoodsReceiptValidationService {
         if requirement.requiresTemperature && temperatureValue == nil {
             return .init(canSubmit: false, message: "Inserisci la temperatura.", requiresCorrectiveAction: false, temperatureOutOfRange: false, hasNonCompliance: false)
         }
-        if requirement.requiresLot && lotNumber.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            return .init(canSubmit: false, message: "Inserisci il numero lotto.", requiresCorrectiveAction: false, temperatureOutOfRange: false, hasNonCompliance: false)
-        }
+        // Numero lotto sempre opzionale: se manca sull'etichetta si procede con foto/scadenza.
         if requirement.requiresExpiryDate && hasExpiryDate == false {
             return .init(canSubmit: false, message: "Inserisci la data di scadenza.", requiresCorrectiveAction: false, temperatureOutOfRange: false, hasNonCompliance: false)
         }

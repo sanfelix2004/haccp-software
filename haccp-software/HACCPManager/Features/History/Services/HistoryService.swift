@@ -18,6 +18,8 @@ struct HistoryService {
         lottoProductionLinks: [LottoFotoProductionLink],
         lottoFotos: [LottoFoto],
         productions: [Production],
+        produzioneBatches: [ProduzioneBatch] = [],
+        productImages: [ProductImage] = [],
         oilRecords: [OilControlRecord]
     ) -> [HistoryEntry] {
         let temperature = TemperatureHistoryProvider().entries(records: temperatureRecords, legacyRecords: fridgeRecords, restaurantId: restaurantId)
@@ -59,7 +61,8 @@ struct HistoryService {
         let labels = labelRecords
             .filter { $0.restaurantId == restaurantId }
             .map {
-                HistoryEntry(
+                let isProductionLot = InternalLotCodeGenerator.isInternalLotCode($0.lotCode ?? "")
+                return HistoryEntry(
                     id: "label-\($0.id)",
                     module: .productionLabels,
                     title: $0.productName,
@@ -69,7 +72,10 @@ struct HistoryService {
                     date: $0.createdAt,
                     details: [
                         .init(label: "Prodotto", value: $0.productName),
-                        .init(label: "Lotto", value: $0.lotCode ?? "—"),
+                        .init(
+                            label: isProductionLot ? "Lotto produzione" : "Lotto",
+                            value: $0.lotCode ?? "—"
+                        ),
                         .init(label: "Fornitore", value: $0.supplier ?? "—"),
                         .init(label: "Data produzione", value: $0.productionDate.formatted(date: .abbreviated, time: .omitted)),
                         .init(label: "Scadenza", value: $0.expiryDate.formatted(date: .abbreviated, time: .omitted)),
@@ -77,16 +83,23 @@ struct HistoryService {
                         .init(label: "Conservazione", value: $0.storageInstructions ?? "—"),
                         .init(label: "Origine", value: $0.sourceModule.label)
                     ],
-                    hasCriticality: $0.expiryState == .expired
+                    hasCriticality: $0.expiryState == .expired,
+                    internalLotCode: isProductionLot ? $0.lotCode : nil
                 )
             }
-        let goods = GoodsReceivingHistoryProvider().entries(from: goodsRecords, restaurantId: restaurantId)
+        let goods = GoodsReceivingHistoryProvider().entries(
+            from: goodsRecords,
+            images: productImages,
+            restaurantId: restaurantId
+        )
         let traceability = TraceabilityHistoryProvider().entries(
             records: traceabilityRecords,
             productions: productions,
             links: traceabilityLinks,
             lottoProductionLinks: lottoProductionLinks,
             lottoFotos: lottoFotos,
+            batches: produzioneBatches,
+            images: productImages,
             restaurantId: restaurantId
         )
         let traceabilityTimeline = TraceabilityHistoryProvider().logEntries(

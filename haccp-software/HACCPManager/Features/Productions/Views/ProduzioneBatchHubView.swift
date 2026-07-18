@@ -31,7 +31,7 @@ struct ProduzioneBatchHubView: View {
                 .font(theme.typography.headline)
                 .foregroundStyle(theme.colorTextPrimary)
 
-            Text("Apri un batch (es. Crema Pasticcera) e traccia gli ingredienti scattando foto ai lotti.")
+            Text("Apri un piatto: viene generato subito il lotto di produzione (es. 20260718-01). Poi scatta le foto dei lotti fornitore.")
                 .font(theme.typography.caption)
                 .foregroundStyle(theme.colorTextSecondary)
 
@@ -61,16 +61,23 @@ struct ProduzioneBatchHubView: View {
             }
 
             if !batches.isEmpty {
-                Text("Batch recenti")
+                Text("Produzioni recenti")
                     .font(theme.typography.subheadline.weight(.semibold))
                 ForEach(batches.prefix(8)) { batch in
                     Button {
                         activeBatch = batch
                     } label: {
-                        HStack {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("\(batch.productionNameSnapshot) · \(batch.batchCode)")
-                                    .font(theme.typography.subheadline)
+                        HStack(alignment: .center, spacing: 12) {
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text(batch.productionNameSnapshot)
+                                    .font(theme.typography.subheadline.weight(.semibold))
+                                    .foregroundStyle(theme.colorTextPrimary)
+                                Text("Lotto produzione")
+                                    .font(theme.typography.caption2.weight(.bold))
+                                    .foregroundStyle(theme.colorTextSecondary)
+                                Text(batch.batchCode)
+                                    .font(theme.typography.title3.weight(.bold).monospaced())
+                                    .foregroundStyle(theme.colorPrimary)
                                 Text(batch.status.label)
                                     .font(theme.typography.caption2)
                                     .foregroundStyle(theme.colorTextSecondary)
@@ -80,9 +87,9 @@ struct ProduzioneBatchHubView: View {
                                 .font(.caption)
                                 .foregroundStyle(theme.colorTextSecondary)
                         }
-                        .padding(10)
+                        .padding(12)
                         .background(theme.colorSurfaceElevated.opacity(0.6))
-                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
                     }
                     .buttonStyle(.plain)
                 }

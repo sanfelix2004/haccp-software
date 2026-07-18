@@ -113,12 +113,12 @@ final class OneDriveSyncService: ObservableObject {
 
     func syncDocument(_ item: DocumentItem, modelContext: ModelContext) async {
         guard isAutoSyncEnabled else { return }
-        guard item.localFilePresent, item.format == .pdf else { return }
+        guard item.format == .pdf else { return }
+        guard let localURL = DocumentPDFPathResolver.resolveAndHeal(item) else { return }
         guard let relative = item.iCloudRelativePath?.trimmingCharacters(in: CharacterSet(charactersIn: "/")), !relative.isEmpty else { return }
 
         do {
             let accessToken = try await validAccessToken()
-            let localURL = URL(fileURLWithPath: item.filePath)
             let data = try await Task.detached(priority: .utility) { try Data(contentsOf: localURL) }.value
             try await upload(data: data, path: relative, accessToken: accessToken)
             item.isSyncedToICloud = true

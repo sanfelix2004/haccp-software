@@ -18,7 +18,7 @@ struct TraceabilityFilterBar: View {
             HStack(spacing: 10) {
                 Image(systemName: "magnifyingglass")
                     .foregroundStyle(theme.colorTextSecondary)
-                TextField("Cerca piatto, alimento, lotto…", text: $searchText)
+                TextField("Cerca piatto, alimento, lotto produzione o fornitore…", text: $searchText)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                     .focused($isSearchFocused)

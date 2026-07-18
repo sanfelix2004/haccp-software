@@ -16,9 +16,16 @@ enum GoodsReceiptRegister {
         let conformity: String
         let notes: String
         let operatorName: String
+        let photoData: Data?
+        let photoCount: Int
     }
 
-    static func rows(in interval: DateInterval, receipts: [GoodsReceipt], df: DateFormatter) -> [Row] {
+    static func rows(
+        in interval: DateInterval,
+        receipts: [GoodsReceipt],
+        images: [ProductImage] = [],
+        df: DateFormatter
+    ) -> [Row] {
         let filtered = receipts
             .filter { interval.contains($0.receivedAt) }
             .sorted { $0.receivedAt > $1.receivedAt }
@@ -43,6 +50,8 @@ enum GoodsReceiptRegister {
                 return "\(a) … \(b) °C"
             }()
 
+            let photos = ProductImageBytesResolver.allPhotos(receipt: r, images: images)
+
             return Row(
                 product: r.productNameSnapshot,
                 category: r.category.rawValue,
@@ -56,7 +65,9 @@ enum GoodsReceiptRegister {
                 checklist: checklistText.isEmpty ? "—" : checklistText,
                 conformity: r.status.label,
                 notes: (r.notes ?? "").isEmpty ? "—" : (r.notes ?? ""),
-                operatorName: r.createdByNameSnapshot
+                operatorName: r.createdByNameSnapshot,
+                photoData: photos.first,
+                photoCount: photos.count
             )
         }
     }

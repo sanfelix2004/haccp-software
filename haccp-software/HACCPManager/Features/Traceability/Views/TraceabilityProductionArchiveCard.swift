@@ -58,27 +58,42 @@ struct TraceabilityProductionArchiveCard: View, Equatable {
 
     private var productionHeader: some View {
         HStack(alignment: .center, spacing: 12) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(
-                        LinearGradient(
-                            colors: [theme.colorPrimary.opacity(0.18), theme.colorPrimary.opacity(0.08)],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
+            if let photoData = group.photoData,
+               let thumb = HACCPZoomablePhotoThumbnail(
+                data: photoData,
+                size: 48,
+                zoomTitle: group.productionName
+               ) {
+                thumb
+            } else {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(
+                            LinearGradient(
+                                colors: [theme.colorPrimary.opacity(0.18), theme.colorPrimary.opacity(0.08)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
                         )
-                    )
-                    .frame(width: 48, height: 48)
-                Image(systemName: "fork.knife")
-                    .font(.body.weight(.semibold))
-                    .foregroundStyle(theme.colorPrimary)
+                        .frame(width: 48, height: 48)
+                    Image(systemName: "fork.knife")
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(theme.colorPrimary)
+                }
             }
 
             Button(action: onToggleExpanded) {
-                VStack(alignment: .leading, spacing: 3) {
+                VStack(alignment: .leading, spacing: 6) {
                     Text(group.productionName)
                         .font(theme.typography.headline)
                         .foregroundStyle(theme.colorTextPrimary)
                         .multilineTextAlignment(.leading)
+                    if let lot = group.batchCode?.trimmingCharacters(in: .whitespacesAndNewlines), !lot.isEmpty {
+                        Text("Lotto produzione \(lot)")
+                            .font(theme.typography.subheadline.weight(.bold).monospaced())
+                            .foregroundStyle(theme.colorPrimary)
+                            .accessibilityLabel("Lotto produzione \(lot)")
+                    }
                     HStack(spacing: 8) {
                         Label(group.registeredAt.formatted(date: .abbreviated, time: .shortened), systemImage: "calendar")
                         Label(TraceabilityCountLabel.alimenti(group.ingredients.count), systemImage: "shippingbox")
@@ -150,13 +165,22 @@ struct TraceabilityProductionArchiveCard: View, Equatable {
 
     private func ingredientRowContent(_ ingredient: TraceabilityArchiveIngredientItem, showsChevron: Bool) -> some View {
         HStack(alignment: .center, spacing: 12) {
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(theme.colorPrimary.opacity(0.1))
-                .frame(width: 44, height: 44)
-                .overlay {
-                    Image(systemName: "shippingbox.fill")
-                        .foregroundStyle(theme.colorPrimary)
-                }
+            if let photoData = ingredient.photoData,
+               let thumb = HACCPZoomablePhotoThumbnail(
+                data: photoData,
+                size: 44,
+                zoomTitle: ingredient.name
+               ) {
+                thumb
+            } else {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(theme.colorPrimary.opacity(0.1))
+                    .frame(width: 44, height: 44)
+                    .overlay {
+                        Image(systemName: "shippingbox.fill")
+                            .foregroundStyle(theme.colorPrimary)
+                    }
+            }
 
             VStack(alignment: .leading, spacing: 6) {
                 Text(ingredient.name)

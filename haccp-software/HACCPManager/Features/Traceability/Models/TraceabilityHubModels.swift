@@ -45,6 +45,8 @@ struct TraceabilityArchiveIngredientItem: Identifiable, Equatable {
     let lotCode: String
     let supplier: String
     let receivedAt: Date
+    /// Miniatura foto etichetta / NC (visibile in archivio).
+    var photoData: Data? = nil
 }
 
 struct TraceabilityProductionArchiveGroup: Identifiable, Equatable {
@@ -52,8 +54,12 @@ struct TraceabilityProductionArchiveGroup: Identifiable, Equatable {
     let productionId: UUID
     let productionName: String
     let batchId: UUID?
+    /// Codice lotto interno (es. 20260718-01).
+    let batchCode: String?
     let registeredAt: Date
     let ingredients: [TraceabilityArchiveIngredientItem]
+    /// Foto del piatto finito (mai quella degli ingredienti in ingresso).
+    var photoData: Data? = nil
 }
 
 // MARK: - Contesto display (indici pre-calcolati)
@@ -66,6 +72,7 @@ struct TraceabilityHubContext {
     let defrostByTrace: [UUID: [DefrostRecord]]
     let imagesByRecord: [UUID: [ProductImage]]
     let logsByRecord: [UUID: [TraceabilityLog]]
+    private let allProductImages: [ProductImage]
     private let lottoFotoById: [UUID: LottoFoto]
     private let lottoLinksByFotoId: [UUID: [LottoFotoProductionLink]]
     private let recordsById: [UUID: TraceabilityRecord]
@@ -84,7 +91,8 @@ struct TraceabilityHubContext {
             logs: store.logs,
             images: store.images,
             lottoFotos: store.lottoFotos,
-            defrostRecords: store.defrostRecords
+            defrostRecords: store.defrostRecords,
+            productionOutputRecords: store.productionOutputRecords
         )
     }
 
@@ -98,10 +106,13 @@ struct TraceabilityHubContext {
         logs: [TraceabilityLog] = [],
         images: [ProductImage] = [],
         lottoFotos: [LottoFoto] = [],
-        defrostRecords: [DefrostRecord] = []
+        defrostRecords: [DefrostRecord] = [],
+        productionOutputRecords: [TraceabilityRecord] = []
     ) {
         productionsById = HACCPSafeParse.dictionary(productions.map { ($0.id, $0) })
-        recordsById = HACCPSafeParse.dictionary(records.map { ($0.id, $0) })
+        recordsById = HACCPSafeParse.dictionary(
+            (records + productionOutputRecords).map { ($0.id, $0) }
+        )
         lottoFotoById = HACCPSafeParse.dictionary(lottoFotos.map { ($0.id, $0) })
         var recordByLotto: [UUID: TraceabilityRecord] = [:]
         for record in records {
@@ -144,9 +155,11 @@ struct TraceabilityHubContext {
 
         var imageMap: [UUID: [ProductImage]] = [:]
         for image in images {
-            imageMap[image.receivedItemId, default: []].append(image)
+            guard let receivedItemId = image.receivedItemId else { continue }
+            imageMap[receivedItemId, default: []].append(image)
         }
         imagesByRecord = imageMap
+        allProductImages = images
 
         var logMap: [UUID: [TraceabilityLog]] = [:]
         for log in logs {
@@ -235,34 +248,45 @@ struct TraceabilityHubContext {
             linkedIngredientCount: linkedIngredientCount,
             defrostCount: defrostByTrace[record.id]?.count ?? 0,
             isActionable: actionable,
-            needsProductionLink: actionable && productionCount == 0 && record.isIncomingIngredientLot
+            needsProductionLink: actionable && productionCount == 0 && record.isIncomingIngredientLot,
+            isProductionLot: record.isProductionBatchOutput
+                || InternalLotCodeGenerator.isInternalLotCode(record.lotCode)
         )
     }
 
     func image(for record: TraceabilityRecord) -> UIImage? {
-        if let fromLotto = lottoImage(for: record) {
-            return fromLotto
-        }
-
-        let recordImages = (imagesByRecord[record.id] ?? []).sorted { $0.createdAt > $1.createdAt }
-        let preferred = recordImages.first { $0.type == .nonComplianceRequired }
-            ?? recordImages.first { $0.type == .lotLabelOCR }
-            ?? recordImages.first { $0.type == .receiptOptional }
-            ?? recordImages.first
-        if let imgModel = preferred,
-           let bytes = imgModel.imageData, !bytes.isEmpty,
-           let image = UIImage(data: bytes) {
-            return image
-        }
-        for path in [preferred?.localPath].compactMap({ $0 }) {
-            if let image = LottoFotoImageStorage.loadImage(at: path) {
-                return image
-            }
-        }
-        if let data = record.photoData, let image = UIImage(data: data) {
+        if let bytes = photoBytes(for: record), let image = UIImage(data: bytes) {
             return image
         }
         return nil
+    }
+
+    /// Byte foto per UI (card / dettaglio / archivio).
+    func photoBytes(for record: TraceabilityRecord) -> Data? {
+        ProductImageBytesResolver.resolve(
+            record: record,
+            images: imagesForPhotoLookup(record),
+            lottoFotos: Array(lottoFotoById.values)
+        )
+    }
+
+    func allPhotoBytes(for record: TraceabilityRecord) -> [Data] {
+        ProductImageBytesResolver.allPhotos(
+            record: record,
+            images: imagesForPhotoLookup(record),
+            lottoFotos: Array(lottoFotoById.values)
+        )
+    }
+
+    private func imagesForPhotoLookup(_ record: TraceabilityRecord) -> [ProductImage] {
+        var result = imagesByRecord[record.id] ?? []
+        if let goodsId = record.goodsReceiptId {
+            let byGoods = allProductImages.filter { $0.goodsReceiptId == goodsId && !$0.isArchived }
+            for image in byGoods where !result.contains(where: { $0.id == image.id }) {
+                result.append(image)
+            }
+        }
+        return result
     }
 
     func associatedProductions(for record: TraceabilityRecord) -> [Production] {
@@ -323,13 +347,23 @@ struct TraceabilityHubContext {
                 .filter { $0.productionId == productionId }
                 .max(by: { $0.producedAt < $1.producedAt })
 
+            let dishPhoto = latestBatch.flatMap { batch in
+                ProductImageBytesResolver.productionDishPhoto(
+                    batchId: batch.id,
+                    images: allProductImages,
+                    records: Array(recordsById.values)
+                )
+            }
+
             return TraceabilityProductionArchiveGroup(
                 id: productionId.uuidString,
                 productionId: productionId,
                 productionName: production.name,
                 batchId: latestBatch?.id,
+                batchCode: latestBatch?.batchCode,
                 registeredAt: latestBatch?.producedAt ?? ingredients.map(\.receivedAt).max() ?? Date(),
-                ingredients: ingredients
+                ingredients: ingredients,
+                photoData: dishPhoto
             )
         }
 
@@ -348,7 +382,8 @@ struct TraceabilityHubContext {
                     productionName: group.productionName,
                     categoryName: production?.categoryNameSnapshot,
                     ingredients: group.ingredients,
-                    tokens: tokens
+                    tokens: tokens,
+                    batchCode: group.batchCode
                 )
             }
         }
@@ -542,13 +577,19 @@ struct TraceabilityHubContext {
     }
 
     private func archiveIngredient(for record: TraceabilityRecord) -> TraceabilityArchiveIngredientItem {
-        TraceabilityArchiveIngredientItem(
+        let photos = ProductImageBytesResolver.allPhotos(
+            record: record,
+            images: imagesForPhotoLookup(record),
+            lottoFotos: Array(lottoFotoById.values)
+        )
+        return TraceabilityArchiveIngredientItem(
             id: record.id,
             recordId: record.id,
             name: record.productName,
             lotCode: lotDisplay(for: record),
             supplier: supplierDisplay(for: record),
-            receivedAt: record.receivedAt
+            receivedAt: record.receivedAt,
+            photoData: photos.first
         )
     }
 

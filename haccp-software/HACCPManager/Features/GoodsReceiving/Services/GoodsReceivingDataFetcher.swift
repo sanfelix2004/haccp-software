@@ -48,7 +48,10 @@ enum GoodsReceivingDataFetcher {
         )
         imageDescriptor.fetchLimit = 400
         data.productImages = ((try? context.fetch(imageDescriptor)) ?? [])
-            .filter { recordIds.contains($0.receivedItemId) }
+            .filter { image in
+                guard let rid = image.receivedItemId else { return false }
+                return recordIds.contains(rid)
+            }
 
         return data
     }

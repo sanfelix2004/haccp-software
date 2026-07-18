@@ -16,4 +16,6 @@ struct HACCPOperationalSourceData {
     var ingredientiTracciati: [IngredienteTracciato] = []
     var lottoProductionLinks: [LottoFotoProductionLink] = []
     var lottoFotos: [LottoFoto] = []
+    var productImages: [ProductImage] = []
+    var documentMovements: [HACCPDocumentMovement] = []
 }

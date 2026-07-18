@@ -7,6 +7,7 @@ import SwiftUI
 struct TraceabilityRecordDetailSheet: View {
     let record: TraceabilityRecord
     let display: TraceabilityRecordDisplay
+    var photoBytes: [Data] = []
     let associatedProductions: [Production]
     let ingredientCountByProductionId: [UUID: Int]
     let linkedIngredientCount: Int
@@ -33,6 +34,9 @@ struct TraceabilityRecordDetailSheet: View {
                         productionContextBanner(production)
                     }
                     headerBlock
+                    if !photoBytes.isEmpty {
+                        photosCard
+                    }
                     infoCard
                     if !associatedProductions.isEmpty {
                         productionsCard
@@ -71,6 +75,27 @@ struct TraceabilityRecordDetailSheet: View {
                             showMasterDeleteAuth = false
                         }
                     ) { EmptyView() }
+                }
+            }
+        }
+    }
+
+    private var photosCard: some View {
+        DashboardCardView(
+            title: "Documentazione fotografica",
+            subtitle: photoBytes.count == 1 ? "1 foto" : "\(photoBytes.count) foto"
+        ) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 12) {
+                    ForEach(Array(photoBytes.enumerated()), id: \.offset) { index, data in
+                        if let thumb = HACCPZoomablePhotoThumbnail(
+                            data: data,
+                            size: 120,
+                            zoomTitle: "Foto \(index + 1) — \(display.productName)"
+                        ) {
+                            thumb
+                        }
+                    }
                 }
             }
         }
@@ -137,7 +162,10 @@ struct TraceabilityRecordDetailSheet: View {
     private var infoCard: some View {
         DashboardCardView(title: "Scheda prodotto", subtitle: "Dati HACCP") {
             VStack(spacing: 10) {
-                detailRow("Lotto", display.lot)
+                detailRow(
+                    display.isProductionLot ? "Lotto produzione" : "Lotto",
+                    display.lot
+                )
                 detailRow("Fornitore", display.supplier)
                 if let category = display.category {
                     detailRow("Categoria", category)
@@ -296,6 +324,7 @@ struct TraceabilityRecordDetailSheet: View {
         case .withdrawn: return "archivebox"
         case .expiryRegistered: return "calendar.badge.clock"
         case .archivedFromExpiryControl: return "archivebox.fill"
+        case .removedFromHistory: return "eye.slash"
         }
     }
 
@@ -313,6 +342,7 @@ struct TraceabilityRecordDetailSheet: View {
         case .withdrawn: return log.detail ?? "Ritirato / scartato"
         case .expiryRegistered: return log.detail ?? "Scadenza registrata"
         case .archivedFromExpiryControl: return log.detail ?? "Rimosso da controllo scadenze"
+        case .removedFromHistory: return log.detail ?? "Nascosto dallo storico (Documenti ok)"
         }
     }
 }

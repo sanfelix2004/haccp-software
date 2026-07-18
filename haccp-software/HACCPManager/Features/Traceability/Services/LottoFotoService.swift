@@ -213,7 +213,7 @@ struct LottoFotoService {
         return lotto
     }
 
-    /// Conferma scatto: persiste metadati lotto + voce archivio (senza salvare foto su disco).
+    /// Conferma scatto: foto obbligatoria (disco + archivio); lotto opzionale se non imposto in Impostazioni.
     @discardableResult
     func confirmCapture(
         pending: PendingLottoCapture,
@@ -236,15 +236,15 @@ struct LottoFotoService {
                 userInfo: [NSLocalizedDescriptionKey: "Foto non disponibile. Scatta di nuovo l'etichetta."]
             )
         }
-        if SettingsStorageService.shared.haccp.lotEntryMandatory, lotText.isEmpty {
-            throw NSError(
-                domain: "LottoFotoService",
-                code: 1,
-                userInfo: [NSLocalizedDescriptionKey: "Il codice lotto è obbligatorio."]
-            )
-        }
+        // Codice lotto sempre opzionale: se assente sull'etichetta si salva comunque la foto.
 
         let lottoId = UUID()
+        let storedPaths = try LottoFotoImageStorage.save(
+            photoData: pending.photoData,
+            restaurantId: template.restaurantId,
+            lottoFotoId: lottoId
+        )
+        let inlinePhoto = StoredImageCompression.preparedForStorage(pending.photoData) ?? pending.photoData
 
         let resolvedExpiry = pending.labelExpiryDate ?? expiryDate
         let resolvedFromLabel = (pending.expiryFromLabel || expiryFromLabel) && !expiryUserEdited
@@ -258,8 +258,8 @@ struct LottoFotoService {
         let lotto = LottoFoto(
             id: lottoId,
             restaurantId: template.restaurantId,
-            localPath: "",
-            thumbnailPath: nil,
+            localPath: storedPaths.originalPath,
+            thumbnailPath: storedPaths.thumbnailPath,
             testoLottoOCR: pending.testoLottoOCR,
             testoLottoFinale: lotText.nilIfEmpty,
             dataScatto: Date(),
@@ -278,7 +278,19 @@ struct LottoFotoService {
             template: template,
             supplier: supplier,
             receipt: receipt,
+            photoData: inlinePhoto,
             modelContext: modelContext
+        )
+        modelContext.insert(
+            ProductImage(
+                receivedItemId: record.id,
+                imageData: inlinePhoto,
+                localPath: storedPaths.originalPath,
+                type: .lotLabelOCR,
+                createdByUserId: user.id,
+                createdByNameSnapshot: user.name,
+                goodsReceiptId: receipt?.id
+            )
         )
         if let normalizedExpiry {
             try expiryTracking.registerIncomingExpiry(
@@ -297,6 +309,7 @@ struct LottoFotoService {
             user: user,
             modelContext: modelContext
         )
+        KitchenProcessNotifications.postRecordsDidChange()
         return lotto
     }
 
@@ -334,7 +347,8 @@ struct LottoFotoService {
         user: LocalUser,
         modelContext: ModelContext,
         productionShelfLifeDays: Int? = nil,
-        ignoreIngredientConstraint: Bool = false
+        ignoreIngredientConstraint: Bool = false,
+        productionPhotoData: Data? = nil
     ) throws {
         guard (!lottoFotos.isEmpty || !reusedRecords.isEmpty), !productions.isEmpty else {
             throw NSError(
@@ -366,7 +380,7 @@ struct LottoFotoService {
                     try productionLibraryService.associate(
                         record: record,
                         production: production,
-                        quantityUsed: nil,
+                        quantityUsed: 1,
                         operatorName: user.name,
                         links: traceabilityLinks,
                         modelContext: modelContext
@@ -389,7 +403,7 @@ struct LottoFotoService {
                 try productionLibraryService.associate(
                     record: record,
                     production: production,
-                    quantityUsed: nil,
+                    quantityUsed: 1,
                     operatorName: user.name,
                     links: traceabilityLinks,
                     modelContext: modelContext
@@ -426,11 +440,11 @@ struct LottoFotoService {
             try batchService.completeBatch(
                 batch: batch,
                 internalExpiryAt: internalExpiry,
-                ingredientCount: uniqueIngredients.count,
+                ingredientCount: max(uniqueIngredients.count, 1),
                 user: user,
                 modelContext: modelContext
             )
-            _ = try expiryTracking.registerProductionExpiry(
+            let finished = try expiryTracking.registerProductionExpiry(
                 batch: batch,
                 production: production,
                 expiryDate: internalExpiry,
@@ -440,6 +454,17 @@ struct LottoFotoService {
                 user: user,
                 modelContext: modelContext
             )
+
+            // Foto del piatto finito (non dell'ingrediente in ingresso).
+            if let productionPhotoData, !productionPhotoData.isEmpty {
+                try attachProductionDishPhoto(
+                    batch: batch,
+                    finishedRecord: finished,
+                    photoData: productionPhotoData,
+                    user: user,
+                    modelContext: modelContext
+                )
+            }
         }
 
         try modelContext.save()
@@ -454,6 +479,30 @@ struct LottoFotoService {
         }
     }
 
+    /// Salva la foto del piatto sul batch e sul record produzione finita.
+    func attachProductionDishPhoto(
+        batch: ProduzioneBatch,
+        finishedRecord: TraceabilityRecord,
+        photoData: Data,
+        user: LocalUser,
+        modelContext: ModelContext
+    ) throws {
+        guard let compressed = StoredImageCompression.preparedForStorage(photoData) ?? Optional(photoData),
+              !compressed.isEmpty else { return }
+        finishedRecord.photoData = compressed
+        modelContext.insert(
+            ProductImage(
+                receivedItemId: finishedRecord.id,
+                produzioneBatchId: batch.id,
+                imageData: compressed,
+                localPath: nil,
+                type: .productionDish,
+                createdByUserId: user.id,
+                createdByNameSnapshot: user.name
+            )
+        )
+    }
+
     // MARK: - Archivio tracciabilità
 
     @discardableResult
@@ -462,10 +511,14 @@ struct LottoFotoService {
         template: ProductTemplate?,
         supplier: String = "",
         receipt: RicezioneMerce? = nil,
+        photoData: Data? = nil,
         modelContext: ModelContext
     ) throws -> TraceabilityRecord {
         if let existing = traceabilityRecord(for: lotto, modelContext: modelContext) {
             applyReceiptLink(to: existing, receipt: receipt, lotto: lotto)
+            if existing.photoData == nil || existing.photoData?.isEmpty == true {
+                existing.photoData = photoData
+            }
             return existing
         }
 
@@ -480,7 +533,7 @@ struct LottoFotoService {
             goodsReceiptId: receipt?.id,
             receivedAt: receivedAt,
             expiryDate: lotto.expiryDate,
-            photoData: nil,
+            photoData: photoData,
             createdAt: lotto.createdAt,
             createdByUserId: lotto.createdByUserId,
             createdByNameSnapshot: lotto.createdByNameSnapshot,

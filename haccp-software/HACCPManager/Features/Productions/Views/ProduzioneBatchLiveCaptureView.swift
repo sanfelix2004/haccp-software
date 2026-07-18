@@ -47,6 +47,7 @@ struct ProduzioneBatchLiveCaptureView: View {
         }
         .onAppear {
             ProductTemplateSeeder.ensureTemplates(restaurantId: batch.restaurantId, modelContext: modelContext)
+            try? batchService.ensureInternalLotCode(batch: batch, modelContext: modelContext)
             reloadIngredients()
             camera.start()
         }
@@ -65,12 +66,20 @@ struct ProduzioneBatchLiveCaptureView: View {
     private var tracesPanel: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
+                ProductionInternalLotBadge(batchCode: batch.batchCode)
+                    .padding(.horizontal)
+                    .padding(.top, 12)
+
+                Text(batch.productionNameSnapshot)
+                    .font(theme.typography.subheadline.weight(.semibold))
+                    .foregroundStyle(theme.colorTextPrimary)
+                    .padding(.horizontal)
+
                 if ingredients.isEmpty {
-                    Text("Scatta l'etichetta, correggi il lotto se serve e scegli l'alimento in ingresso.")
+                    Text("Scatta l'etichetta fornitore (foto obbligatoria). Il lotto di produzione sopra è già generato e andrà sull'etichetta del piatto.")
                         .font(theme.typography.caption)
                         .foregroundStyle(theme.colorTextSecondary)
                         .padding(.horizontal)
-                        .padding(.top, 12)
                 } else {
                     ForEach(ingredients, id: \.id) { item in
                         IngredienteTracciatoGridRow(

@@ -211,8 +211,7 @@ final class HACCPReportEngine: ObservableObject {
         reason: String = "Rigenerazione automatica",
         in modelContext: ModelContext
     ) -> CaptureResult {
-        guard document.localFilePresent,
-              FileManager.default.fileExists(atPath: document.filePath) else {
+        guard DocumentPDFPathResolver.resolveAndHeal(document) != nil else {
             return CaptureResult(snapshot: false, revision: false)
         }
         guard let periodStart = document.periodStart, let periodEnd = document.periodEnd else {
@@ -280,7 +279,12 @@ final class HACCPReportEngine: ObservableObject {
         let productionIds = Set(productions.map(\.id))
 
         let allImages = (try? modelContext.fetch(FetchDescriptor<ProductImage>())) ?? []
-        let images = allImages.filter { traceIds.contains($0.receivedItemId) || receiptIds.contains($0.receivedItemId) }
+        let images = allImages.filter { image in
+            if let rid = image.receivedItemId {
+                return traceIds.contains(rid) || receiptIds.contains(rid)
+            }
+            return image.produzioneBatchId != nil
+        }
 
         let allLinks = (try? modelContext.fetch(FetchDescriptor<TraceabilityLink>())) ?? []
         let links = allLinks.filter { traceIds.contains($0.receivedItemId) || productionIds.contains($0.productionId) }

@@ -84,7 +84,8 @@ struct HACCPManagerApp: App {
             DocumentItem.self,
             HACCPAuditEvent.self,
             HACCPReportRevision.self,
-            HACCPReportSnapshot.self
+            HACCPReportSnapshot.self,
+            HACCPDocumentMovement.self
         )
     }
 

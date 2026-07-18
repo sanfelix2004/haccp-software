@@ -44,7 +44,8 @@ enum NonConformityRegister {
             let risoltaIl = resolvedAt.map { df.string(from: $0) } ?? "—"
             let risoltaDa = (r.nonComplianceResolvedByNameSnapshot ?? "").isEmpty ? "—" : (r.nonComplianceResolvedByNameSnapshot ?? "")
 
-            let photo = r.photoData ?? images.first(where: { $0.goodsReceiptId == r.id })?.imageData
+            let photo = ProductImageBytesResolver.resolve(receipt: r, images: images)
+                ?? ProductImageBytesResolver.allPhotos(receipt: r, images: images).first
 
             rows.append(Row(
                 product: r.productNameSnapshot,
@@ -84,7 +85,7 @@ enum NonConformityRegister {
             let risoltaIl = resolvedAt.map { df.string(from: $0) } ?? "—"
             let risoltaDa = (t.nonComplianceResolvedByNameSnapshot ?? "").isEmpty ? "—" : (t.nonComplianceResolvedByNameSnapshot ?? "")
 
-            let photo = images.first(where: { $0.receivedItemId == t.id })?.imageData
+            let photo = ProductImageBytesResolver.resolve(record: t, images: images)
 
             rows.append(Row(
                 product: t.productName,

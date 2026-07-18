@@ -39,6 +39,7 @@ struct RicezioneTraceabilityBridge {
                 product: product,
                 supplierName: supplier.name,
                 note: anomalyDescription,
+                photoData: receipt.photoData,
                 user: user,
                 modelContext: modelContext
             )
@@ -97,6 +98,7 @@ struct RicezioneTraceabilityBridge {
         product: ProductTemplate,
         supplierName: String,
         note: String,
+        photoData: Data? = nil,
         user: LocalUser,
         modelContext: ModelContext
     ) throws -> TraceabilityRecord {
@@ -119,6 +121,9 @@ struct RicezioneTraceabilityBridge {
         record.isNonCompliant = true
         record.nonComplianceNote = note.nilIfEmpty
         record.nonComplianceCorrectiveAction = receipt.correctiveAction
+        if let photoData, !photoData.isEmpty {
+            record.photoData = photoData
+        }
         modelContext.insert(record)
         modelContext.insert(
             TraceabilityLog(

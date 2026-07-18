@@ -14,6 +14,8 @@ enum TraceabilityActionType: String, Codable {
     case expiryRegistered = "EXPIRY_REGISTERED"
     /// Lotto rimosso dalla vista operativa Controllo scadenze (consumato / terminato).
     case archivedFromExpiryControl = "ARCHIVED_EXPIRY_CONTROL"
+    /// Nascosto dallo storico operativo dal MASTER (traccia resta in Documenti).
+    case removedFromHistory = "REMOVED_FROM_HISTORY"
 }
 
 @Model

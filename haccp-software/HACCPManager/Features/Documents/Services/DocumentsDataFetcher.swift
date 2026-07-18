@@ -122,7 +122,11 @@ enum DocumentsDataFetcher {
         )
         imageDescriptor.fetchLimit = limit * 2
         sources.images = ((try? context.fetch(imageDescriptor)) ?? [])
-            .filter { recordIds.contains($0.receivedItemId) }
+            .filter { image in
+                if let batchId = image.produzioneBatchId { return true }
+                if let rid = image.receivedItemId { return recordIds.contains(rid) }
+                return false
+            }
 
         return sources
     }

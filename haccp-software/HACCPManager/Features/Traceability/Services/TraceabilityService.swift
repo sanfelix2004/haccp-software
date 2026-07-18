@@ -143,45 +143,59 @@ struct TraceabilityService {
         )
     }
 
+    /// Soft-delete: nasconde dalla UI operativa, conserva log e scrive movimento Documenti.
     func deleteRecord(
         record: TraceabilityRecord,
         links: [TraceabilityLink],
         logs: [TraceabilityLog],
         images: [ProductImage],
+        user: LocalUser? = nil,
         modelContext: ModelContext
     ) throws {
-        links.filter { $0.receivedItemId == record.id }.forEach { modelContext.delete($0) }
-        logs.filter { $0.receivedItemId == record.id }.forEach { modelContext.delete($0) }
-        images.filter { $0.receivedItemId == record.id }.forEach { modelContext.delete($0) }
-        modelContext.delete(record)
-        try modelContext.save()
+        _ = links
+        _ = logs
+        _ = images
+        if let user {
+            try HistoryControlService().softDeleteTraceabilityRecord(
+                record: record,
+                user: user,
+                modelContext: modelContext
+            )
+        } else {
+            // Fallback legacy: soft-archive senza utente (nessuna cancellazione fisica log).
+            guard !record.isArchived else { return }
+            record.isArchived = true
+            record.archivedAt = Date()
+            modelContext.insert(
+                TraceabilityLog(
+                    receivedItemId: record.id,
+                    actionType: .removedFromHistory,
+                    operatorName: "Sistema",
+                    detail: "Nascosto dallo storico — traccia conservata in Documenti"
+                )
+            )
+            try modelContext.save()
+        }
     }
 
-    /// Elimina la voce di tracciabilità e i relativi collegamenti (indipendente da Ricezione merci).
+    /// Elimina la voce di tracciabilità dalla UI (soft): indipendente da Ricezione merci.
+    /// I log e la traccia Documenti non vengono mai cancellati.
     func deleteTraceabilityEntry(
         record: TraceabilityRecord,
         links: [TraceabilityLink],
         logs: [TraceabilityLog],
         images: [ProductImage],
+        user: LocalUser,
         modelContext: ModelContext
     ) throws {
-        if let lottoFotoId = record.lottoFotoId {
-            let lottoDescriptor = FetchDescriptor<LottoFoto>()
-            if let lotto = ((try? modelContext.fetch(lottoDescriptor)) ?? []).first(where: { $0.id == lottoFotoId }) {
-                let lottoLinks = (try? modelContext.fetch(FetchDescriptor<LottoFotoProductionLink>())) ?? []
-                lottoLinks.filter { $0.lottoFotoId == lotto.id }.forEach { modelContext.delete($0) }
-                LottoFotoImageStorage.deleteFiles(
-                    originalPath: lotto.localPath,
-                    thumbnailPath: lotto.thumbnailPath
-                )
-                modelContext.delete(lotto)
-            }
-        }
-        links.filter { $0.receivedItemId == record.id }.forEach { modelContext.delete($0) }
-        logs.filter { $0.receivedItemId == record.id }.forEach { modelContext.delete($0) }
-        images.filter { $0.receivedItemId == record.id }.forEach { modelContext.delete($0) }
-        modelContext.delete(record)
-        try modelContext.save()
+        _ = links
+        _ = logs
+        _ = images
+        try HistoryControlService().softDeleteTraceabilityRecord(
+            record: record,
+            user: user,
+            modelContext: modelContext
+        )
     }
 
     func addImage(

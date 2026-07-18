@@ -900,7 +900,9 @@ private struct ExpiryAlertRow: View {
                     .foregroundStyle(theme.colorTextPrimary)
                     .lineLimit(1)
                 HStack(spacing: theme.spacing.sm) {
-                    Text("Lotto \(record.lotCode)")
+                    Text(record.isProductionBatchOutput
+                         ? "Lotto produzione \(record.lotCode)"
+                         : "Lotto \(record.lotCode)")
                         .font(theme.typography.caption)
                         .foregroundStyle(theme.colorTextSecondary)
                     Text("·")
@@ -981,7 +983,9 @@ private struct ExpiryProductRow: View {
     }
 
     private var lotLabel: String {
-        record.isProductionBatchOutput ? "Batch \(record.lotCode)" : "Lotto \(record.lotCode)"
+        record.isProductionBatchOutput
+            ? "Lotto produzione \(record.lotCode)"
+            : "Lotto \(record.lotCode)"
     }
 
     var body: some View {
@@ -990,6 +994,16 @@ private struct ExpiryProductRow: View {
             RoundedRectangle(cornerRadius: 2)
                 .fill(zoneColor)
                 .frame(width: 4, height: 56)
+
+            if record.isProductionBatchOutput,
+               let photo = record.photoData, !photo.isEmpty,
+               let thumb = HACCPZoomablePhotoThumbnail(
+                data: photo,
+                size: 44,
+                zoomTitle: record.productName
+               ) {
+                thumb
+            }
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(record.productName)

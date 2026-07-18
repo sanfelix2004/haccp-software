@@ -8,6 +8,8 @@ import SwiftData
 
 struct TraceabilityFetchedData {
     var records: [TraceabilityRecord] = []
+    /// Record piatto finito (con foto produzione) — non mostrati come lotti in ingresso.
+    var productionOutputRecords: [TraceabilityRecord] = []
     var productions: [Production] = []
     var links: [TraceabilityLink] = []
     var logs: [TraceabilityLog] = []
@@ -58,6 +60,11 @@ enum TraceabilityDataFetcher {
         )
         batchDescriptor.fetchLimit = 300
         data.batches = (try? context.fetch(batchDescriptor)) ?? []
+        let batchIds = Set(data.batches.map(\.id))
+        data.productionOutputRecords = fetched.filter { record in
+            guard let batchId = record.produzioneBatchId else { return false }
+            return batchIds.contains(batchId)
+        }
         await Task.yield()
 
         var trackedDescriptor = FetchDescriptor<IngredienteTracciato>(
@@ -65,7 +72,6 @@ enum TraceabilityDataFetcher {
             sortBy: [SortDescriptor(\IngredienteTracciato.sequenceIndex)]
         )
         trackedDescriptor.fetchLimit = 1200
-        let batchIds = Set(data.batches.map(\.id))
         data.ingredientiTracciati = ((try? context.fetch(trackedDescriptor)) ?? [])
             .filter { batchIds.contains($0.produzioneBatchId) }
 
@@ -126,7 +132,17 @@ enum TraceabilityDataFetcher {
             sortBy: [SortDescriptor(\ProductImage.createdAt, order: .reverse)]
         )
         imageDescriptor.fetchLimit = recordLimit * 2
-        data.images = ((try? context.fetch(imageDescriptor)) ?? []).filter { recordIds.contains($0.receivedItemId) }
+        // Include foto piatto (productionDish) legate al batch anche se receivedItemId
+        // punta al record produzione finita (escluso dai lotti in ingresso).
+        data.images = ((try? context.fetch(imageDescriptor)) ?? []).filter { image in
+            if let batchId = image.produzioneBatchId, batchIds.contains(batchId) {
+                return true
+            }
+            if let rid = image.receivedItemId {
+                return recordIds.contains(rid)
+            }
+            return false
+        }
 
         return data
     }

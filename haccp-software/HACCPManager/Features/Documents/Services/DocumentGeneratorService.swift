@@ -196,7 +196,7 @@ final class DocumentGenerationService {
     /// Copia in cartella temporanea per condivisione (pulizia automatica dopo 10 giorni).
     func temporaryExportURL(for item: DocumentItem, restaurantId: UUID) throws -> URL {
         let fm = FileManager.default
-        guard item.localFilePresent, fm.fileExists(atPath: item.filePath) else {
+        guard let src = DocumentPDFPathResolver.resolveAndHeal(item) else {
             throw DocumentGeneratorError.renderFailed
         }
         let base = try tempExportRoot()
@@ -204,7 +204,6 @@ final class DocumentGenerationService {
         try fm.createDirectory(at: destDir, withIntermediateDirectories: true)
         let stamp = ISO8601DateFormatter().string(from: Date()).replacingOccurrences(of: ":", with: "-")
         let dest = destDir.appendingPathComponent("\(stamp)_\(item.fileName)")
-        let src = URL(fileURLWithPath: item.filePath)
         if fm.fileExists(atPath: dest.path) { try fm.removeItem(at: dest) }
         try fm.copyItem(at: src, to: dest)
         return dest
@@ -245,12 +244,11 @@ final class DocumentGenerationService {
         modelContext: ModelContext,
         keyIndex: inout [GenerationKey: DocumentItem]
     ) {
-        let fm = FileManager.default
         for item in items where item.restaurantId == restaurant.id {
             guard item.status == .generato || item.status == .fallito else { continue }
             guard let ps = item.periodStart else { continue }
-            let pathOk = fm.fileExists(atPath: item.filePath) && item.localFilePresent
-            guard !pathOk else { continue }
+            // Prima ripara path stale (container iOS); solo se manca davvero → rigenera.
+            if DocumentPDFPathResolver.resolveAndHeal(item) != nil { continue }
             guard let interval = intervalForDocument(item, calendar: calendar) else { continue }
             let open = isOpenPeriod(type: effectiveDocType(item), periodStart: ps, calendar: calendar)
             writePDFIgnoringRenderFailure(
@@ -417,7 +415,7 @@ final class DocumentGenerationService {
         let key = GenerationKey(type: type, module: module, periodStart: periodStart.timeIntervalSince1970)
         let fm = FileManager.default
 
-        if !isOpenPeriod, let existing = keyIndex[key], fm.fileExists(atPath: existing.filePath), existing.localFilePresent {
+        if !isOpenPeriod, let existing = keyIndex[key], DocumentPDFPathResolver.resolveAndHeal(existing) != nil {
             return
         }
 
@@ -568,7 +566,18 @@ final class DocumentGenerationService {
         )
         let dir = try LocalDocumentStorageService.shared.stablePDFDirectory(restaurantId: restaurant.id)
         let targetURL = dir.appendingPathComponent(officialName)
-        if existing.filePath != targetURL.path {
+        if let resolved = DocumentPDFPathResolver.resolveAndHeal(existing),
+           resolved.path != targetURL.path {
+            // Sposta / riallinea al path ufficiale senza perdere il file.
+            if resolved.path != existing.filePath {
+                existing.filePath = resolved.path
+            }
+            if fm.fileExists(atPath: existing.filePath), existing.filePath != targetURL.path {
+                try? fm.removeItem(atPath: existing.filePath)
+            }
+            existing.filePath = targetURL.path
+            existing.fileName = officialName
+        } else if existing.filePath != targetURL.path {
             if fm.fileExists(atPath: existing.filePath) {
                 try? fm.removeItem(atPath: existing.filePath)
             }
@@ -948,6 +957,12 @@ final class DocumentGenerationService {
         let ingredientiTracciati = scoped(FetchDescriptor<IngredienteTracciato>(), filter: { $0.restaurantId == restaurantId })
         let lottoProductionLinks = (try? modelContext.fetch(FetchDescriptor<LottoFotoProductionLink>())) ?? []
         let lottoFotos = scoped(FetchDescriptor<LottoFoto>(), filter: { $0.restaurantId == restaurantId })
+        let productImages = ((try? modelContext.fetch(FetchDescriptor<ProductImage>())) ?? [])
+            .filter { !$0.isArchived }
+        let documentMovements = scoped(
+            FetchDescriptor<HACCPDocumentMovement>(),
+            filter: { $0.restaurantId == restaurantId }
+        )
 
         return HACCPOperationalSourceData(
             temperatureRecords: temperatureRecords,
@@ -963,7 +978,9 @@ final class DocumentGenerationService {
             produzioneBatches: produzioneBatches,
             ingredientiTracciati: ingredientiTracciati,
             lottoProductionLinks: lottoProductionLinks,
-            lottoFotos: lottoFotos
+            lottoFotos: lottoFotos,
+            productImages: productImages,
+            documentMovements: documentMovements
         )
     }
 

@@ -13,8 +13,9 @@ public struct HACCPSettings: Codable {
     
     var tempCheckFrequency: Int = 4 // hours
     var productExpiryThreshold: Int = 3 // days
-    /// Se `true`, il codice lotto è obbligatorio nella tracciabilità via fotocamera.
-    var lotEntryMandatory: Bool = true
+    /// Obsoleto: il codice lotto in tracciabilità è sempre opzionale (conta la foto).
+    /// Mantenuto solo per compatibilità con impostazioni già salvate.
+    var lotEntryMandatory: Bool = false
 
     var storageDurationYears: Int = 5
     var labelFormat: String = "Standard 50x30"
@@ -70,7 +71,7 @@ public struct HACCPSettings: Codable {
         groqApiKey = try container.decodeIfPresent(String.self, forKey: .groqApiKey)
         tempCheckFrequency = try container.decodeIfPresent(Int.self, forKey: .tempCheckFrequency) ?? tempCheckFrequency
         productExpiryThreshold = try container.decodeIfPresent(Int.self, forKey: .productExpiryThreshold) ?? productExpiryThreshold
-        lotEntryMandatory = try container.decodeIfPresent(Bool.self, forKey: .lotEntryMandatory) ?? lotEntryMandatory
+        lotEntryMandatory = false
         storageDurationYears = try container.decodeIfPresent(Int.self, forKey: .storageDurationYears) ?? storageDurationYears
         labelFormat = try container.decodeIfPresent(String.self, forKey: .labelFormat) ?? labelFormat
         oilPolarAttentionLimit = try container.decodeIfPresent(Double.self, forKey: .oilPolarAttentionLimit) ?? oilPolarAttentionLimit

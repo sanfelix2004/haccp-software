@@ -200,6 +200,8 @@ extension AppPermission {
             return .privilegedAction
         case .deleteTraceabilityRecords:
             return .deleteTraceabilityEntry
+        case .manageHistory:
+            return .manageHistory
         case .manageDocuments:
             return .privilegedAction
         case .clearCleaningHistory:

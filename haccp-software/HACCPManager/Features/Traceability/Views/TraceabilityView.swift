@@ -437,6 +437,7 @@ struct TraceabilityView: View {
                     ) {
                         TraceabilityRecordCard(
                             display: display,
+                            photoData: hubContext.photoBytes(for: record),
                             onTap: { detailRecord = record },
                             onQuickAssociate: display.needsProductionLink ? {
                                 quickAssociateRecord = record
@@ -472,6 +473,7 @@ struct TraceabilityView: View {
                     ) {
                         TraceabilityRecordCard(
                             display: display,
+                            photoData: hubContext.photoBytes(for: record),
                             onTap: { detailRecord = record },
                             onQuickAssociate: display.needsProductionLink ? {
                                 quickAssociateRecord = record
@@ -573,6 +575,7 @@ struct TraceabilityView: View {
         TraceabilityRecordDetailSheet(
             record: record,
             display: hubContext.display(for: record),
+            photoBytes: hubContext.allPhotoBytes(for: record),
             associatedProductions: hubContext.associatedProductions(for: record),
             ingredientCountByProductionId: Dictionary(
                 uniqueKeysWithValues: hubContext.associatedProductions(for: record).map {
@@ -607,8 +610,8 @@ struct TraceabilityView: View {
             record: record,
             productions: dataStore.productions,
             categories: scopedCategories,
-            onConfirm: { production in
-                associate(record: record, to: production)
+            onConfirm: { production, productionPhoto in
+                associate(record: record, to: production, productionPhotoData: productionPhoto)
                 quickAssociateRecord = nil
             },
             onCancel: { quickAssociateRecord = nil }
@@ -619,16 +622,34 @@ struct TraceabilityView: View {
         ProductionSelectionView(
             initialSelectedIds: pendingProductionIds,
             onCancel: { showProductionSelection = false },
-            onConfirm: { selectedProductions in
-                guard let record = multiAssociateRecord else { return }
+            onConfirm: { selectedProductions, productionPhoto in
+                guard let record = multiAssociateRecord,
+                      let user = currentUser else { return }
                 do {
-                    try productionLibraryService.syncAssociations(
-                        record: record,
-                        selectedProductions: selectedProductions,
-                        operatorName: currentUser?.name ?? "Operatore",
-                        links: dataStore.links,
-                        modelContext: modelContext
-                    )
+                    let existingLinks = dataStore.links.filter { $0.receivedItemId == record.id }
+                    let existingIds = Set(existingLinks.map(\.productionId))
+                    let selectedIds = Set(selectedProductions.map(\.id))
+
+                    for link in existingLinks where !selectedIds.contains(link.productionId) {
+                        modelContext.delete(link)
+                    }
+
+                    let newlySelected = selectedProductions.filter { !existingIds.contains($0.id) }
+                    if !newlySelected.isEmpty {
+                        try lottoService.associateWithProductions(
+                            lottoFotos: [],
+                            reusedRecords: [record],
+                            productions: newlySelected,
+                            user: user,
+                            modelContext: modelContext,
+                            productionPhotoData: productionPhoto
+                        )
+                    } else {
+                        let names = selectedProductions.map(\.name).sorted()
+                        record.productionReference = names.isEmpty ? nil : names.joined(separator: ", ")
+                        try modelContext.save()
+                    }
+
                     reloadAll()
                     showProductionSelection = false
                 } catch {
@@ -701,13 +722,15 @@ struct TraceabilityView: View {
     }
 
     private func performPendingDelete() {
-        guard let record = recordPendingDelete else { return }
+        guard let record = recordPendingDelete,
+              let user = currentUser else { return }
         do {
             try service.deleteTraceabilityEntry(
                 record: record,
                 links: dataStore.links,
                 logs: dataStore.logs,
                 images: dataStore.images,
+                user: user,
                 modelContext: modelContext
             )
             recordPendingDelete = nil
@@ -818,15 +841,16 @@ struct TraceabilityView: View {
         showProductionSelection = true
     }
 
-    private func associate(record: TraceabilityRecord, to production: Production) {
+    private func associate(record: TraceabilityRecord, to production: Production, productionPhotoData: Data? = nil) {
+        guard let user = currentUser else { return }
         do {
-            try productionLibraryService.associate(
-                record: record,
-                production: production,
-                quantityUsed: nil,
-                operatorName: currentUser?.name ?? "Operatore",
-                links: dataStore.links,
-                modelContext: modelContext
+            try lottoService.associateWithProductions(
+                lottoFotos: [],
+                reusedRecords: [record],
+                productions: [production],
+                user: user,
+                modelContext: modelContext,
+                productionPhotoData: productionPhotoData
             )
             reloadAll()
             HapticManager.shared.notification(.success)

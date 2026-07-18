@@ -5,13 +5,15 @@ struct ProduzioneBatchService {
     func nextBatchCode(
         productionId: UUID,
         restaurantId: UUID,
-        modelContext: ModelContext
+        modelContext: ModelContext,
+        producedAt: Date = Date()
     ) -> String {
-        let descriptor = FetchDescriptor<ProduzioneBatch>()
-        let existing = ((try? modelContext.fetch(descriptor)) ?? [])
-            .filter { $0.restaurantId == restaurantId && $0.productionId == productionId }
-        let n = existing.count + 1
-        return String(format: "Batch #%02d", n)
+        _ = productionId
+        return InternalLotCodeGenerator.nextCode(
+            restaurantId: restaurantId,
+            producedAt: producedAt,
+            modelContext: modelContext
+        )
     }
 
     @discardableResult
@@ -24,7 +26,8 @@ struct ProduzioneBatchService {
         let batchCode = nextBatchCode(
             productionId: production.id,
             restaurantId: production.restaurantId,
-            modelContext: modelContext
+            modelContext: modelContext,
+            producedAt: producedAt
         )
         let batch = ProduzioneBatch(
             restaurantId: production.restaurantId,
@@ -41,6 +44,22 @@ struct ProduzioneBatchService {
         return batch
     }
 
+    /// Garantisce un lotto interno `YYYYMMDD-XX` (migra i vecchi «Batch #01»).
+    func ensureInternalLotCode(
+        batch: ProduzioneBatch,
+        modelContext: ModelContext
+    ) throws {
+        let current = batch.batchCode.trimmingCharacters(in: .whitespacesAndNewlines)
+        if InternalLotCodeGenerator.isInternalLotCode(current) { return }
+        batch.batchCode = InternalLotCodeGenerator.nextCode(
+            restaurantId: batch.restaurantId,
+            producedAt: batch.producedAt,
+            modelContext: modelContext,
+            excludingBatchId: batch.id
+        )
+        try modelContext.save()
+    }
+
     func completeBatch(
         batch: ProduzioneBatch,
         internalExpiryAt: Date?,
@@ -55,8 +74,25 @@ struct ProduzioneBatchService {
                 userInfo: [NSLocalizedDescriptionKey: "Aggiungi almeno un ingrediente tracciato via foto."]
             )
         }
+        try ensureInternalLotCode(batch: batch, modelContext: modelContext)
         batch.internalExpiryAt = internalExpiryAt
         batch.status = .completato
+
+        let ingredientLines = ((try? modelContext.fetch(FetchDescriptor<IngredienteTracciato>())) ?? [])
+            .filter { $0.produzioneBatchId == batch.id }
+            .sorted { $0.sequenceIndex < $1.sequenceIndex }
+            .map { item -> String in
+                let name = item.ingredientNameAssigned ?? item.ingredientNameHint ?? "Ingrediente"
+                let lot = item.lotCodeExtracted?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "—"
+                return "\(name) (lotto \(lot.isEmpty ? "—" : lot))"
+            }
+        DocumentMovementRecorder.recordProductionCompleted(
+            batch: batch,
+            ingredientLines: ingredientLines,
+            user: user,
+            modelContext: modelContext
+        )
+
         try modelContext.save()
         HACCPArchiveSyncCoordinator.requestDeferredSync(
             restaurantId: batch.restaurantId,

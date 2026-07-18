@@ -58,9 +58,10 @@ enum TraceabilityArchiveSearch {
         productionName: String,
         categoryName: String?,
         ingredients: [TraceabilityArchiveIngredientItem],
-        tokens: [String]
+        tokens: [String],
+        batchCode: String? = nil
     ) -> Bool {
-        let fields = [productionName, categoryName ?? ""] + ingredients.flatMap {
+        let fields = [productionName, categoryName ?? "", batchCode ?? ""] + ingredients.flatMap {
             [$0.name, $0.lotCode, $0.supplier]
         }
         return matchesAllTokens(tokens, in: fields)

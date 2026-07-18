@@ -163,6 +163,18 @@ enum ProductionLabelPrintContent {
                 priority: 190
             ))
         }
+        // Lotto produzione: subito sotto il nome, in evidenza.
+        if settings.showLotNumber,
+           let lot = label.lotCode?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !lot.isEmpty {
+            lines.append(.init(
+                id: "lot",
+                text: LabelStickerText.printerFit("LOTTO \(lot)", maxLength: maxChars),
+                fontSize: profile.detailFontSize,
+                bold: true,
+                priority: 185
+            ))
+        }
         if settings.showExpiryDate {
             lines.append(.init(
                 id: "expiry",
@@ -181,19 +193,29 @@ enum ProductionLabelPrintContent {
                 priority: 170
             ))
         }
-        if settings.showLotNumber,
-           let lot = label.lotCode?.trimmingCharacters(in: .whitespacesAndNewlines),
-           !lot.isEmpty {
-            lines.append(.init(
-                id: "lot",
-                text: LabelStickerText.printerFit("Lotto \(lot)", maxLength: maxChars),
-                fontSize: profile.detailFontSize,
-                bold: false,
-                priority: 160
-            ))
-        }
+        appendAllergenLines(to: &lines, label: label, settings: settings, maxChars: maxChars, profile: profile)
         appendOperatorLine(to: &lines, label: label, settings: settings, maxChars: maxChars, profile: profile)
         return lines
+    }
+
+    private static func appendAllergenLines(
+        to lines: inout [PrintLine],
+        label: ProductionLabelRecord,
+        settings: LabelPrinterSettings,
+        maxChars: Int,
+        profile: ClabelLabelLayoutProfile
+    ) {
+        guard settings.showAllergenWarning else { return }
+        let allergens = label.allergenList
+        guard !allergens.isEmpty else { return }
+        let joined = allergens.joined(separator: ", ").uppercased()
+        lines.append(.init(
+            id: "allergens",
+            text: LabelStickerText.printerFit("ALL. \(joined)", maxLength: maxChars),
+            fontSize: profile.detailFontSize,
+            bold: true,
+            priority: 155
+        ))
     }
 
     private static func appendOperatorLine(

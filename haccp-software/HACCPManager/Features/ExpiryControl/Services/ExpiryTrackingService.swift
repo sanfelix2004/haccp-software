@@ -100,7 +100,7 @@ struct ExpiryTrackingService {
                 productionId: production.id,
                 actionType: .created,
                 operatorName: user.name,
-                detail: "Batch produzione \(batch.batchCode)"
+                detail: "Lotto produzione \(batch.batchCode)"
             )
         )
         appendAuditLog(

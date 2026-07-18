@@ -68,6 +68,8 @@ final class SettingsStorageService {
 
         if let data = store.restaurantData { restaurant = (try? decoder.decode(RestaurantSettings.self, from: data)) ?? restaurant }
         if let data = store.haccpData { haccp = (try? decoder.decode(HACCPSettings.self, from: data)) ?? haccp }
+        // Tracciabilità: lotto sempre opzionale (foto obbligatoria).
+        haccp.lotEntryMandatory = false
         if let data = store.securityData { security = (try? decoder.decode(SecuritySettings.self, from: data)) ?? security }
         if let data = store.notificationData { notifications = (try? decoder.decode(NotificationSettings.self, from: data)) ?? notifications }
         if let data = store.printerData,

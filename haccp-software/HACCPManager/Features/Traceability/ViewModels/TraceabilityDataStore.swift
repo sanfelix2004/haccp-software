@@ -10,6 +10,8 @@ import Combine
 @MainActor
 final class TraceabilityDataStore: ObservableObject {
     @Published private(set) var records: [TraceabilityRecord] = []
+    /// Record piatto finito (foto produzione) — esclusi dalle liste lotti in ingresso.
+    @Published private(set) var productionOutputRecords: [TraceabilityRecord] = []
     @Published private(set) var productions: [Production] = []
     @Published private(set) var links: [TraceabilityLink] = []
     @Published private(set) var logs: [TraceabilityLog] = []
@@ -59,6 +61,7 @@ final class TraceabilityDataStore: ObservableObject {
                   !Task.isCancelled else { return }
 
             records = data.records
+            productionOutputRecords = data.productionOutputRecords
             productions = data.productions
             links = data.links
             logs = data.logs
@@ -76,6 +79,7 @@ final class TraceabilityDataStore: ObservableObject {
     func clear() {
         reloadPolicy.invalidate()
         records = []
+        productionOutputRecords = []
         productions = []
         links = []
         logs = []

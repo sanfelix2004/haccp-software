@@ -43,6 +43,9 @@ struct TraceabilityLotCaptureFlowView: View {
     @State private var forcesCatalogDuration = false
     @State private var selectedProduction: Production?
     @State private var selectedProductionCategoryId: UUID?
+    @State private var productionDishPhotoData: Data?
+    @State private var showProductionDishCamera = false
+    @StateObject private var productionDishCamera = FinalizeReceiptCameraViewModel()
     @State private var errorMessage: String?
     @State private var showExitWithoutProductionAlert = false
     @State private var selectedScanEngine: LabelScanEngineSelection = .current
@@ -146,9 +149,7 @@ struct TraceabilityLotCaptureFlowView: View {
         }
     }
 
-    private var lotMandatory: Bool {
-        SettingsStorageService.shared.haccp.lotEntryMandatory
-    }
+    private var lotMandatory: Bool { false }
 
     private var isWideLayout: Bool { horizontalSizeClass == .regular }
 
@@ -547,7 +548,7 @@ struct TraceabilityLotCaptureFlowView: View {
                     .font(.caption2)
                     .foregroundStyle(lotMandatory ? theme.colorError : theme.colorTextSecondary)
             }
-            TextField("Es. L26160", text: bindingLotDraft(for: pending))
+            TextField("Es. L26160 (opzionale)", text: bindingLotDraft(for: pending))
                 .font(theme.typography.title3.weight(.semibold).monospaced())
                 .textInputAutocapitalization(.characters)
                 .autocorrectionDisabled()
@@ -555,6 +556,9 @@ struct TraceabilityLotCaptureFlowView: View {
                 .padding(.vertical, 12)
                 .background(theme.colorSurface)
                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            Text("La foto etichetta è obbligatoria e viene salvata in Storia e Documenti.")
+                .font(.caption2)
+                .foregroundStyle(theme.colorTextSecondary)
         }
     }
 
@@ -636,7 +640,6 @@ struct TraceabilityLotCaptureFlowView: View {
 
     private func reviewActionBar(_ pending: PendingLottoCapture) -> some View {
         let canConfirm = selectedTemplate != nil
-            && (!lotMandatory || !pending.lotDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
 
         return HStack(spacing: 12) {
             Button("Scarta") { discardPending() }
@@ -680,10 +683,12 @@ struct TraceabilityLotCaptureFlowView: View {
                     VStack(alignment: .leading, spacing: 6) {
                         Text("A quale piatto colleghi questa produzione?")
                             .font(theme.typography.headline)
-                        Text("Tutte le etichette della sessione verranno raggruppate sotto il piatto scelto.")
+                        Text("Tutte le etichette della sessione verranno raggruppate sotto il piatto scelto. La foto del piatto è separata da quella degli alimenti in ingresso.")
                             .font(theme.typography.caption)
                             .foregroundStyle(theme.colorTextSecondary)
                     }
+
+                    productionDishPhotoSection
 
                     // Pannello riutilizzo alimenti già in magazzino
                     TraceabilityIngredientReusePanel(
@@ -823,6 +828,80 @@ struct TraceabilityLotCaptureFlowView: View {
                         errorMessage = message
                     }
                 )
+            }
+            .fullScreenCover(isPresented: $showProductionDishCamera) {
+                productionDishCameraSheet
+            }
+        }
+    }
+
+    private var productionDishPhotoSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Foto piatto finito")
+                .font(theme.typography.subheadline.weight(.semibold))
+            Text("Opzionale — non riusa le foto degli alimenti scansionati.")
+                .font(theme.typography.caption)
+                .foregroundStyle(theme.colorTextSecondary)
+            if let productionDishPhotoData,
+               let thumb = HACCPZoomablePhotoThumbnail(
+                data: productionDishPhotoData,
+                size: 88,
+                zoomTitle: "Piatto finito"
+               ) {
+                HStack(spacing: 12) {
+                    thumb
+                    VStack(alignment: .leading, spacing: 8) {
+                        Button("Scatta di nuovo") { showProductionDishCamera = true }
+                            .font(theme.typography.caption.weight(.semibold))
+                        Button("Rimuovi") { self.productionDishPhotoData = nil }
+                            .font(theme.typography.caption)
+                            .foregroundStyle(theme.colorError)
+                    }
+                }
+            } else {
+                Button {
+                    showProductionDishCamera = true
+                } label: {
+                    Label("Scatta foto del piatto", systemImage: "camera.fill")
+                        .font(theme.typography.subheadline.weight(.semibold))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                }
+                .buttonStyle(.bordered)
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(theme.colorSurface)
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+
+    private var productionDishCameraSheet: some View {
+        NavigationStack {
+            ZStack {
+                FinalizeCameraSessionPreview(session: productionDishCamera.session, cameraViewModel: productionDishCamera)
+                    .ignoresSafeArea()
+                VStack {
+                    Spacer()
+                    Button("Scatta") { productionDishCamera.capturePhoto() }
+                        .buttonStyle(.borderedProminent)
+                        .padding(.bottom, 28)
+                }
+            }
+            .navigationTitle("Foto piatto")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Chiudi") { showProductionDishCamera = false }
+                }
+            }
+            .onAppear { productionDishCamera.start() }
+            .onDisappear { productionDishCamera.stop() }
+            .onReceive(productionDishCamera.$capturedPhotoData) { data in
+                guard let data, !data.isEmpty else { return }
+                productionDishCamera.resetCaptureBuffer()
+                showProductionDishCamera = false
+                productionDishPhotoData = data
             }
         }
     }
@@ -1225,6 +1304,7 @@ struct TraceabilityLotCaptureFlowView: View {
         forcesCatalogDuration = false
         showAddProductionInPicker = false
         selectedReusedRecordIds = []
+        productionDishPhotoData = nil
         camera.stop()
         presentedSheet = .productionPicker
     }
@@ -1238,6 +1318,7 @@ struct TraceabilityLotCaptureFlowView: View {
         forcesCatalogDuration = false
         showAddProductionInPicker = false
         selectedReusedRecordIds = []
+        productionDishPhotoData = nil
         camera.stop()
         presentedSheet = .productionPicker
     }
@@ -1274,12 +1355,14 @@ struct TraceabilityLotCaptureFlowView: View {
                 productionShelfLifeDays: productionShelfLifeDays != production.defaultShelfLifeDays
                     ? productionShelfLifeDays
                     : nil,
-                ignoreIngredientConstraint: forcesCatalogDuration
+                ignoreIngredientConstraint: forcesCatalogDuration,
+                productionPhotoData: productionDishPhotoData
             )
 
             presentedSheet = nil
             selectedProduction = nil
             selectedProductionCategoryId = nil
+            productionDishPhotoData = nil
             selectedReusedRecordIds = []
             sessionId = UUID()
             sessionItems = []
