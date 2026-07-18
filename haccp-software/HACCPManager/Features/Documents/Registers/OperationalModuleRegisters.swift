@@ -137,6 +137,7 @@ enum DefrostRegister {
         let method: String
         let lot: String
         let startedAt: String
+        let expectedEndAt: String
         let endedAt: String
         let duration: String
         let initialTemp: String
@@ -156,6 +157,7 @@ enum DefrostRegister {
                     method: r.defrostMethod.label,
                     lot: r.lotNumber ?? "—",
                     startedAt: df.string(from: r.startAt),
+                    expectedEndAt: r.expectedEndAt.map { df.string(from: $0) } ?? "—",
                     endedAt: r.endAt.map { df.string(from: $0) } ?? "—",
                     duration: r.durationText,
                     initialTemp: r.initialTemperature.map { String(format: "%.1f °C", $0) } ?? "—",
@@ -172,6 +174,7 @@ enum BlastChillingRegister {
     struct Row {
         let production: String
         let category: String
+        let lot: String
         let startedAt: String
         let endedAt: String
         let duration: String
@@ -191,6 +194,7 @@ enum BlastChillingRegister {
                 Row(
                     production: r.productionNameSnapshot,
                     category: r.productionCategorySnapshot,
+                    lot: r.lotNumberSnapshot ?? "—",
                     startedAt: df.string(from: r.startedAt),
                     endedAt: r.endedAt.map { df.string(from: $0) } ?? "—",
                     duration: r.durationText,
