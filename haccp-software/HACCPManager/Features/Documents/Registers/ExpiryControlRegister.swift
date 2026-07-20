@@ -1,6 +1,6 @@
 import Foundation
 
-/// Monitoraggio scadenze produzioni finite (post-abbattimento / preparazione).
+/// Registro «Tracciabilità status»: produzioni finite e chiusure (disponibile / terminato / usato / scaduto / scartato).
 enum ExpiryControlRegister {
     struct Row {
         let product: String
@@ -15,21 +15,34 @@ enum ExpiryControlRegister {
     static func productionRows(
         in interval: DateInterval,
         records: [TraceabilityRecord],
+        logs: [TraceabilityLog] = [],
         df: DateFormatter
     ) -> [Row] {
-        records
-            .filter { TraceabilityRecordSupport.isProductionExpiryRecord($0) }
+        let logsByRecord = Dictionary(grouping: logs, by: \.receivedItemId)
+
+        return records
+            .filter { !$0.isArchived && $0.isProductionBatchOutput }
             .filter { record in
-                interval.contains(record.receivedAt)
-                    || (record.expiryDate.map { interval.contains($0) } ?? false)
+                if interval.contains(record.receivedAt) { return true }
+                if let expiry = record.expiryDate, interval.contains(expiry) { return true }
+                // Chiusure nel periodo (Terminato / Scartato / …) anche se create prima.
+                let recordLogs = logsByRecord[record.id] ?? []
+                return recordLogs.contains {
+                    ($0.actionType == .withdrawn || $0.actionType == .archivedFromExpiryControl)
+                        && interval.contains($0.timestamp)
+                }
             }
             .sorted { ($0.expiryDate ?? $0.receivedAt) > ($1.expiryDate ?? $1.receivedAt) }
             .map { record in
-                Row(
+                let status = TraceabilityLotOperationalStatus.present(
+                    record: record,
+                    logs: logsByRecord[record.id] ?? []
+                ).label
+                return Row(
                     product: record.productName,
                     lot: record.lotCode.isEmpty ? "—" : record.lotCode,
-                    expiry: record.expiryDate.map { df.string(from: $0) } ?? "—",
-                    status: record.productStatus.label,
+                    expiry: record.expiryDate.map { df.string(from: $0) } ?? "",
+                    status: status,
                     source: TraceabilityRecordSupport.expiryTypeLabel(for: record),
                     registeredAt: df.string(from: record.receivedAt),
                     operatorName: record.createdByNameSnapshot

@@ -7,7 +7,7 @@ enum HACCPModuleCatalog {
         "Frigoriferi",
         "Controllo pulizia",
         "Abbattimento",
-        "Controllo scadenze",
+        "Controllo scadenze e quantità",
         "Decongelamento",
         "Controllo olio",
         "Etichette di produzione",

@@ -10,6 +10,7 @@ import Combine
 final class ExpiryControlDataStore: ObservableObject {
     @Published private(set) var records: [TraceabilityRecord] = []
     @Published private(set) var lottoFotos: [LottoFoto] = []
+    @Published private(set) var productImages: [ProductImage] = []
     @Published private(set) var isLoading = false
     @Published private(set) var loadGeneration = UUID()
 
@@ -34,6 +35,7 @@ final class ExpiryControlDataStore: ObservableObject {
             guard !Task.isCancelled else { return }
             records = data.records
             lottoFotos = data.lottoFotos
+            productImages = data.productImages
             isLoading = false
             loadGeneration = UUID()
             reloadPolicy.markLoaded(restaurantId: restaurantId)
@@ -44,6 +46,7 @@ final class ExpiryControlDataStore: ObservableObject {
         reloadPolicy.invalidate()
         records = []
         lottoFotos = []
+        productImages = []
         isLoading = false
     }
 

@@ -18,6 +18,9 @@ final class ProduzioneBatch {
     var createdByNameSnapshot: String
     var isArchived: Bool
     var archivedAt: Date?
+    /// Motivo soft-hide dallo storico (`HistoryRemovalReason.rawValue`).
+    var historyRemovalReasonRaw: String?
+    var historyRemovalNote: String?
 
     init(
         id: UUID = UUID(),
@@ -33,7 +36,9 @@ final class ProduzioneBatch {
         createdByUserId: UUID,
         createdByNameSnapshot: String,
         isArchived: Bool = false,
-        archivedAt: Date? = nil
+        archivedAt: Date? = nil,
+        historyRemovalReasonRaw: String? = nil,
+        historyRemovalNote: String? = nil
     ) {
         self.id = id
         self.restaurantId = restaurantId
@@ -49,10 +54,22 @@ final class ProduzioneBatch {
         self.createdByNameSnapshot = createdByNameSnapshot
         self.isArchived = isArchived
         self.archivedAt = archivedAt
+        self.historyRemovalReasonRaw = historyRemovalReasonRaw
+        self.historyRemovalNote = historyRemovalNote
     }
 
     var status: ProduzioneBatchStatus {
         get { ProduzioneBatchStatus(rawValue: statusRaw) ?? .inCorso }
         set { statusRaw = newValue.rawValue }
+    }
+
+    var historyRemovalReason: HistoryRemovalReason? {
+        get {
+            guard let historyRemovalReasonRaw else { return nil }
+            return HistoryRemovalReason(rawValue: historyRemovalReasonRaw)
+        }
+        set {
+            historyRemovalReasonRaw = newValue?.rawValue
+        }
     }
 }

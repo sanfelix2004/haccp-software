@@ -36,6 +36,16 @@ enum HACCPRegisterCSVExporter {
                 images: images,
                 df: formatter
             )
+        case .combinatoTracciabilitaProduzione, .etichetteProduzione, .controlloScadenze:
+            return csvTracciabilitaProduzioni(
+                interval: interval,
+                records: traceability,
+                productions: productions,
+                links: links,
+                logs: logs,
+                images: images,
+                df: formatter
+            )
         case .haccpCombinato:
             return csvCombinato(
                 interval: interval,
@@ -110,17 +120,40 @@ enum HACCPRegisterCSVExporter {
         )
         var lines: [String] = []
         lines.append(makeLine([
-            "Prodotto", "Lotto", "Fornitore", "Data ricezione", "Stato", "Produzioni associate", "Note NC",
-            "Operatore"
+            "Prodotto", "Lotto", "Fornitore / origine", "Creato il", "Registrato da",
+            "Associato a (quando / da chi)", "Chiusura (esito · quando · chi)", "Stato", "Note NC"
         ]))
         for r in rows {
             lines.append(makeLine([
-                r.product, r.lot, r.supplier, r.receivedAt, r.status, r.productions, r.nonCompliance,
-                r.operatorName
+                r.product, r.lot, r.supplier, r.createdAt, r.createdBy,
+                r.associations, r.closure, r.status, r.nonCompliance
             ]))
         }
         if rows.isEmpty { lines.append(escapeRow([HACCPRegisterCopy.noActivityInPeriod])) }
         return lines.joined(separator: "\n")
+    }
+
+    private static func csvTracciabilitaProduzioni(
+        interval: DateInterval,
+        records: [TraceabilityRecord],
+        productions: [Production],
+        links: [TraceabilityLink],
+        logs: [TraceabilityLog],
+        images: [ProductImage],
+        df: DateFormatter
+    ) -> String {
+        [
+            "TRACCIABILITA_E_PRODUZIONI",
+            csvTracciabilita(
+                interval: interval,
+                records: records,
+                productions: productions,
+                links: links,
+                logs: logs,
+                images: images,
+                df: df
+            )
+        ].joined(separator: "\n")
     }
 
     private static func csvNonConformita(

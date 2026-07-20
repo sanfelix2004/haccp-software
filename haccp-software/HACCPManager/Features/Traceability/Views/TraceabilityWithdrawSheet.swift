@@ -22,18 +22,41 @@ struct TraceabilityWithdrawSheet: View {
 
     private let service = TraceabilityService()
 
+    private var trimmedNote: String {
+        note.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var canConfirm: Bool {
+        if kind.requiresNote { return !trimmedNote.isEmpty }
+        return true
+    }
+
     var body: some View {
         NavigationStack {
             Form {
                 Section {
-                    Text("Registra la chiusura del lotto scaduto per tracciabilità HACCP. Il prodotto non sarà più utilizzabile in cucina.")
+                    Text(record.isProductionBatchOutput
+                       ? "Chiudi questo piatto di produzione scaduto: usato, scartato o eliminato perché scaduto. Resta in Storia e Documenti."
+                       : "Chiudi questo alimento scaduto: usato, scartato o eliminato perché scaduto. Resta in Storia e Documenti.")
                         .font(theme.typography.caption)
                         .foregroundStyle(theme.colorTextSecondary)
                 }
 
-                Section("Prodotto") {
+                Section(record.isProductionBatchOutput ? "Produzione" : "Prodotto") {
+                    if let photo = record.photoData, !photo.isEmpty,
+                       let thumb = HACCPZoomablePhotoThumbnail(
+                        data: photo,
+                        size: 96,
+                        zoomTitle: record.productName
+                       ) {
+                        thumb
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
                     LabeledContent("Nome", value: record.productName)
-                    LabeledContent("Lotto", value: record.lotCode.isEmpty ? "—" : record.lotCode)
+                    LabeledContent(
+                        record.isProductionBatchOutput ? "Lotto produzione" : "Lotto",
+                        value: record.lotCode.isEmpty ? "—" : record.lotCode
+                    )
                     if let expiry = record.expiryDate {
                         LabeledContent(
                             "Scadenza",
@@ -42,25 +65,41 @@ struct TraceabilityWithdrawSheet: View {
                     }
                 }
 
-                Section("Tipo intervento") {
-                    Picker("Esito", selection: $kind) {
-                        ForEach(TraceabilityWithdrawalKind.allCases) { option in
-                            Text(option.label).tag(option)
+                Section("Esito") {
+                    ForEach(TraceabilityWithdrawalKind.allCases) { option in
+                        Button {
+                            kind = option
+                        } label: {
+                            HStack(alignment: .top, spacing: 12) {
+                                Image(systemName: kind == option ? "checkmark.circle.fill" : "circle")
+                                    .foregroundStyle(kind == option ? theme.colorPrimary : theme.colorTextSecondary)
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(option.label)
+                                        .font(theme.typography.subheadline.weight(.semibold))
+                                        .foregroundStyle(theme.colorTextPrimary)
+                                    Text(option.subtitle)
+                                        .font(theme.typography.caption)
+                                        .foregroundStyle(theme.colorTextSecondary)
+                                }
+                                Spacer(minLength: 0)
+                            }
                         }
+                        .buttonStyle(.plain)
                     }
-                    .pickerStyle(.segmented)
-
-                    Text(kind.subtitle)
-                        .font(theme.typography.caption)
-                        .foregroundStyle(theme.colorTextSecondary)
                 }
 
-                Section("Note (opzionale)") {
-                    TextField("Es. contenitore, ubicazione, motivo aggiuntivo…", text: $note, axis: .vertical)
-                        .lineLimit(2...4)
+                Section {
+                    TextField(
+                        kind.requiresNote ? "Motivazione obbligatoria…" : "Es. contenitore, ubicazione…",
+                        text: $note,
+                        axis: .vertical
+                    )
+                    .lineLimit(2...4)
+                } header: {
+                    Text(kind.requiresNote ? "Motivazione (obbligatoria)" : "Note (opzionale)")
                 }
             }
-            .navigationTitle("Usato / scarto")
+            .navigationTitle("Chiudi lotto scaduto")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -72,7 +111,7 @@ struct TraceabilityWithdrawSheet: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Conferma", action: confirm)
-                        .disabled(isSubmitting || !record.canBeWithdrawn)
+                        .disabled(isSubmitting || !record.canBeWithdrawn || !canConfirm)
                 }
             }
             .alert("Usato / scarto", isPresented: Binding(

@@ -22,7 +22,7 @@ struct ProductSelectionGridView: View {
             ForEach(layout.sections) { section in
                 VStack(alignment: .leading, spacing: theme.spacing.sm) {
                     HStack(spacing: 8) {
-                        Text(section.category.rawValue)
+                        Text(section.categoryName)
                             .font(theme.typography.subheadline.weight(.bold))
                             .foregroundStyle(theme.colorTextPrimary)
                         Text("\(section.products.count)")
@@ -66,7 +66,7 @@ struct ProductSelectionGridView: View {
                     }
                 }
                 if showsCategory {
-                    Text(product.category.rawValue)
+                    Text(product.categoryDisplayName)
                         .font(theme.typography.caption2)
                         .foregroundStyle(theme.colorTextSecondary)
                         .lineLimit(1)

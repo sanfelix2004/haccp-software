@@ -72,6 +72,8 @@ final class TraceabilityRecord {
     var nonComplianceResolvedByNameSnapshot: String?
     var isArchived: Bool = false
     var archivedAt: Date?
+    /// Chiusura operativa (terminato / scaduto / scartato / usato): per grace period in Controllo scadenze.
+    var operationalClosedAt: Date?
     /// Collegamento al lotto fotografato (flusso camera).
     var lottoFotoId: UUID?
 

@@ -61,8 +61,9 @@ extension HistoryEntry {
             return .warning
         }
         if hasCriticality { return .nonConforme }
-        if normalized == "usato" { return .conforme }
-        if normalized.contains("scartat") { return .nonConforme }
+        let operational = TraceabilityLotOperationalStatus.style(forOutcome: status)
+        if operational != .neutral { return operational }
+        if normalized.contains("disponib") { return .conforme }
         if normalized.contains("crit") || normalized.contains("non") {
             return .warning
         }

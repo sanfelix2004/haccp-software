@@ -20,42 +20,60 @@ enum ExpiryStatus: Int, CaseIterable, Identifiable {
     case used           = 4   // già usato / archiviato
     case frozen         = 5   // congelato (no scadenza diretta)
     case rejected       = 6   // respinto
+    case missingExpiry  = 7   // senza data — usa al più presto
 
     var id: Int { rawValue }
 
     var label: String {
         switch self {
-        case .expired:      return "Scaduto"
-        case .dueToday:     return "Scade oggi"
-        case .soonExpiring: return "In scadenza"
-        case .healthy:      return "Conforme"
-        case .used:         return "Archiviato"
-        case .frozen:       return "Congelato"
-        case .rejected:     return "Respinto"
+        case .expired:       return "Scaduto"
+        case .dueToday:      return "Scade oggi"
+        case .soonExpiring:  return "In scadenza"
+        case .healthy:       return "Conforme"
+        case .used:          return "Chiuso"
+        case .frozen:        return "Congelato"
+        case .rejected:      return "Respinto"
+        case .missingExpiry: return "Senza scadenza"
         }
     }
 
     var icon: String {
         switch self {
-        case .expired:      return "xmark.octagon.fill"
-        case .dueToday:     return "exclamationmark.octagon.fill"
-        case .soonExpiring: return "clock.badge.exclamationmark.fill"
-        case .healthy:      return "checkmark.seal.fill"
-        case .used:         return "archivebox.fill"
-        case .frozen:       return "snowflake"
-        case .rejected:     return "trash.slash.fill"
+        case .expired:       return "xmark.octagon.fill"
+        case .dueToday:      return "exclamationmark.octagon.fill"
+        case .soonExpiring:  return "clock.badge.exclamationmark.fill"
+        case .healthy:       return "checkmark.seal.fill"
+        case .used:          return "archivebox.fill"
+        case .frozen:        return "snowflake"
+        case .rejected:      return "trash.slash.fill"
+        case .missingExpiry: return "photo.on.rectangle.angled"
         }
     }
 
     func color(_ tm: ThemeManager) -> Color {
         switch self {
-        case .expired:      return tm.colorError
-        case .dueToday:     return tm.colorError
-        case .soonExpiring: return tm.colorWarning
-        case .healthy:      return tm.colorSuccess
-        case .used:         return tm.colorTextSecondary
-        case .frozen:       return tm.colorInfo
-        case .rejected:     return tm.colorTextSecondary
+        case .expired:       return tm.colorError
+        case .dueToday:      return tm.colorError
+        case .soonExpiring:  return tm.colorWarning
+        case .healthy:       return tm.colorSuccess
+        case .used:          return tm.colorTextSecondary
+        case .frozen:        return tm.colorInfo
+        case .rejected:      return tm.colorTextSecondary
+        case .missingExpiry: return tm.colorWarning
+        }
+    }
+
+    /// Hint operativo sotto il badge (cucina).
+    var chefHint: String {
+        switch self {
+        case .expired:       return "Azione immediata"
+        case .dueToday:      return "Usa oggi"
+        case .soonExpiring:  return "Usa a breve"
+        case .healthy:       return "Sotto controllo"
+        case .used:          return "Chiuso"
+        case .frozen:        return "Conservazione congelata"
+        case .rejected:      return "Non utilizzabile"
+        case .missingExpiry: return "Usa al più presto · controlla la foto"
         }
     }
 
@@ -75,7 +93,7 @@ enum ExpiryStatus: Int, CaseIterable, Identifiable {
             return .frozen
         }
 
-        guard let exp = record.expiryDate else { return .healthy }
+        guard let exp = record.expiryDate else { return .missingExpiry }
 
         let days = ProductExpiryEvaluator.daysUntilExpiry(exp, now: now)
 
@@ -87,7 +105,12 @@ enum ExpiryStatus: Int, CaseIterable, Identifiable {
 
     /// Giorni rimanenti formattati ("Oggi", "+3g", "-2g") rispetto a `now`.
     static func daysLabel(record: TraceabilityRecord, now: Date = Date()) -> String {
-        guard let exp = record.expiryDate else { return "—" }
+        if record.expiryDate == nil {
+            let status = compute(record: record, now: now)
+            if status == .frozen { return "—" }
+            return "N/D"
+        }
+        guard let exp = record.expiryDate else { return "N/D" }
         let days = ProductExpiryEvaluator.daysUntilExpiry(exp, now: now)
         if days == 0 { return "Oggi" }
         return days > 0 ? "+\(days)g" : "\(days)g"
@@ -102,7 +125,6 @@ enum ExpiryFilter: Int, CaseIterable, Identifiable {
     case expired = 2
     case soon    = 3
     case healthy = 4
-    case used    = 5
 
     var id: Int { rawValue }
 
@@ -113,7 +135,6 @@ enum ExpiryFilter: Int, CaseIterable, Identifiable {
         case .expired: return "Scaduti"
         case .soon:    return "In scadenza"
         case .healthy: return "Conformi"
-        case .used:    return "Archiviati"
         }
     }
 
@@ -124,29 +145,37 @@ enum ExpiryFilter: Int, CaseIterable, Identifiable {
         case .expired: return "xmark.octagon.fill"
         case .soon:    return "clock.badge.exclamationmark.fill"
         case .healthy: return "checkmark.seal.fill"
-        case .used:    return "archivebox.fill"
         }
     }
 }
 
-/// Tab operativa Controllo scadenze — due binari cucina.
+/// Area operativa Controllo scadenze — due box cucina.
 enum ExpiryControlTab: String, CaseIterable, Identifiable {
-    case pantry = "Dispensa & Frighi"
-    case production = "Produzioni Interne"
+    case pantry = "Alimenti in ingresso"
+    case production = "Produzioni"
 
     var id: String { rawValue }
 
     var icon: String {
         switch self {
-        case .pantry: return "tray.full.fill"
+        case .pantry: return "shippingbox.fill"
         case .production: return "fork.knife"
         }
     }
 
     var subtitle: String {
         switch self {
-        case .pantry: return "Materie prime — scadenza da etichetta fornitore"
-        case .production: return "Piatti preparati — scadenza da durata catalogo"
+        case .pantry:
+            return "Lotti da associare o già associati — controlla la scadenza, scarta con motivazione, chiudi i scaduti"
+        case .production:
+            return "Piatti preparati — tieni quelli validi, chiudi scaduti, termina o scarta con motivazione"
+        }
+    }
+
+    var actionHint: String {
+        switch self {
+        case .pantry: return "Scadenza · Scarto · Chiudi scaduti"
+        case .production: return "Scadenza · Termina · Scarto · Chiudi scaduti"
         }
     }
 }
@@ -156,8 +185,9 @@ enum ExpiryControlTab: String, CaseIterable, Identifiable {
 struct ExpiryStats {
     var total: Int = 0
     var expired: Int = 0
-    var dueOrSoon: Int = 0   // dueToday + soonExpiring
+    var dueOrSoon: Int = 0   // dueToday + soonExpiring + missingExpiry
     var dueToday: Int = 0
+    var missingExpiry: Int = 0
     var healthy: Int = 0
 
     var conformityPercent: Int {
@@ -182,12 +212,11 @@ struct ExpiryControlView: View {
     @State private var filter: ExpiryFilter = .alerts
     @State private var selectedTab: ExpiryControlTab = .pantry
     @State private var withdrawRecord: TraceabilityRecord?
-    @State private var recordPendingArchive: TraceabilityRecord?
+    @State private var closureRecord: TraceabilityRecord?
     @State private var showLoginRequiredAlert = false
     @State private var masterAuth = MasterAuthCoordinator()
 
     private let expiryService = TraceabilityExpiryService()
-    private let archiveService = ExpiryArchiveService()
 
     private var soonThresholdDays: Int {
         SettingsStorageService.shared.haccp.productExpiryThreshold
@@ -199,6 +228,23 @@ struct ExpiryControlView: View {
 
     private func expirySourceLabel(for record: TraceabilityRecord) -> String? {
         TraceabilityRecordSupport.expirySourceLabel(for: record, lottoById: lottoById)
+    }
+
+    private func photoData(for record: TraceabilityRecord) -> Data? {
+        if record.isProductionBatchOutput, let batchId = record.produzioneBatchId {
+            if let dish = ProductImageBytesResolver.productionDishPhoto(
+                batchId: batchId,
+                images: dataStore.productImages,
+                records: dataStore.records
+            ) {
+                return dish
+            }
+        }
+        return ProductImageBytesResolver.resolve(
+            record: record,
+            images: dataStore.productImages,
+            lottoFotos: dataStore.lottoFotos
+        )
     }
 
     // MARK: Derived data
@@ -222,13 +268,13 @@ struct ExpiryControlView: View {
     private var incomingActive: [TraceabilityRecord] {
         scoped
             .filter(TraceabilityRecordSupport.isIncomingExpiryRecord)
-            .filter { $0.productStatus != .used && $0.productStatus != .rejected }
+            .filter { !TraceabilityRecordSupport.isOperationallyClosed($0) }
     }
 
     private var productionActive: [TraceabilityRecord] {
         scoped
             .filter(TraceabilityRecordSupport.isProductionExpiryRecord)
-            .filter { $0.productStatus != .used && $0.productStatus != .rejected }
+            .filter { !TraceabilityRecordSupport.isOperationallyClosed($0) }
     }
 
     private func alertCount(in records: [TraceabilityRecord]) -> Int {
@@ -237,11 +283,9 @@ struct ExpiryControlView: View {
         }.count
     }
 
-    /// Solo prodotti rilevanti per il monitoraggio scadenze.
-    /// Esclude record archiviati (used) dalle aggregazioni di rischio,
-    /// ma li mantiene visibili nel filtro "Archiviati".
+    /// Aperti (non ancora chiusi). I chiusi in grace restano in lista ma fuori dalle stats operative.
     private var activeRecords: [TraceabilityRecord] {
-        tabScoped.filter { $0.productStatus != .used && $0.productStatus != .rejected }
+        tabScoped.filter { !TraceabilityRecordSupport.isOperationallyClosed($0) }
     }
 
     private var stats: ExpiryStats {
@@ -252,6 +296,7 @@ struct ExpiryControlView: View {
             case .expired:                       s.expired += 1
             case .dueToday:                      s.dueToday += 1; s.dueOrSoon += 1
             case .soonExpiring:                  s.dueOrSoon += 1
+            case .missingExpiry:                 s.missingExpiry += 1; s.dueOrSoon += 1
             case .healthy, .frozen:              s.healthy += 1
             case .used, .rejected:               break
             }
@@ -272,6 +317,18 @@ struct ExpiryControlView: View {
         alertRecords.filter(\.canBeWithdrawn)
     }
 
+    /// Scaduti da chiudere (Usato/Scartato) nella lista filtrata corrente.
+    private var toCloseRecords: [TraceabilityRecord] {
+        filteredRecords.filter(\.canBeWithdrawn)
+    }
+
+    /// Ancora in validità (non scaduti / non chiusi) nella lista filtrata.
+    private var keepRecords: [TraceabilityRecord] {
+        filteredRecords.filter {
+            !$0.canBeWithdrawn && !TraceabilityRecordSupport.isOperationallyClosed($0)
+        }
+    }
+
     private var filteredRecords: [TraceabilityRecord] {
         let filtered = tabScoped.filter { record in
                 // Categoria
@@ -285,11 +342,13 @@ struct ExpiryControlView: View {
                 let st = ExpiryStatus.compute(record: record, soonThresholdDays: soonThresholdDays)
                 switch filter {
                 case .all:     break
-                case .alerts:  if st != .expired && st != .dueToday && st != .soonExpiring { return false }
+                case .alerts:
+                    if st != .expired && st != .dueToday && st != .soonExpiring && st != .missingExpiry {
+                        return false
+                    }
                 case .expired: if st != .expired { return false }
-                case .soon:    if st != .soonExpiring { return false }
+                case .soon:    if st != .soonExpiring && st != .missingExpiry { return false }
                 case .healthy: if st != .healthy && st != .frozen { return false }
-                case .used:    if st != .used && st != .rejected { return false }
                 }
 
                 // Ricerca testo
@@ -328,20 +387,13 @@ struct ExpiryControlView: View {
             return
         }
         masterAuth.request(permission: .executeRecords, permissions: permissions) {
-            recordPendingArchive = record
+            closureRecord = record
         }
     }
 
-    private func confirmArchive() {
-        guard let record = recordPendingArchive, let user = currentUser else { return }
-        do {
-            try archiveService.archive(record: record, user: user, modelContext: modelContext)
-            recordPendingArchive = nil
-            HapticManager.shared.notification(.success)
-            KitchenProcessNotifications.postRecordsDidChange()
-        } catch {
-            recordPendingArchive = nil
-        }
+    private func handleClosureSaved() {
+        closureRecord = nil
+        KitchenProcessNotifications.postRecordsDidChange()
     }
 
     var body: some View {
@@ -349,7 +401,7 @@ struct ExpiryControlView: View {
             Section {
                 VStack(alignment: .leading, spacing: theme.spacing.xl) {
                     header
-                    tabPicker
+                    hubBoxes
                     summaryRow
                     if !alertRecords.isEmpty {
                         alertSection
@@ -391,28 +443,41 @@ struct ExpiryControlView: View {
                 .listRowSeparator(.hidden)
                 .listRowBackground(theme.colorBackground)
             } else {
-                Section {
-                    ForEach(filteredRecords) { record in
-                        expiryRecordRow(record)
-                            .listRowInsets(EdgeInsets(top: 5, leading: theme.spacing.xl, bottom: 5, trailing: theme.spacing.xl))
-                            .listRowSeparator(.hidden)
-                            .listRowBackground(theme.colorBackground)
-                            .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                                Button(role: .destructive) {
-                                    presentArchive(for: record)
-                                } label: {
-                                    Label("Cancella", systemImage: "trash")
-                                }
-                            }
+                if !toCloseRecords.isEmpty, filter == .all || filter == .alerts || filter == .expired {
+                    Section {
+                        sectionTitleRow("Da chiudere (scaduti)", count: toCloseRecords.count, tint: theme.colorError)
+                        ForEach(toCloseRecords) { record in
+                            expiryRecordRow(record)
+                                .listRowInsets(EdgeInsets(top: 5, leading: theme.spacing.xl, bottom: 5, trailing: theme.spacing.xl))
+                                .listRowSeparator(.hidden)
+                                .listRowBackground(theme.colorBackground)
+                        }
                     }
+                    .listSectionSeparator(.hidden)
                 }
-                .listSectionSeparator(.hidden)
+
+                if !keepRecords.isEmpty, filter != .expired {
+                    Section {
+                        sectionTitleRow(
+                            selectedTab == .production ? "Da tenere (ancora valide)" : "In validità",
+                            count: keepRecords.count,
+                            tint: theme.colorSuccess
+                        )
+                        ForEach(keepRecords) { record in
+                            expiryRecordRow(record)
+                                .listRowInsets(EdgeInsets(top: 5, leading: theme.spacing.xl, bottom: 5, trailing: theme.spacing.xl))
+                                .listRowSeparator(.hidden)
+                                .listRowBackground(theme.colorBackground)
+                        }
+                    }
+                    .listSectionSeparator(.hidden)
+                }
             }
         }
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
         .background(theme.colorBackground.ignoresSafeArea())
-        .navigationTitle("Controllo scadenze")
+        .navigationTitle("Controllo scadenze e quantità")
         .navigationBarTitleDisplayMode(.inline)
         .animation(theme.motion.standard, value: searchText)
         .animation(theme.motion.standard, value: category)
@@ -438,27 +503,21 @@ struct ExpiryControlView: View {
                 )
             }
         }
+        .sheet(item: $closureRecord) { record in
+            if let user = currentUser {
+                ExpiryLotClosureSheet(
+                    record: record,
+                    user: user,
+                    isProduction: record.isProductionBatchOutput,
+                    onSaved: handleClosureSaved,
+                    onCancel: { closureRecord = nil }
+                )
+            }
+        }
         .alert("Accesso richiesto", isPresented: $showLoginRequiredAlert) {
             Button("OK", role: .cancel) {}
         } message: {
             Text("Effettua l'accesso per registrare ritiro o scarto.")
-        }
-        .alert("Cancella dalla lista", isPresented: Binding(
-            get: { recordPendingArchive != nil },
-            set: { if !$0 { recordPendingArchive = nil } }
-        )) {
-            Button("Annulla", role: .cancel) {
-                recordPendingArchive = nil
-            }
-            Button("Cancella", role: .destructive) {
-                confirmArchive()
-            }
-        } message: {
-            if let record = recordPendingArchive {
-                Text(selectedTab == .pantry
-                     ? "Confermi che «\(record.productName)» è terminato? Resta nello storico tracciabilità."
-                     : "Confermi che «\(record.productName)» è stato consumato o venduto? Resta nello storico HACCP.")
-            }
         }
         .masterAuthCover(coordinator: masterAuth, master: users.first(where: { $0.role == .master }))
         .task(id: appState.activeRestaurantId) {
@@ -482,10 +541,10 @@ struct ExpiryControlView: View {
     private var header: some View {
         HStack(alignment: .top, spacing: theme.spacing.lg) {
             VStack(alignment: .leading, spacing: theme.spacing.xs) {
-                Text("Controllo scadenze")
-                    .font(.system(size: 36, weight: .black, design: .rounded))
+                Text("Controllo scadenze e quantità")
+                    .font(.system(size: 32, weight: .black, design: .rounded))
                     .foregroundStyle(theme.colorTextPrimary)
-                Text(selectedTab.subtitle)
+                Text("Scegli un’area qui sotto, poi gestisci scadenze e chiusure.")
                     .font(theme.typography.callout)
                     .foregroundStyle(theme.colorTextSecondary)
             }
@@ -521,47 +580,101 @@ struct ExpiryControlView: View {
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 
-    // MARK: Tab picker
+    // MARK: Hub boxes
 
-    private var tabPicker: some View {
-        VStack(alignment: .leading, spacing: theme.spacing.sm) {
-            Picker("Area", selection: $selectedTab) {
-                ForEach(ExpiryControlTab.allCases) { tab in
-                    Label(tab.rawValue, systemImage: tab.icon).tag(tab)
+    private var hubBoxes: some View {
+        LazyVGrid(
+            columns: [GridItem(.adaptive(minimum: 260), spacing: theme.spacing.md)],
+            spacing: theme.spacing.md
+        ) {
+            ForEach(ExpiryControlTab.allCases) { tab in
+                Button {
+                    selectedTab = tab
+                    category = .all
+                    filter = .all
+                } label: {
+                    hubBoxCard(tab)
                 }
-            }
-            .pickerStyle(.segmented)
-            .onChange(of: selectedTab) { _, _ in
-                category = .all
-                filter = .all
-            }
-
-            HStack(spacing: theme.spacing.md) {
-                tabBadge(
-                    count: selectedTab == .pantry ? incomingActive.count : productionActive.count,
-                    alerts: alertCount(in: selectedTab == .pantry ? incomingActive : productionActive),
-                    label: selectedTab == .pantry ? "in dispensa" : "in cella"
-                )
-                Spacer()
-                legendRow
+                .buttonStyle(.plain)
             }
         }
     }
 
-    private func tabBadge(count: Int, alerts: Int, label: String) -> some View {
-        HStack(spacing: 6) {
-            Text("\(count) \(label)")
-                .font(theme.typography.caption.weight(.semibold))
-                .foregroundStyle(theme.colorTextSecondary)
-            if alerts > 0 {
-                Text("\(alerts) da attenzionare")
-                    .font(theme.typography.caption2.weight(.bold))
-                    .foregroundStyle(theme.colorTextOnPrimary)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 3)
-                    .background(Capsule().fill(theme.colorError))
+    private func hubBoxCard(_ tab: ExpiryControlTab) -> some View {
+        let records = tab == .pantry ? incomingActive : productionActive
+        let toClose = records.filter(\.canBeWithdrawn).count
+        let selected = selectedTab == tab
+        return VStack(alignment: .leading, spacing: theme.spacing.md) {
+            HStack(spacing: theme.spacing.sm) {
+                Image(systemName: tab.icon)
+                    .font(.title2.weight(.semibold))
+                    .foregroundStyle(selected ? theme.colorTextOnPrimary : theme.colorPrimary)
+                    .frame(width: 44, height: 44)
+                    .background(
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .fill(selected ? theme.colorTextOnPrimary.opacity(0.2) : theme.colorPrimary.opacity(0.12))
+                    )
+                Spacer()
+                if toClose > 0 {
+                    Text("\(toClose) da chiudere")
+                        .font(theme.typography.caption2.weight(.bold))
+                        .foregroundStyle(selected ? theme.colorTextOnPrimary : theme.colorError)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(
+                            Capsule().fill(selected ? theme.colorTextOnPrimary.opacity(0.2) : theme.colorError.opacity(0.12))
+                        )
+                }
             }
+            Text(tab.rawValue)
+                .font(theme.typography.title3.weight(.bold))
+                .foregroundStyle(selected ? theme.colorTextOnPrimary : theme.colorTextPrimary)
+            Text(tab.subtitle)
+                .font(theme.typography.caption)
+                .foregroundStyle(selected ? theme.colorTextOnPrimary.opacity(0.9) : theme.colorTextSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack {
+                Text("\(records.count) attivi")
+                    .font(theme.typography.subheadline.weight(.semibold))
+                Spacer()
+                Text(tab.actionHint)
+                    .font(theme.typography.caption2.weight(.semibold))
+            }
+            .foregroundStyle(selected ? theme.colorTextOnPrimary.opacity(0.95) : theme.colorTextSecondary)
         }
+        .padding(theme.spacing.lg)
+        .frame(maxWidth: .infinity, minHeight: 168, alignment: .topLeading)
+        .background(selected ? theme.colorPrimary : theme.colorSurface)
+        .overlay(
+            RoundedRectangle(cornerRadius: theme.spacing.cornerLarge, style: .continuous)
+                .stroke(selected ? theme.colorPrimary : theme.colorDivider, lineWidth: selected ? 0 : 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: theme.spacing.cornerLarge, style: .continuous))
+        .shadow(
+            color: Color.black.opacity(theme.appearance.reduceGraphicsEffects ? 0 : (selected ? 0.12 : 0.05)),
+            radius: selected ? 10 : 4,
+            x: 0,
+            y: selected ? 4 : 2
+        )
+        .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+
+    private func sectionTitleRow(_ title: String, count: Int, tint: Color) -> some View {
+        HStack {
+            Text(title)
+                .font(theme.typography.headline)
+                .foregroundStyle(theme.colorTextPrimary)
+            Spacer()
+            Text("\(count)")
+                .font(theme.typography.caption.weight(.bold))
+                .foregroundStyle(tint)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
+                .background(Capsule().fill(tint.opacity(0.15)))
+        }
+        .listRowInsets(EdgeInsets(top: 12, leading: theme.spacing.xl, bottom: 4, trailing: theme.spacing.xl))
+        .listRowSeparator(.hidden)
+        .listRowBackground(theme.colorBackground)
     }
 
     private var legendRow: some View {
@@ -600,9 +713,18 @@ struct ExpiryControlView: View {
                 title: "In scadenza",
                 value: "\(stats.dueOrSoon)",
                 tint: theme.colorWarning,
-                hint: stats.dueToday > 0
-                    ? "\(stats.dueToday) scadono oggi · entro \(soonThresholdDays) gg"
-                    : (stats.dueOrSoon > 0 ? "Entro \(soonThresholdDays) giorni" : "Tutto a norma")
+                hint: {
+                    if stats.missingExpiry > 0 && stats.dueToday > 0 {
+                        return "\(stats.dueToday) oggi · \(stats.missingExpiry) senza data"
+                    }
+                    if stats.missingExpiry > 0 {
+                        return "\(stats.missingExpiry) senza scadenza · usa al più presto"
+                    }
+                    if stats.dueToday > 0 {
+                        return "\(stats.dueToday) scadono oggi · entro \(soonThresholdDays) gg"
+                    }
+                    return stats.dueOrSoon > 0 ? "Entro \(soonThresholdDays) giorni" : "Tutto a norma"
+                }()
             )
             ExpirySummaryCard(
                 icon: "xmark.octagon.fill",
@@ -630,7 +752,9 @@ struct ExpiryControlView: View {
             HStack(spacing: theme.spacing.sm) {
                 Image(systemName: "exclamationmark.triangle.fill")
                     .foregroundStyle(theme.colorError)
-                Text("Da attenzionare")
+                Text(selectedTab == .production && withdrawableAlertRecords.count > 0
+                     ? "Da chiudere"
+                     : "Da attenzionare")
                     .font(theme.typography.headline)
                     .foregroundStyle(theme.colorTextPrimary)
                 Spacer()
@@ -650,6 +774,7 @@ struct ExpiryControlView: View {
                         } label: {
                             ExpiryAlertRow(
                                 record: record,
+                                photoData: photoData(for: record),
                                 soonThresholdDays: soonThresholdDays,
                                 showsWithdrawHint: true,
                                 recordTypeLabel: TraceabilityRecordSupport.expiryTypeLabel(for: record),
@@ -660,6 +785,7 @@ struct ExpiryControlView: View {
                     } else {
                         ExpiryAlertRow(
                             record: record,
+                            photoData: photoData(for: record),
                             soonThresholdDays: soonThresholdDays,
                             showsWithdrawHint: false,
                             recordTypeLabel: TraceabilityRecordSupport.expiryTypeLabel(for: record),
@@ -670,7 +796,9 @@ struct ExpiryControlView: View {
             }
 
             if withdrawableAlertRecords.count > 0 {
-                Text("Tocca un lotto scaduto per registrare ritiro o scarto.")
+                Text(selectedTab == .production
+                     ? "Tocca un piatto scaduto per chiuderlo (Usato o Scartato)."
+                     : "Tocca un lotto scaduto per registrare ritiro o scarto.")
                     .font(theme.typography.caption)
                     .foregroundStyle(theme.colorTextSecondary)
             } else if !alertRecords.isEmpty {
@@ -777,7 +905,9 @@ struct ExpiryControlView: View {
                 Text(selectedTab.rawValue)
                     .font(theme.typography.headline)
                     .foregroundStyle(theme.colorTextPrimary)
-                Text("Ordine FEFO · scorri a sinistra per cancellare")
+                Text(selectedTab == .production
+                     ? "Tocca un scaduto per chiuderlo · tocca un valido per Termina / Scarta"
+                     : "Tocca un scaduto per chiuderlo · tocca un valido per Termina / Scarta")
                     .font(theme.typography.caption2)
                     .foregroundStyle(theme.colorTextSecondary)
             }
@@ -788,6 +918,8 @@ struct ExpiryControlView: View {
         }
     }
 
+    // MARK: Rows
+
     @ViewBuilder
     private func expiryRecordRow(_ record: TraceabilityRecord) -> some View {
         if record.canBeWithdrawn {
@@ -796,8 +928,24 @@ struct ExpiryControlView: View {
             } label: {
                 ExpiryProductRow(
                     record: record,
+                    photoData: photoData(for: record),
                     soonThresholdDays: soonThresholdDays,
                     showsWithdrawHint: true,
+                    recordTypeLabel: TraceabilityRecordSupport.expiryTypeLabel(for: record),
+                    expiryProvenanceLabel: expirySourceLabel(for: record)
+                )
+            }
+            .buttonStyle(.plain)
+        } else if record.productStatus != .used && record.productStatus != .rejected {
+            Button {
+                presentArchive(for: record)
+            } label: {
+                ExpiryProductRow(
+                    record: record,
+                    photoData: photoData(for: record),
+                    soonThresholdDays: soonThresholdDays,
+                    showsWithdrawHint: false,
+                    showsClosureHint: true,
                     recordTypeLabel: TraceabilityRecordSupport.expiryTypeLabel(for: record),
                     expiryProvenanceLabel: expirySourceLabel(for: record)
                 )
@@ -806,6 +954,7 @@ struct ExpiryControlView: View {
         } else {
             ExpiryProductRow(
                 record: record,
+                photoData: photoData(for: record),
                 soonThresholdDays: soonThresholdDays,
                 showsWithdrawHint: false,
                 recordTypeLabel: TraceabilityRecordSupport.expiryTypeLabel(for: record),
@@ -875,6 +1024,7 @@ private struct ExpirySummaryCard: View {
 private struct ExpiryAlertRow: View {
     @Environment(\.theme) private var theme
     let record: TraceabilityRecord
+    var photoData: Data? = nil
     var soonThresholdDays: Int = HACCPSettings().productExpiryThreshold
     var showsWithdrawHint: Bool = false
     var recordTypeLabel: String?
@@ -887,13 +1037,13 @@ private struct ExpiryAlertRow: View {
 
     var body: some View {
         HStack(spacing: theme.spacing.md) {
-            ZStack {
-                Circle()
-                    .fill(color.opacity(0.18))
-                    .frame(width: 42, height: 42)
-                Image(systemName: status.icon)
-                    .foregroundStyle(color)
-            }
+            expiryPhotoThumb(
+                photoData: photoData,
+                title: record.productName,
+                fallbackIcon: status.icon,
+                fallbackTint: color,
+                size: 44
+            )
             VStack(alignment: .leading, spacing: 2) {
                 Text(record.productName)
                     .font(theme.typography.subheadline.weight(.semibold))
@@ -927,6 +1077,10 @@ private struct ExpiryAlertRow: View {
                     Text(exp, format: .dateTime.day().month(.abbreviated))
                         .font(theme.typography.caption2)
                         .foregroundStyle(theme.colorTextSecondary)
+                } else if status == .missingExpiry {
+                    Text("Usa al più presto")
+                        .font(theme.typography.caption2.weight(.semibold))
+                        .foregroundStyle(theme.colorWarning)
                 }
                 if let expiryProvenanceLabel {
                     Text(expiryProvenanceLabel)
@@ -957,8 +1111,10 @@ private struct ExpiryAlertRow: View {
 private struct ExpiryProductRow: View {
     @Environment(\.theme) private var theme
     let record: TraceabilityRecord
+    var photoData: Data? = nil
     var soonThresholdDays: Int = HACCPSettings().productExpiryThreshold
     var showsWithdrawHint: Bool = false
+    var showsClosureHint: Bool = false
     var recordTypeLabel: String?
     var expiryProvenanceLabel: String?
 
@@ -995,15 +1151,13 @@ private struct ExpiryProductRow: View {
                 .fill(zoneColor)
                 .frame(width: 4, height: 56)
 
-            if record.isProductionBatchOutput,
-               let photo = record.photoData, !photo.isEmpty,
-               let thumb = HACCPZoomablePhotoThumbnail(
-                data: photo,
-                size: 44,
-                zoomTitle: record.productName
-               ) {
-                thumb
-            }
+            expiryPhotoThumb(
+                photoData: photoData,
+                title: record.productName,
+                fallbackIcon: record.isProductionBatchOutput ? "fork.knife" : "camera.fill",
+                fallbackTint: theme.colorPrimary,
+                size: 52
+            )
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(record.productName)
@@ -1041,20 +1195,28 @@ private struct ExpiryProductRow: View {
             Spacer()
 
             VStack(alignment: .trailing, spacing: 6) {
-                ExpiryStatusBadge(status: status)
+                ExpiryStatusBadge(
+                    status: status,
+                    labelOverride: (status == .expired && record.canBeWithdrawn) ? "Da chiudere" : nil
+                )
 
                 Text(ExpiryStatus.daysLabel(record: record))
                     .font(theme.typography.title3.monospacedDigit().weight(.bold))
                     .foregroundStyle(zoneColor)
 
-                Text(operationalZone.chefHint)
+                Text(status.chefHint)
                     .font(theme.typography.caption2.weight(.semibold))
                     .foregroundStyle(zoneColor)
+                    .multilineTextAlignment(.trailing)
 
                 if let exp = record.expiryDate {
                     Text(exp, format: .dateTime.day().month(.abbreviated).year())
                         .font(theme.typography.caption2)
                         .foregroundStyle(theme.colorTextSecondary)
+                } else if status == .missingExpiry {
+                    Text("Nessuna data in etichetta")
+                        .font(theme.typography.caption2.weight(.semibold))
+                        .foregroundStyle(theme.colorWarning)
                 }
                 if let expiryProvenanceLabel {
                     Text(expiryProvenanceLabel)
@@ -1064,13 +1226,13 @@ private struct ExpiryProductRow: View {
                         )
                 }
                 if showsWithdrawHint {
-                    Text("Tocca per ritiro/scarto")
+                    Text("Tocca per chiudere")
                         .font(theme.typography.caption2.weight(.semibold))
                         .foregroundStyle(theme.colorPrimary)
-                } else {
-                    Text("Scorri per cancellare")
-                        .font(theme.typography.caption2)
-                        .foregroundStyle(theme.colorTextSecondary)
+                } else if showsClosureHint {
+                    Text("Tocca per Termina / Scarta")
+                        .font(theme.typography.caption2.weight(.semibold))
+                        .foregroundStyle(theme.colorPrimary)
                 }
             }
         }
@@ -1100,18 +1262,47 @@ private struct ExpiryProductRow: View {
     }
 }
 
+@ViewBuilder
+private func expiryPhotoThumb(
+    photoData: Data?,
+    title: String,
+    fallbackIcon: String,
+    fallbackTint: Color,
+    size: CGFloat
+) -> some View {
+    if let photoData, !photoData.isEmpty,
+       let thumb = HACCPZoomablePhotoThumbnail(
+        data: photoData,
+        size: size,
+        zoomTitle: title
+       ) {
+        thumb
+    } else {
+        ZStack {
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(fallbackTint.opacity(0.12))
+                .frame(width: size, height: size)
+            Image(systemName: fallbackIcon)
+                .font(.system(size: size * 0.32, weight: .semibold))
+                .foregroundStyle(fallbackTint)
+        }
+        .accessibilityLabel("Nessuna foto")
+    }
+}
+
 // MARK: - Badge
 
 private struct ExpiryStatusBadge: View {
     @Environment(\.theme) private var theme
     let status: ExpiryStatus
+    var labelOverride: String? = nil
 
     var body: some View {
         let color = status.color(theme)
         return HStack(spacing: 4) {
             Image(systemName: status.icon)
                 .font(.caption2)
-            Text(status.label)
+            Text(labelOverride ?? status.label)
                 .font(theme.typography.caption2.weight(.bold))
         }
         .padding(.horizontal, 8)
@@ -1182,8 +1373,8 @@ private struct ExpiryEmptyState: View {
                     .foregroundStyle(theme.colorTextPrimary)
                 Text(isNoData
                      ? (tab == .pantry
-                        ? "Registra materie prime in Tracciabilità (foto etichetta fornitore). Compariranno qui in ordine FEFO."
-                        : "Associa lotti a un piatto in Tracciabilità. I batch preparati compariranno qui con la scadenza calcolata.")
+                        ? "Qui trovi gli alimenti in ingresso (da associare o già associati). Registra i lotti in Tracciabilità: compariranno con la scadenza."
+                        : "Qui trovi i piatti di produzione. Associa alimenti a un piatto in Tracciabilità: i batch compariranno con la scadenza calcolata.")
                      : "Modifica i filtri o la ricerca.")
                     .font(theme.typography.subheadline)
                     .foregroundStyle(theme.colorTextSecondary)

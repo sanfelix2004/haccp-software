@@ -100,6 +100,7 @@ struct HistoryService {
             lottoFotos: lottoFotos,
             batches: produzioneBatches,
             images: productImages,
+            logs: traceabilityLogs,
             restaurantId: restaurantId
         )
         let traceabilityTimeline = TraceabilityHistoryProvider().logEntries(
@@ -110,7 +111,6 @@ struct HistoryService {
         )
         let expiry = ExpiryHistoryProvider().entries(
             traceabilityRecords: traceabilityRecords,
-            traceabilityLogs: traceabilityLogs,
             lottoFotos: lottoFotos,
             restaurantId: restaurantId
         )

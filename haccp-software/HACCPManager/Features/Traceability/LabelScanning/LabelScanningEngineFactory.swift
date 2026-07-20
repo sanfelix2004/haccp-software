@@ -3,13 +3,8 @@ import LabelScanningContract
 import LabelScannerV2
 
 enum LabelScanningEngineFactory {
-    static func make(selection: LabelScanEngineSelection = .current) -> any LabelScanningEngine {
-        switch selection {
-        case .v1:
-            return V1LabelScanningEngineAdapter()
-        case .v2:
-            return LabelScannerV2Engine()
-        }
+    static func make() -> any LabelScanningEngine {
+        LabelScannerV2Engine()
     }
 }
 
@@ -28,7 +23,7 @@ enum LabelScanResultBridge {
             expiryDate: result.scadenza,
             confidence: result.confidence,
             lotParseAudit: [
-                "engine=\(LabelScanEngineSelection.current.title)",
+                "engine=V2",
                 result.needsManualConfirmation ? "needsManualConfirmation=true" : "needsManualConfirmation=false",
                 result.recoveryHint != nil ? "cropRetryHint=true" : "cropRetryHint=false"
             ],

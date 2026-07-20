@@ -82,7 +82,7 @@ enum ProductExpiryEvaluator {
         return isWithinExpiryThreshold(expiry, thresholdDays: thresholdDays, now: now, calendar: calendar)
     }
 
-    /// Richiede attenzione operatore: scaduto, oggi o entro soglia.
+    /// Richiede attenzione operatore: scaduto, oggi, entro soglia, o senza data scadenza.
     static func needsExpiryAttention(
         _ record: TraceabilityRecord,
         thresholdDays: Int,
@@ -90,7 +90,16 @@ enum ProductExpiryEvaluator {
         calendar: Calendar = .current
     ) -> Bool {
         if record.productStatus == .expired { return true }
-        guard record.productStatus == .available, let expiry = record.expiryDate else { return false }
+        guard record.productStatus == .available else { return false }
+
+        // Congelati senza scadenza: non allarmare (conservazione dedicata).
+        if let cat = GoodsCategory(rawValue: record.categoryRaw ?? ""),
+           (cat == .frozen || cat == .frozenProducts),
+           record.expiryDate == nil {
+            return false
+        }
+
+        guard let expiry = record.expiryDate else { return true }
         if isExpiredByDate(expiry, now: now, calendar: calendar) { return true }
         return isWithinExpiryThreshold(expiry, thresholdDays: thresholdDays, now: now, calendar: calendar)
     }
@@ -138,7 +147,13 @@ enum ProductExpiryEvaluator {
         if record.productStatus == .rejected || record.productStatus == .expired {
             return .critical
         }
-        guard let expiry = record.expiryDate else { return .conforming }
+        guard let expiry = record.expiryDate else {
+            if let cat = GoodsCategory(rawValue: record.categoryRaw ?? ""),
+               cat == .frozen || cat == .frozenProducts {
+                return .conforming
+            }
+            return .warning
+        }
         let days = daysUntilExpiry(expiry, now: now, calendar: calendar)
         if days < 0 || days == 0 { return .critical }
         if days <= operationalWarningDays { return .warning }
@@ -217,7 +232,7 @@ enum ProductExpiryEvaluator {
             return 50
         }
 
-        guard let expiry = record.expiryDate else { return 60 }
+        guard let expiry = record.expiryDate else { return 15 }
 
         let days = daysUntilExpiry(expiry, now: now, calendar: calendar)
         if days < 0 { return 0 }

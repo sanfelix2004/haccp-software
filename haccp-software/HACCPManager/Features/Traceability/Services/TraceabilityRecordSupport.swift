@@ -4,19 +4,61 @@ import SwiftData
 /// Regole condivise per hub tracciabilità, controllo scadenze, storia ed etichette.
 enum TraceabilityRecordSupport {
 
+    /// Giorni in cui una chiusura resta visibile in Controllo scadenze, poi sparisce.
+    static let expiryClosureGraceDays = 1
+
     // MARK: - Filtri modulo
 
-    /// Alimento in ingresso nel hub tracciabilità (esclude solo batch produzione finiti).
-    static func isHubRecord(_ record: TraceabilityRecord) -> Bool {
-        record.isIncomingIngredientLot
-            && !record.isArchived
-            && record.productStatus != .rejected
+    /// Chiusura operativa: terminato / usato / scartato / respinto.
+    static func isOperationallyClosed(_ record: TraceabilityRecord) -> Bool {
+        switch record.productStatus {
+        case .used, .rejected:
+            return true
+        case .available, .expired:
+            return false
+        }
     }
 
-    /// Voce monitorata in Controllo scadenze (ingresso + produzione finita).
-    static func isExpiryMonitored(_ record: TraceabilityRecord) -> Bool {
-        !record.isArchived
-            && (record.expiryDate != nil || record.productStatus == .expired)
+    /// Ancora nel periodo di grazia (1 giorno) in Controllo scadenze dopo la chiusura.
+    static func isWithinClosureGracePeriod(
+        _ record: TraceabilityRecord,
+        now: Date = Date(),
+        calendar: Calendar = .current
+    ) -> Bool {
+        guard isOperationallyClosed(record) else { return false }
+        guard let closedAt = record.operationalClosedAt else { return false }
+        guard let deadline = calendar.date(
+            byAdding: .day,
+            value: expiryClosureGraceDays,
+            to: closedAt
+        ) else { return false }
+        return now < deadline
+    }
+
+    /// Alimento in ingresso nel hub tracciabilità.
+    /// Esclude chiusure (terminato/scaduto/scartato) e lotti già scaduti per data.
+    static func isHubRecord(_ record: TraceabilityRecord) -> Bool {
+        guard record.isIncomingIngredientLot, !record.isArchived else { return false }
+        guard record.productStatus == .available else { return false }
+        if let expiry = record.expiryDate, ProductExpiryEvaluator.isExpiredByDate(expiry) {
+            return false
+        }
+        return true
+    }
+
+    /// Voce in Controllo scadenze: aperti + scaduti da chiudere + chiusure da meno di 1 giorno.
+    /// Dopo il grace period spariscono qui; restano per sempre in Storia e Documenti.
+    static func isExpiryMonitored(
+        _ record: TraceabilityRecord,
+        now: Date = Date()
+    ) -> Bool {
+        guard !record.isArchived else { return false }
+        switch record.productStatus {
+        case .available, .expired:
+            return true
+        case .used, .rejected:
+            return isWithinClosureGracePeriod(record, now: now)
+        }
     }
 
     static func isIncomingExpiryRecord(_ record: TraceabilityRecord) -> Bool {
@@ -27,9 +69,18 @@ enum TraceabilityRecordSupport {
         isExpiryMonitored(record) && record.isProductionBatchOutput
     }
 
-    /// Sorgente etichetta: solo piatti preparati (batch produzione), non materie prime in ingresso.
+    /// Sorgente etichetta: solo piatti preparati ancora da gestire, con foto del piatto.
+    /// Esclude alimenti in ingresso, chiusure (usato/scartato) e produzioni senza foto.
     static func isLabelTraceabilitySource(_ record: TraceabilityRecord) -> Bool {
-        isProductionExpiryRecord(record)
+        guard record.isProductionBatchOutput, !record.isArchived else { return false }
+        switch record.productStatus {
+        case .used, .rejected:
+            return false
+        case .available, .expired:
+            break
+        }
+        guard let photo = record.photoData, !photo.isEmpty else { return false }
+        return true
     }
 
     // MARK: - Etichette UI

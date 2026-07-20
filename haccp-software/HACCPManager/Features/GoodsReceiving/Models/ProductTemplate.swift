@@ -52,6 +52,9 @@ final class ProductTemplate {
         set { categoryRaw = newValue.rawValue }
     }
 
+    /// Nome categoria visualizzato (supporta anche categorie personalizzate non in `GoodsCategory`).
+    var categoryDisplayName: String { categoryRaw }
+
     init(
         id: UUID = UUID(),
         restaurantId: UUID,
@@ -74,6 +77,42 @@ final class ProductTemplate {
         self.restaurantId = restaurantId
         self.name = name
         self.categoryRaw = category.rawValue
+        self.defaultMinTemp = defaultMinTemp
+        self.defaultMaxTemp = defaultMaxTemp
+        self.requiresTemperature = requiresTemperature
+        self.requiresLot = requiresLot
+        self.requiresExpiry = requiresExpiry
+        self.requiresPackagingCheck = requiresPackagingCheck
+        self.requiresAppearanceCheck = requiresAppearanceCheck
+        self.requiresThawingCheck = requiresThawingCheck
+        self.requiresMoldCheck = requiresMoldCheck
+        self.requiresFreshnessCheck = requiresFreshnessCheck
+        self.shelfLifeDays = shelfLifeDays
+        self.createdAt = createdAt
+    }
+
+    init(
+        id: UUID = UUID(),
+        restaurantId: UUID,
+        name: String,
+        categoryName: String,
+        defaultMinTemp: Double? = nil,
+        defaultMaxTemp: Double? = nil,
+        requiresTemperature: Bool = false,
+        requiresLot: Bool = false,
+        requiresExpiry: Bool = false,
+        requiresPackagingCheck: Bool = true,
+        requiresAppearanceCheck: Bool = false,
+        requiresThawingCheck: Bool = false,
+        requiresMoldCheck: Bool = false,
+        requiresFreshnessCheck: Bool = false,
+        shelfLifeDays: Int? = nil,
+        createdAt: Date = Date()
+    ) {
+        self.id = id
+        self.restaurantId = restaurantId
+        self.name = name
+        self.categoryRaw = categoryName
         self.defaultMinTemp = defaultMinTemp
         self.defaultMaxTemp = defaultMaxTemp
         self.requiresTemperature = requiresTemperature

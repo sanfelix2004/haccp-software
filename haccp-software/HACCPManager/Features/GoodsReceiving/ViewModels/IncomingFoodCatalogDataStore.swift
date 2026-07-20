@@ -9,6 +9,7 @@ import Combine
 @MainActor
 final class IncomingFoodCatalogDataStore: ObservableObject {
     @Published private(set) var templates: [ProductTemplate] = []
+    @Published private(set) var categories: [IncomingFoodCategory] = []
     @Published private(set) var isLoading = false
     @Published private(set) var dataRevision = UUID()
 
@@ -23,11 +24,11 @@ final class IncomingFoodCatalogDataStore: ObservableObject {
         }
         guard reloadPolicy.shouldReload(
             restaurantId: restaurantId,
-            hasData: !templates.isEmpty,
+            hasData: !templates.isEmpty || !categories.isEmpty,
             force: force
         ) else { return }
 
-        let showBlockingSpinner = templates.isEmpty
+        let showBlockingSpinner = templates.isEmpty && categories.isEmpty
         if showBlockingSpinner {
             isLoading = true
         }
@@ -41,6 +42,7 @@ final class IncomingFoodCatalogDataStore: ObservableObject {
             )
             guard !Task.isCancelled else { return }
             templates = data.templates
+            categories = data.categories
             isLoading = false
             dataRevision = UUID()
             reloadPolicy.markLoaded(restaurantId: restaurantId)
@@ -50,6 +52,7 @@ final class IncomingFoodCatalogDataStore: ObservableObject {
     func clear() {
         reloadPolicy.invalidate()
         templates = []
+        categories = []
         isLoading = false
         dataRevision = UUID()
     }

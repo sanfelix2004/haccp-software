@@ -156,7 +156,8 @@ enum HACCPRegisterPDFContentFactory {
         productions: [Production],
         links: [TraceabilityLink],
         logs: [TraceabilityLog],
-        images: [ProductImage]
+        images: [ProductImage],
+        lottoFotos: [LottoFoto] = []
     ) -> [HACCPPDFSection] {
         let formatter = df()
         let rows = TraceabilityRegister.rows(
@@ -166,6 +167,7 @@ enum HACCPRegisterPDFContentFactory {
             links: links,
             logs: logs,
             images: images,
+            lottoFotos: lottoFotos,
             df: formatter
         )
         let table: [[PDFTableCell]] = rows.map { r in
@@ -173,23 +175,32 @@ enum HACCPRegisterPDFContentFactory {
                 .text(r.product),
                 .text(r.lot),
                 .text(r.supplier),
-                .text(r.receivedAt),
+                .text(r.createdAt),
+                .text(r.createdBy),
+                .text(r.associations),
+                .text(r.closure),
                 .text(r.status),
-                .text(r.productions),
                 .text(r.nonCompliance),
-                .image(r.photoData.flatMap { HACCPPDFImageCompression.compressedJPEGData(from: $0) }),
-                .text(r.operatorName)
+                .image(r.photoData.flatMap { HACCPPDFImageCompression.compressedJPEGData(from: $0) })
             ]
         }
-        let body = table.isEmpty ? [emptyOperationalRow(columns: 9)] : table
+        let body = table.isEmpty ? [emptyOperationalRow(columns: 10)] : table
         let headers = [
-            "Denominazione prodotto", "N. lotto / codice", "Fornitore", "Data ricezione", "Stato prodotto",
-            "Produzioni collegate", "Annotazioni NC", "Foto etichetta", "Operatore addetto"
+            "Prodotto",
+            "Lotto",
+            "Fornitore / origine",
+            "Creato il",
+            "Registrato da",
+            "Associato a (quando / da chi)",
+            "Chiusura (esito · quando · chi)",
+            "Stato",
+            "Non conformità",
+            "Foto"
         ]
         return [
             .dataTable(
                 title: "Registro tracciabilità",
-                subtitle: "Identificazione e stato dei prodotti alimentari",
+                subtitle: "Ciclo completo: creazione → associazioni → foto/lotti → chiusura (con motivo)",
                 headers: headers,
                 rows: body
             )
@@ -201,6 +212,7 @@ enum HACCPRegisterPDFContentFactory {
         traceability: [TraceabilityRecord],
         productions: [Production],
         links: [TraceabilityLink],
+        logs: [TraceabilityLog] = [],
         operational: HACCPOperationalSourceData,
         df: DateFormatter
     ) -> [HACCPPDFSection] {
@@ -214,6 +226,8 @@ enum HACCPRegisterPDFContentFactory {
             ingredientiTracciati: operational.ingredientiTracciati,
             lottoLinks: operational.lottoProductionLinks,
             lottoFotos: operational.lottoFotos,
+            productImages: operational.productImages,
+            logs: logs,
             df: df
         )
 
@@ -230,13 +244,14 @@ enum HACCPRegisterPDFContentFactory {
             tableRows.append(emptyOperationalRow(columns: headers.count))
         } else {
             for block in blocks {
-                let batchPhoto = block.batchId.flatMap { batchId in
-                    ProductImageBytesResolver.productionDishPhoto(
-                        batchId: batchId,
-                        images: operational.productImages,
-                        records: traceability
-                    )
-                }
+                let batchPhoto = block.dishPhotoData
+                    ?? block.batchId.flatMap { batchId in
+                        ProductImageBytesResolver.productionDishPhoto(
+                            batchId: batchId,
+                            images: operational.productImages,
+                            records: traceability
+                        )
+                    }
                 tableRows.append([
                     .text(block.dateOperator),
                     .text(block.productionDetail),
@@ -254,15 +269,15 @@ enum HACCPRegisterPDFContentFactory {
                     ])
                 } else {
                     for line in block.ingredients {
-                        let lotKey = line.lot
-                        let photo = traceability
-                            .first(where: { $0.lotCode == lotKey || (!$0.lotCode.isEmpty && lotKey.contains($0.lotCode)) })
-                            .flatMap { record in
-                                ProductImageBytesResolver.resolve(
-                                    record: record,
-                                    images: operational.productImages,
-                                    lottoFotos: operational.lottoFotos
-                                )
+                        let photo = line.photoData
+                            ?? line.recordId.flatMap { id in
+                                traceability.first(where: { $0.id == id }).flatMap { record in
+                                    ProductImageBytesResolver.resolve(
+                                        record: record,
+                                        images: operational.productImages,
+                                        lottoFotos: operational.lottoFotos
+                                    )
+                                }
                             }
                         tableRows.append([
                             .text(line.dateOperator),
@@ -286,7 +301,7 @@ enum HACCPRegisterPDFContentFactory {
         var sections: [HACCPPDFSection] = [
             .dataTable(
                 title: "Registro produzioni e tracciabilità",
-                subtitle: "Produzione e ingredienti con lotto, fornitore e scadenze nel medesimo prospetto (include voci nascoste dallo storico operativo)",
+                subtitle: "Piatto finito con lotto, foto, ingredienti, scadenze e operatori — ciclo leggibile per ASL",
                 headers: headers,
                 rows: tableRows
             )
@@ -294,6 +309,11 @@ enum HACCPRegisterPDFContentFactory {
 
         let movements = operational.documentMovements
             .filter { interval.contains($0.occurredAt) }
+            // Solo eventi operativi da conservare: completamenti e chiusure scadenze.
+            // Niente soft-hide / errori di inserimento (quelli non devono restare nei documenti).
+            .filter {
+                $0.kind == .productionCompleted || $0.kind == .lotClosedFromExpiryControl
+            }
             .sorted { $0.occurredAt > $1.occurredAt }
         let movementHeaders = ["Data / Operatore", "Evento", "Produzione / Lotto", "Dettaglio"]
         let movementRows: [[PDFTableCell]] = {
@@ -315,8 +335,8 @@ enum HACCPRegisterPDFContentFactory {
         }()
         sections.append(
             .dataTable(
-                title: "Registro movimenti (permanente)",
-                subtitle: "Ogni completamento, correzione o rimozione dallo storico resta documentata qui",
+                title: "Registro movimenti",
+                subtitle: "Produzioni completate e chiusure da Controllo scadenze (terminato / scaduto / scartato / usato)",
                 headers: movementHeaders,
                 rows: movementRows
             )
@@ -886,6 +906,7 @@ enum HACCPRegisterPDFContentFactory {
                 traceability: traceability,
                 productions: productions,
                 links: links,
+                logs: logs,
                 operational: operational,
                 df: df()
             ))
@@ -1042,13 +1063,24 @@ enum HACCPRegisterPDFContentFactory {
             sections.append(contentsOf: sectionsRicezione(interval: interval, receipts: receipts, images: images))
             flags.insert(.ricezioneMerci)
         case .tracciabilita:
+            // Documento principale: produzioni + ingredienti + movimenti.
+            sections.append(contentsOf: sectionsRegistroProduzioniTracciabilita(
+                interval: interval,
+                traceability: traceability,
+                productions: productions,
+                links: links,
+                logs: logs,
+                operational: operational,
+                df: formatter
+            ))
             sections.append(contentsOf: sectionsTracciabilita(
                 interval: interval,
                 records: traceability,
                 productions: productions,
                 links: links,
                 logs: logs,
-                images: images
+                images: images,
+                lottoFotos: operational.lottoFotos
             ))
             flags.insert(.tracciabilita)
         case .frigoriferi:
@@ -1154,6 +1186,7 @@ enum HACCPRegisterPDFContentFactory {
             let rows = ExpiryControlRegister.productionRows(
                 in: interval,
                 records: traceability,
+                logs: logs,
                 df: formatter
             )
             let table: [[PDFTableCell]] = rows.map {
@@ -1162,11 +1195,12 @@ enum HACCPRegisterPDFContentFactory {
             }
             let body = table.isEmpty ? [emptyOperationalRow(columns: 7)] : table
             sections.append(.dataTable(
-                title: "Registro controllo scadenze abbattimento",
-                subtitle: "Monitoraggio scadenze produzioni finite (post-preparazione)",
+                title: "Registro controllo scadenze",
+                subtitle: "Stato operativo: disponibile, terminato, usato, scaduto, scartato",
                 headers: ["Prodotto", "Lotto", "Scadenza", "Stato", "Tipo", "Registrato il", "Operatore"],
                 rows: body
             ))
+            flags.insert(.tracciabilita)
         default:
             break
         }

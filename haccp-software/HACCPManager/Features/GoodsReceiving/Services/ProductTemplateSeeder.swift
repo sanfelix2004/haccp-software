@@ -95,6 +95,10 @@ enum ProductTemplateSeeder {
 
     /// Inserisce i template mancanti per il ristorante (idempotente per nome).
     static func ensureTemplates(restaurantId: UUID, modelContext: ModelContext) {
+        ProductTemplateCatalogService().ensureCategories(
+            restaurantId: restaurantId,
+            modelContext: modelContext
+        )
         guard !catalogIsPopulated(restaurantId: restaurantId, modelContext: modelContext) else { return }
         let rid = restaurantId
         let descriptor = FetchDescriptor<ProductTemplate>(
@@ -134,6 +138,10 @@ enum ProductTemplateSeeder {
     }
 
     static func ensureTemplatesAsync(restaurantId: UUID, modelContext: ModelContext) async {
+        ProductTemplateCatalogService().ensureCategories(
+            restaurantId: restaurantId,
+            modelContext: modelContext
+        )
         guard !catalogIsPopulated(restaurantId: restaurantId, modelContext: modelContext) else { return }
         let rid = restaurantId
         let descriptor = FetchDescriptor<ProductTemplate>(

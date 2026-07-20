@@ -7,20 +7,30 @@ import Foundation
 enum TraceabilityWithdrawalKind: String, CaseIterable, Identifiable, Codable {
     case ritirato = "RITIRATO"
     case scartato = "SCARTATO"
+    case scaduto = "SCADUTO"
 
     var id: String { rawValue }
 
     var label: String {
         switch self {
-        case .ritirato: return "Usato"
+                case .ritirato: return "Terminato"
         case .scartato: return "Scartato"
+        case .scaduto: return "Scaduto"
         }
     }
 
     var subtitle: String {
         switch self {
-        case .ritirato: return "Prodotto utilizzato in cucina"
-        case .scartato: return "Prodotto eliminato / non utilizzabile"
+        case .ritirato: return "Consumato, venduto o finito in cucina"
+        case .scartato: return "Eliminato / non utilizzabile — indica la motivazione"
+        case .scaduto: return "Eliminato perché scaduto (nessuna motivazione richiesta)"
+        }
+    }
+
+    var requiresNote: Bool {
+        switch self {
+        case .ritirato, .scaduto: return false
+        case .scartato: return true
         }
     }
 }

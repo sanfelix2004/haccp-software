@@ -9,6 +9,7 @@ import SwiftData
 struct DocumentsArchiveFetchedData {
     var folders: [DocumentFolder] = []
     var items: [DocumentItem] = []
+    var recentMovements: [HACCPDocumentMovement] = []
 }
 
 struct DocumentsCSVExportSources {
@@ -39,6 +40,14 @@ enum DocumentsDataFetcher {
         )
         itemDescriptor.fetchLimit = PerformanceConfig.documentsItemFetchLimit
         data.items = (try? context.fetch(itemDescriptor)) ?? []
+
+        let closureKind = HACCPDocumentMovementKind.lotClosedFromExpiryControl.rawValue
+        var movementDescriptor = FetchDescriptor<HACCPDocumentMovement>(
+            predicate: #Predicate { $0.restaurantId == rid && $0.kindRaw == closureKind },
+            sortBy: [SortDescriptor(\HACCPDocumentMovement.occurredAt, order: .reverse)]
+        )
+        movementDescriptor.fetchLimit = 30
+        data.recentMovements = (try? context.fetch(movementDescriptor)) ?? []
 
         return data
     }
@@ -87,7 +96,10 @@ enum DocumentsDataFetcher {
 
         var traceDescriptor = FetchDescriptor<TraceabilityRecord>(
             predicate: #Predicate {
-                $0.restaurantId == rid && $0.receivedAt >= start && $0.receivedAt < end
+                $0.restaurantId == rid
+                    && !$0.isArchived
+                    && $0.receivedAt >= start
+                    && $0.receivedAt < end
             },
             sortBy: [SortDescriptor(\TraceabilityRecord.receivedAt, order: .reverse)]
         )

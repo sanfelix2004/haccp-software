@@ -179,6 +179,21 @@ struct BlastChillingService {
         try modelContext.save()
     }
 
+    @discardableResult
+    func addCategory(
+        name: String,
+        restaurantId: UUID,
+        existingCategories: [ProductionCategory],
+        modelContext: ModelContext
+    ) throws -> ProductionCategory {
+        try ProductionLibraryService().addCategory(
+            name: name,
+            restaurantId: restaurantId,
+            existingCategories: existingCategories,
+            modelContext: modelContext
+        )
+    }
+
     func updateProduction(
         _ production: Production,
         name: String,

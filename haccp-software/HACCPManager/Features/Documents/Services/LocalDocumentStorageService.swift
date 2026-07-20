@@ -90,7 +90,7 @@ final class LocalDocumentStorageService: LocalDocumentStorageProtocol {
                 return "\(m)_HACCP_\(slug)_Produzione.pdf"
             }
             if module == .controlloScadenze {
-                return "\(m)_HACCP_\(slug)_Scadenze_Abbattimento.pdf"
+                return "\(m)_HACCP_\(slug)_Controllo_Scadenze.pdf"
             }
             if module == .ricezioneMerci {
                 return "\(m)_HACCP_\(slug)_Ricezione.pdf"

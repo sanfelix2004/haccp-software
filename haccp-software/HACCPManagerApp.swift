@@ -69,6 +69,7 @@ struct HACCPManagerApp: App {
             GoodsReceivingRecord.self,
             Supplier.self,
             ProductTemplate.self,
+            IncomingFoodCategory.self,
             ProductionCategory.self,
             Production.self,
             ProduzioneBatch.self,

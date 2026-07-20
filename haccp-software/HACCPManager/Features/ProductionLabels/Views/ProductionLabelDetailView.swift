@@ -21,6 +21,7 @@ struct ProductionLabelDetailView: View {
     @State private var photoData: Data?
     @State private var queuedPrintMessage: String?
     @State private var selectedTab: DetailTab = .sticker
+    @State private var productionContext: ProductionLabelProductionContext?
 
     @ObservedObject private var printerManager = ClabelPrinterManager.shared
     @ObservedObject private var printQueue = ProductionLabelPrintQueue.shared
@@ -100,6 +101,10 @@ struct ProductionLabelDetailView: View {
         }
         .task(id: label.id) {
             photoData = ProductionLabelImageResolver.imageData(for: label, context: modelContext)
+            productionContext = ProductionLabelProductionContextLoader.load(
+                for: label,
+                context: modelContext
+            )
         }
     }
 
@@ -177,6 +182,10 @@ struct ProductionLabelDetailView: View {
                 linkRow("Creata", label.createdAt.formatted(date: .abbreviated, time: .shortened), icon: "clock")
                 linkRow("Aggiornata", label.updatedAt.formatted(date: .abbreviated, time: .shortened), icon: "arrow.clockwise")
             }
+        }
+
+        if let productionContext {
+            ProductionLabelProductionContextSection(context: productionContext)
         }
 
         if !label.allergenList.isEmpty {

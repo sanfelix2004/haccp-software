@@ -149,8 +149,10 @@ final class HACCPReportEngine: ObservableObject {
         return true
     }
 
-    // MARK: - Rigenerazione manuale (con audit + revisione)
+    // MARK: - Rigenerazione manuale (dati live attuali + audit + revisione)
 
+    /// Ricostruisce il PDF dai dati operativi correnti (anche se il mese è chiuso).
+    /// Serve a correggere errori, stati mancanti o contenuti obsoleti.
     func regenerate(
         document: DocumentItem,
         restaurant: Restaurant,

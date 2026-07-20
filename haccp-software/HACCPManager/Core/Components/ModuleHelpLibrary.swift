@@ -217,21 +217,21 @@ enum ModuleHelpLibrary {
 
     static let expiryControl = ModuleHelp(
         id: "expiry",
-        title: "Controllo scadenze",
+        title: "Controllo scadenze e quantità",
         purpose: """
-        Vista FEFO operativa su due binari: Dispensa & Frighi (materie prime / lotti tracciati) e Produzioni interne (piatti preparati). I colori aiutano a prioritizzare: rosso critico, giallo in scadenza, verde ok.
+        Due aree chiare: Alimenti in ingresso (lotti da associare o già associati) e Produzioni (piatti preparati). Controlli la scadenza, chiudi i scaduti e termini/scarti con motivazione.
         """,
         steps: [
-            "Tab Dispensa: monitora ingredienti e lotti da Tracciabilità (scadenza fornitore / etichetta).",
-            "Tab Produzioni: monitora batch preparati (scadenza calcolata da shelf-life e vincoli ingredienti).",
-            "Ordina e filtra per affrontare prima i rossi e i gialli.",
-            "Scorri e cancella / ritira quando il prodotto è finito o scartato (resta traccia nello storico).",
-            "Tocca un lotto scaduto per registrare ritiro o scarto secondo la procedura interna."
+            "Tocca la box Alimenti in ingresso oppure Produzioni.",
+            "Nella sezione «Da chiudere» tocca un scaduto e registra Usato o Scartato (motivazione obbligatoria sullo scarto).",
+            "Nella sezione «In validità / Da tenere» tocca un lotto per Termina / Scarta con motivazione.",
+            "I filtri in alto aiutano a vedere solo scaduti o in scadenza.",
+            "Nascondere una voce dalla Storia (MASTER) è un’operazione separata: qui gestisci solo lo stock operativo."
         ],
         notes: [
-            "La soglia «in scadenza» (es. giorni) si regola in Impostazioni → Parametri HACCP.",
-            "Cancellare un ingrediente dalla vista non cancella le produzioni già etichettate.",
-            "Per dettagli completi del lotto torna in Tracciabilità."
+            "La soglia «in scadenza» si regola in Impostazioni → Parametri HACCP.",
+            "Dopo Terminato / Scaduto / Scartato: esce subito da Tracciabilità, resta 1 giorno qui, poi solo in Storia e Documenti.",
+            "Le chiusure restano per sempre nei Documenti (PDF) e nella Storia."
         ]
     )
 
@@ -362,6 +362,7 @@ enum ModuleHelpLibrary {
         ],
         notes: [
             "Per documenti formali mensili vai in Documenti / iCloud.",
+            "Chiusure lotti: restano nei Documenti (PDF Tracciabilità e produzioni); in Storia vedi solo i lotti ancora da chiudere.",
             "Ogni voce conserva data, operatore e dettaglio dell’azione."
         ]
     )

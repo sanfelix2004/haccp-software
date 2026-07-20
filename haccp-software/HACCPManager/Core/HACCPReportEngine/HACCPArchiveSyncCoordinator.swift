@@ -8,11 +8,15 @@
 import Foundation
 import SwiftData
 
+/// Debounce per aggiornare i PDF del mese corrente dopo modifiche ai registri operativi.
+///
+/// Dopo il sync posta `kitchenProcessRecordsDidChange` così Storia/Documenti ricaricano i file aggiornati.
 @MainActor
 enum HACCPArchiveSyncCoordinator {
     private static var pendingTask: Task<Void, Never>?
 
-    /// Pianifica un aggiornamento incrementale dell'archivio PDF (debounce ~8s).
+    /// Pianifica un aggiornamento incrementale dell'archivio PDF.
+    /// - Parameter delaySeconds: default 8s per burst di salvataggi; usare 1s dopo creazione produzione.
     static func requestDeferredSync(
         restaurantId: UUID,
         user: LocalUser,
@@ -28,12 +32,15 @@ enum HACCPArchiveSyncCoordinator {
             let restaurants = (try? modelContext.fetch(FetchDescriptor<Restaurant>())) ?? []
             guard let restaurant = restaurants.first(where: { $0.id == restaurantId }) else { return }
 
-            _ = await HACCPReportEngine.shared.runFullArchive(
+            let didRun = await HACCPReportEngine.shared.runFullArchive(
                 restaurant: restaurant,
                 user: user,
                 in: modelContext,
                 force: true
             )
+            if didRun {
+                KitchenProcessNotifications.postRecordsDidChange()
+            }
         }
     }
 }

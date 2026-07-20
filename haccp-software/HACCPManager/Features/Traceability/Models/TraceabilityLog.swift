@@ -16,6 +16,8 @@ enum TraceabilityActionType: String, Codable {
     case archivedFromExpiryControl = "ARCHIVED_EXPIRY_CONTROL"
     /// Nascosto dallo storico operativo dal MASTER (traccia resta in Documenti).
     case removedFromHistory = "REMOVED_FROM_HISTORY"
+    /// Dati corretti dopo un errore di digitazione / registrazione.
+    case updated = "UPDATED"
 }
 
 @Model

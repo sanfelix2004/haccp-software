@@ -77,6 +77,7 @@ struct ModuleTileView: View {
     let icon: String
     let description: String
     var badge: Int? = nil
+    var locked: Bool = false
 
     @Environment(\.theme) private var theme
 
@@ -92,6 +93,11 @@ struct ModuleTileView: View {
                         .foregroundStyle(theme.colorPrimary)
                 }
                 Spacer()
+                if locked {
+                    Image(systemName: "lock.fill")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(theme.colorWarning)
+                }
                 if let badge, badge > 0 {
                     Text("\(badge)")
                         .font(theme.typography.caption.weight(.bold))

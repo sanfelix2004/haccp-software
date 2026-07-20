@@ -381,7 +381,7 @@ struct DocumentsService {
         }
     }
 
-    /// Migra cartelle moduli ritirati verso «Tracciabilità e produzioni» o archivio legacy.
+    /// Migra cartelle moduli ritirati verso «Tracciabilità» / «Controllo scadenze» o archivio legacy.
     private func retireDeprecatedModuleFolders(
         venueFolderName: String,
         restaurantDisplayName: String,
@@ -391,50 +391,82 @@ struct DocumentsService {
         user: LocalUser
     ) {
         var pathIndex = DocumentFolderPathIndex(folders: folders)
-        let traceProdTitle = DocumentArchiveLayout.tracciabilitaProduzioneFolderTitle
+        let tracciabilitaTitle = DocumentArchiveLayout.tracciabilitaProduzioneFolderTitle
+        let scadenzeTitle = DocumentArchiveLayout.controlloScadenzeFolderTitle
 
-        guard let traceProdTarget = pathIndex.folder(
-            venueFolderName: venueFolderName,
-            monthlyPathSuffix: traceProdTitle
-        ) else {
-            return
+        func mergeRetired(
+            titles: Set<String>,
+            into targetTitle: String,
+            restaurantId: UUID
+        ) {
+            guard let target = pathIndex.folder(
+                venueFolderName: venueFolderName,
+                monthlyPathSuffix: targetTitle
+            ) else { return }
+
+            for title in titles {
+                let deprecated = pathIndex.folder(
+                    venueFolderName: venueFolderName,
+                    monthlyPathSuffix: title
+                ) ?? pathIndex.folder(
+                    venueFolderName: venueFolderName,
+                    monthlyPathSuffix: "\(DocumentArchiveLayout.legacySingoliGroup)/\(title)"
+                )
+                guard let deprecated else { continue }
+                mergeFolderContents(
+                    from: deprecated,
+                    into: target,
+                    folders: &folders,
+                    items: items,
+                    modelContext: modelContext
+                )
+                pathIndex.rebuild(from: folders)
+                reassignRetiredICloudPaths(
+                    items: items,
+                    restaurantDisplayName: restaurantDisplayName,
+                    oldGroup: DocumentArchiveLayout.legacySingoliGroup,
+                    oldModuleFolder: title,
+                    newGroup: nil,
+                    newModuleFolder: targetTitle
+                )
+            }
+            _ = restaurantId
         }
 
-        for title in DocumentArchiveLayout.retiredTracciabilitaFolderTitles {
-            let deprecated = pathIndex.folder(
-                venueFolderName: venueFolderName,
-                monthlyPathSuffix: title
-            ) ?? pathIndex.folder(
-                venueFolderName: venueFolderName,
-                monthlyPathSuffix: "\(DocumentArchiveLayout.legacySingoliGroup)/\(title)"
+        if let tracciaFolder = pathIndex.folder(
+            venueFolderName: venueFolderName,
+            monthlyPathSuffix: tracciabilitaTitle
+        ) {
+            mergeRetired(
+                titles: DocumentArchiveLayout.retiredIntoTracciabilitaFolderTitles,
+                into: tracciabilitaTitle,
+                restaurantId: tracciaFolder.restaurantId
             )
-            guard let deprecated else { continue }
-            mergeFolderContents(
-                from: deprecated,
-                into: traceProdTarget,
+        }
+
+        if let scadenzeFolder = pathIndex.folder(
+            venueFolderName: venueFolderName,
+            monthlyPathSuffix: scadenzeTitle
+        ) {
+            mergeRetired(
+                titles: DocumentArchiveLayout.retiredIntoControlloScadenzeFolderTitles,
+                into: scadenzeTitle,
+                restaurantId: scadenzeFolder.restaurantId
+            )
+        }
+
+        pathIndex.rebuild(from: folders)
+        let restaurantId = folders.first(where: { $0.restaurantId != UUID() })?.restaurantId
+            ?? items.first?.restaurantId
+        guard let restaurantId,
+              let legacyArchiveTarget = ensureLegacyArchiveFolder(
+                venueFolderName: venueFolderName,
                 folders: &folders,
-                items: items,
+                pathIndex: &pathIndex,
+                restaurantId: restaurantId,
+                user: user,
                 modelContext: modelContext
-            )
-            pathIndex.rebuild(from: folders)
-            reassignRetiredICloudPaths(
-                items: items,
-                restaurantDisplayName: restaurantDisplayName,
-                oldGroup: DocumentArchiveLayout.legacySingoliGroup,
-                oldModuleFolder: title,
-                newGroup: nil,
-                newModuleFolder: traceProdTitle
-            )
-        }
-
-        guard let legacyArchiveTarget = ensureLegacyArchiveFolder(
-            venueFolderName: venueFolderName,
-            folders: &folders,
-            pathIndex: &pathIndex,
-            restaurantId: traceProdTarget.restaurantId,
-            user: user,
-            modelContext: modelContext
-        ) else { return }
+              ) else { return }
 
         for title in DocumentArchiveLayout.retiredAffinityFolderTitles {
             let deprecated = pathIndex.folder(
@@ -464,6 +496,22 @@ struct DocumentsService {
                 newGroup: nil,
                 newModuleFolder: DocumentArchiveLayout.legacyReportsArchiveFolderName
             )
+        }
+
+        // PDF già in cartella corretta ma ancora tipizzati come modulo ritirato.
+        for item in items {
+            let remapped = DocumentArchiveLayout.remappedArchiveModule(for: item.module)
+            guard remapped != item.module else { continue }
+            item.module = remapped
+            if item.title.localizedCaseInsensitiveContains("scadenze")
+                || item.title.localizedCaseInsensitiveContains("status") {
+                item.title = DocumentArchiveLayout.moduleFolderTitle(.controlloScadenze)
+                item.module = .controlloScadenze
+            } else if item.title.localizedCaseInsensitiveContains("tracciabilit")
+                || item.title.localizedCaseInsensitiveContains("etichette")
+                || item.title.localizedCaseInsensitiveContains("produzion") {
+                item.title = DocumentArchiveLayout.moduleFolderTitle(.tracciabilita)
+            }
         }
     }
 
@@ -555,6 +603,15 @@ struct DocumentsService {
 
         for item in items where item.folderId == source.id {
             item.folderId = destination.id
+            let remapped = DocumentArchiveLayout.remappedArchiveModule(for: item.module)
+            if remapped != item.module {
+                item.module = remapped
+                if item.title.localizedCaseInsensitiveContains("scadenze")
+                    || item.title.localizedCaseInsensitiveContains("tracciabilità")
+                    || item.title.localizedCaseInsensitiveContains("etichette") {
+                    item.title = DocumentArchiveLayout.moduleFolderTitle(remapped)
+                }
+            }
         }
 
         modelContext.delete(source)

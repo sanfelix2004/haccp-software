@@ -232,7 +232,7 @@ struct TraceabilityWorkflowGuideCard: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            workflowStep(number: 1, icon: "camera.fill", title: "Scatta", subtitle: "Etichette lotto")
+            workflowStep(number: 1, icon: "camera.fill", title: "Scatta", subtitle: "Etichetta o fattura")
             arrow
             workflowStep(number: 2, icon: "shippingbox.fill", title: "Alimento", subtitle: "Catalogo ingresso")
             arrow

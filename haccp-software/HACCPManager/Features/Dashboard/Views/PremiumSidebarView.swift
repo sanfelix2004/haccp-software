@@ -30,19 +30,19 @@ struct PremiumSidebarView: View {
                 }
 
                 Section {
-                    ForEach(SidebarItem.foodsInOrder.filter { $0.isAccessible(by: permissions) }) { sidebarRow($0) }
+                    ForEach(SidebarItem.foodsInOrder.filter { $0.isListedInSidebar(by: permissions) }) { sidebarRow($0) }
                 } header: {
                     sectionHeader("Alimenti")
                 }
 
                 Section {
-                    ForEach(SidebarItem.haccpModulesInOrder.filter { $0.isAccessible(by: permissions) }) { sidebarRow($0) }
+                    ForEach(SidebarItem.haccpModulesInOrder.filter { $0.isListedInSidebar(by: permissions) }) { sidebarRow($0) }
                 } header: {
                     sectionHeader("Moduli HACCP")
                 }
 
                 Section {
-                    ForEach(SidebarItem.toolsInOrder.filter { $0.isAccessible(by: permissions) }) { item in
+                    ForEach(SidebarItem.toolsInOrder.filter { $0.isListedInSidebar(by: permissions) }) { item in
                         sidebarRow(item)
                     }
                 } header: {
@@ -82,7 +82,7 @@ struct PremiumSidebarView: View {
 
     private var restaurantCard: some View {
         Button(action: {
-            if restaurantsCount > 1, permissions.can(.switchRestaurant) {
+            if restaurantsCount > 1 {
                 HapticManager.shared.selection()
                 onSwitchRestaurant()
             }
@@ -105,10 +105,10 @@ struct PremiumSidebarView: View {
                     }
                 }
                 Spacer(minLength: 0)
-                if restaurantsCount > 1, permissions.can(.switchRestaurant) {
-                    Image(systemName: "chevron.up.chevron.down")
+                if restaurantsCount > 1 {
+                    Image(systemName: permissions.canPerform(.switchRestaurant) ? "chevron.up.chevron.down" : "lock.fill")
                         .font(.caption.weight(.bold))
-                        .foregroundStyle(theme.colorTextSecondary)
+                        .foregroundStyle(permissions.canPerform(.switchRestaurant) ? theme.colorTextSecondary : theme.colorWarning)
                 }
             }
             .padding(theme.spacing.lg)

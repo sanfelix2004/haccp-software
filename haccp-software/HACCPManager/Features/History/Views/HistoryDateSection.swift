@@ -4,8 +4,6 @@ struct HistoryDateSection: View {
     let date: Date
     let entries: [HistoryEntry]
     var onPendingClosure: ((UUID) -> Void)? = nil
-    var canRemoveFromHistory: Bool = false
-    var onRemoveFromHistory: ((HistoryEntry) -> Void)? = nil
 
     @Environment(\.theme) private var theme
 
@@ -30,24 +28,12 @@ struct HistoryDateSection: View {
             .padding(.bottom, 8)
 
             ForEach(Array(entries.enumerated()), id: \.element.id) { index, entry in
-                let card = HistoryRecordCard(
+                HistoryRecordCard(
                     entry: entry,
                     isLastInSection: index == entries.count - 1,
                     onPendingClosure: onPendingClosure
                 )
                 .equatable()
-
-                if canRemoveFromHistory, entry.allowsHistoryRemoval, let onRemoveFromHistory {
-                    SwipeToDeleteRow(
-                        enabled: true,
-                        deleteTitle: "Nascondi",
-                        onDelete: { onRemoveFromHistory(entry) }
-                    ) {
-                        card
-                    }
-                } else {
-                    card
-                }
             }
         }
     }

@@ -10,37 +10,46 @@ struct TraceabilityRecordDetailSheet: View {
     var photoBytes: [Data] = []
     let associatedProductions: [Production]
     let ingredientCountByProductionId: [UUID: Int]
+    /// Stato operativo del piatto finito per produzione (Scaduto / Scartato / Usato…).
+    var productionStatusById: [UUID: TraceabilityLotOperationalStatus.Presentation] = [:]
     let linkedIngredientCount: Int
     let defrostRecords: [DefrostRecord]
     let auditLogs: [TraceabilityLog]
     let productionsById: [UUID: Production]
     let canDeleteRecords: Bool
+    let canEditRecords: Bool
     let hasExistingLabel: Bool
     let masterUser: LocalUser?
     let onAssociate: () -> Void
     let onLabel: () -> Void
     let onNonCompliant: () -> Void
+    let onEdit: () -> Void
     let onDelete: () -> Void
     let onDismiss: () -> Void
 
     @Environment(\.theme) private var theme
     @State private var showMasterDeleteAuth = false
+    @State private var showMasterEditAuth = false
+
+    private var lifecycle: TraceabilityLifecycleSummary {
+        TraceabilityLifecycleSummary.build(
+            record: record,
+            logs: auditLogs,
+            productionsById: productionsById
+        )
+    }
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: theme.spacing.sectionSpacing) {
-                    if let production = associatedProductions.first {
-                        productionContextBanner(production)
-                    }
                     headerBlock
+                    openingCard
                     if !photoBytes.isEmpty {
                         photosCard
                     }
-                    infoCard
-                    if !associatedProductions.isEmpty {
-                        productionsCard
-                    }
+                    associationsCard
+                    closureCard
                     if !auditLogs.isEmpty {
                         timelineCard
                     }
@@ -77,13 +86,94 @@ struct TraceabilityRecordDetailSheet: View {
                     ) { EmptyView() }
                 }
             }
+            .fullScreenCover(isPresented: $showMasterEditAuth) {
+                if let masterUser {
+                    MasterAuthOverlay(
+                        master: masterUser,
+                        operation: .privilegedAction,
+                        onAuthorized: {
+                            showMasterEditAuth = false
+                            onEdit()
+                        },
+                        onCancel: {
+                            showMasterEditAuth = false
+                        }
+                    ) { EmptyView() }
+                }
+            }
+        }
+    }
+
+    private var headerBlock: some View {
+        HStack(alignment: .top, spacing: 16) {
+            if let first = photoBytes.first,
+               let thumb = HACCPZoomablePhotoThumbnail(
+                data: first,
+                size: 56,
+                zoomTitle: display.productName
+               ) {
+                thumb
+            } else {
+                Image(systemName: display.isProductionLot ? "fork.knife" : "shippingbox.fill")
+                    .font(.title2.weight(.semibold))
+                    .foregroundStyle(theme.colorPrimary)
+                    .frame(width: 56, height: 56)
+                    .background(theme.colorPrimary.opacity(0.12))
+                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                HACCPBadge(
+                    title: lifecycle.closure.map { "Chiuso · \($0.outcome)" } ?? display.statusLabel,
+                    style: lifecycle.closure != nil ? .neutral : display.badgeStyle
+                )
+                Text(lifecycle.createdLine)
+                    .font(theme.typography.caption)
+                    .foregroundStyle(theme.colorTextSecondary)
+                if let closureLine = lifecycle.closureLine {
+                    Text(closureLine)
+                        .font(theme.typography.caption.weight(.semibold))
+                        .foregroundStyle(theme.colorWarning)
+                } else if display.needsProductionLink {
+                    Label("Da associare a un piatto", systemImage: "link.badge.plus")
+                        .font(theme.typography.caption.weight(.semibold))
+                        .foregroundStyle(theme.colorPrimary)
+                }
+            }
+            Spacer(minLength: 0)
+        }
+    }
+
+    private var openingCard: some View {
+        DashboardCardView(
+            title: "1. Apertura lotto",
+            subtitle: display.isProductionLot ? "Produzione finita" : "Alimento in ingresso"
+        ) {
+            VStack(spacing: 10) {
+                detailRow("Creato il", lifecycle.createdAt.formatted(date: .abbreviated, time: .shortened))
+                detailRow("Registrato da", lifecycle.createdBy)
+                detailRow(lifecycle.lotLabel, lifecycle.lotValue)
+                if !display.isProductionLot {
+                    detailRow("Fornitore", lifecycle.supplier)
+                }
+                if let category = display.category {
+                    detailRow("Categoria", category)
+                }
+                if let expiry = lifecycle.expiryDate {
+                    detailRow("Scadenza", TraceabilityLifecycleSummary.fmtDate(expiry))
+                } else {
+                    detailRow("Scadenza", "Non indicata — usa al più presto", highlight: true)
+                }
+            }
         }
     }
 
     private var photosCard: some View {
         DashboardCardView(
-            title: "Documentazione fotografica",
-            subtitle: photoBytes.count == 1 ? "1 foto" : "\(photoBytes.count) foto"
+            title: "2. Foto",
+            subtitle: display.isProductionLot
+                ? (photoBytes.count == 1 ? "Foto del piatto" : "\(photoBytes.count) foto del piatto")
+                : (photoBytes.count == 1 ? "Foto etichetta / prodotto" : "\(photoBytes.count) foto")
         ) {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 12) {
@@ -101,108 +191,65 @@ struct TraceabilityRecordDetailSheet: View {
         }
     }
 
-    private func productionContextBanner(_ production: Production) -> some View {
-        HStack(spacing: 12) {
-            Image(systemName: "fork.knife")
-                .font(.title3.weight(.semibold))
-                .foregroundStyle(theme.colorPrimary)
-                .frame(width: 44, height: 44)
-                .background(theme.colorPrimary.opacity(0.12))
-                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(production.name)
-                    .font(theme.typography.headline)
-                    .foregroundStyle(theme.colorTextPrimary)
-                Text("Piatto di produzione")
-                    .font(theme.typography.caption)
-                    .foregroundStyle(theme.colorTextSecondary)
-            }
-            Spacer(minLength: 0)
-        }
-        .padding(12)
-        .background(theme.colorSurface)
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-    }
-
-    private var headerBlock: some View {
-        HStack(alignment: .top, spacing: 16) {
-            Image(systemName: "shippingbox.fill")
-                .font(.title2.weight(.semibold))
-                .foregroundStyle(theme.colorPrimary)
-                .frame(width: 56, height: 56)
-                .background(theme.colorPrimary.opacity(0.12))
-                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-
-            VStack(alignment: .leading, spacing: 8) {
-                HACCPBadge(title: display.statusLabel, style: display.badgeStyle)
-                Text("Ricevuto \(display.receivedAt.formatted(date: .abbreviated, time: .shortened))")
-                    .font(theme.typography.caption)
-                    .foregroundStyle(theme.colorTextSecondary)
-                if display.productionCount > 0 {
-                    Label(
-                        TraceabilityCountLabel.piattiEAlimenti(
-                            productionCount: display.productionCount,
-                            ingredientCount: display.linkedIngredientCount
-                        ),
-                        systemImage: "link"
-                    )
-                    .font(theme.typography.caption.weight(.semibold))
-                    .foregroundStyle(theme.colorSuccess)
-                } else if display.needsProductionLink {
-                    Label("Da associare a un piatto", systemImage: "link.badge.plus")
-                        .font(theme.typography.caption.weight(.semibold))
-                        .foregroundStyle(theme.colorPrimary)
-                }
-            }
-            Spacer(minLength: 0)
-        }
-    }
-
-    private var infoCard: some View {
-        DashboardCardView(title: "Scheda prodotto", subtitle: "Dati HACCP") {
-            VStack(spacing: 10) {
-                detailRow(
-                    display.isProductionLot ? "Lotto produzione" : "Lotto",
-                    display.lot
-                )
-                detailRow("Fornitore", display.supplier)
-                if let category = display.category {
-                    detailRow("Categoria", category)
-                }
-                detailRow(
-                    "Registrato",
-                    display.receivedAt.formatted(date: .abbreviated, time: .shortened)
-                )
-            }
-        }
-    }
-
-    private var productionsCard: some View {
+    private var associationsCard: some View {
         DashboardCardView(
-            title: "Piatti collegati",
-            subtitle: TraceabilityCountLabel.piattiEAlimenti(
-                productionCount: associatedProductions.count,
-                ingredientCount: linkedIngredientCount
-            )
+            title: "3. Associazioni",
+            subtitle: lifecycle.associations.isEmpty && associatedProductions.isEmpty
+                ? "Nessun piatto collegato"
+                : TraceabilityCountLabel.piattiEAlimenti(
+                    productionCount: max(associatedProductions.count, Set(lifecycle.associations.map(\.productionName)).count),
+                    ingredientCount: linkedIngredientCount
+                )
         ) {
-            VStack(alignment: .leading, spacing: 10) {
-                ForEach(associatedProductions) { production in
+            VStack(alignment: .leading, spacing: 12) {
+                if lifecycle.associations.isEmpty && associatedProductions.isEmpty {
+                    Text(display.isProductionLot
+                         ? "Questo è il piatto finito: gli ingredienti sono nei lotti collegati in Storia."
+                         : "Non ancora associato a una produzione.")
+                        .font(theme.typography.caption)
+                        .foregroundStyle(theme.colorTextSecondary)
+                }
+
+                ForEach(lifecycle.associations) { item in
                     HStack(alignment: .top, spacing: 8) {
-                        Image(systemName: "fork.knife")
+                        Image(systemName: "link")
                             .foregroundStyle(theme.colorSuccess)
                             .padding(.top, 2)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(production.name)
-                                .font(theme.typography.subheadline)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Associato a «\(item.productionName)»")
+                                .font(theme.typography.subheadline.weight(.semibold))
                                 .foregroundStyle(theme.colorTextPrimary)
-                            Text(
-                                TraceabilityCountLabel.alimenti(
-                                    ingredientCountByProductionId[production.id] ?? 0
+                            Text("Il \(item.occurredAt.formatted(date: .abbreviated, time: .shortened)) da \(item.operatorName)")
+                                .font(theme.typography.caption)
+                                .foregroundStyle(theme.colorTextSecondary)
+                            if let status = statusForAssociation(named: item.productionName) {
+                                HACCPBadge(title: status.label, style: status.badgeStyle, showIcon: false)
+                            }
+                        }
+                    }
+                }
+
+                // Fallback se ci sono produzioni senza log di associazione.
+                if lifecycle.associations.isEmpty {
+                    ForEach(associatedProductions) { production in
+                        HStack(alignment: .top, spacing: 8) {
+                            Image(systemName: "fork.knife")
+                                .foregroundStyle(theme.colorSuccess)
+                                .padding(.top, 2)
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(production.name)
+                                    .font(theme.typography.subheadline.weight(.semibold))
+                                Text(
+                                    TraceabilityCountLabel.alimenti(
+                                        ingredientCountByProductionId[production.id] ?? 0
+                                    )
                                 )
-                            )
-                            .font(theme.typography.caption)
-                            .foregroundStyle(theme.colorTextSecondary)
+                                .font(theme.typography.caption)
+                                .foregroundStyle(theme.colorTextSecondary)
+                                if let status = productionStatusById[production.id] {
+                                    HACCPBadge(title: status.label, style: status.badgeStyle, showIcon: false)
+                                }
+                            }
                         }
                     }
                 }
@@ -210,10 +257,36 @@ struct TraceabilityRecordDetailSheet: View {
         }
     }
 
+    private var closureCard: some View {
+        DashboardCardView(
+            title: "4. Chiusura",
+            subtitle: lifecycle.closure == nil ? "Ancora in uso in cucina" : "Esito operativo"
+        ) {
+            if let closure = lifecycle.closure {
+                VStack(spacing: 10) {
+                    detailRow("Esito", closure.outcome)
+                    detailRow("Quando", closure.occurredAt.formatted(date: .abbreviated, time: .shortened))
+                    detailRow("Operatore", closure.operatorName)
+                    if let note = closure.note, !note.isEmpty {
+                        detailRow("Motivazione", note)
+                    }
+                }
+            } else if record.productStatus == .used || record.productStatus == .rejected {
+                Text("Lotto chiuso (stato \(record.productStatus.label)). Dettaglio motivo non disponibile nei log.")
+                    .font(theme.typography.caption)
+                    .foregroundStyle(theme.colorTextSecondary)
+            } else {
+                Text("Non ancora terminato / scartato / scaduto. La chiusura si registra da Controllo scadenze e quantità.")
+                    .font(theme.typography.caption)
+                    .foregroundStyle(theme.colorTextSecondary)
+            }
+        }
+    }
+
     private var timelineCard: some View {
-        DashboardCardView(title: "Cronologia", subtitle: "Audit HACCP") {
+        DashboardCardView(title: "Cronologia completa", subtitle: "Tutti gli eventi in ordine") {
             VStack(alignment: .leading, spacing: 10) {
-                ForEach(auditLogs, id: \.id) { log in
+                ForEach(auditLogs.sorted(by: { $0.timestamp > $1.timestamp }), id: \.id) { log in
                     HStack(alignment: .top, spacing: 10) {
                         Image(systemName: timelineIcon(for: log.actionType))
                             .font(.caption)
@@ -267,13 +340,15 @@ struct TraceabilityRecordDetailSheet: View {
     private var actionsCard: some View {
         DashboardCardView(title: "Azioni", subtitle: "Gestione in cucina") {
             VStack(spacing: 12) {
-                PrimaryButton(
-                    title: display.needsProductionLink ? "Associa a piatto" : "Modifica collegamenti",
-                    icon: "link"
-                ) {
-                    onAssociate()
+                if !display.isProductionLot {
+                    PrimaryButton(
+                        title: display.needsProductionLink ? "Associa a piatto" : "Modifica collegamenti",
+                        icon: "link"
+                    ) {
+                        onAssociate()
+                    }
+                    .disabled(!display.isActionable && !record.isNonCompliant)
                 }
-                .disabled(!display.isActionable && !record.isNonCompliant)
 
                 if record.productStatus != .rejected {
                     SecondaryButton(
@@ -286,14 +361,29 @@ struct TraceabilityRecordDetailSheet: View {
                 SecondaryButton(title: "Segna non conforme", icon: "exclamationmark.triangle.fill", action: onNonCompliant)
                     .disabled(record.productStatus == .rejected)
 
+                if canEditRecords {
+                    SecondaryButton(title: "Modifica dati", icon: "pencil") {
+                        if masterUser != nil {
+                            showMasterEditAuth = true
+                        } else {
+                            onEdit()
+                        }
+                    }
+                }
+
                 if canDeleteRecords {
-                    SecondaryButton(title: "Elimina scheda", icon: "trash") {
+                    SecondaryButton(
+                        title: display.isProductionLot
+                            ? "Elimina produzione (errore — non resta salvata)"
+                            : "Elimina alimento (errore — non resta salvato)",
+                        icon: "trash"
+                    ) {
                         showMasterDeleteAuth = true
                     }
                 }
 
                 if !display.isActionable {
-                    Text("Prodotto non più associabile. Per scadenze e ritiro usa Controllo scadenze.")
+                    Text("Lotto chiuso da Controllo scadenze: la chiusura resta documentata nei PDF.")
                         .font(theme.typography.caption)
                         .foregroundStyle(theme.colorTextSecondary)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -303,15 +393,25 @@ struct TraceabilityRecordDetailSheet: View {
     }
 
     private func detailRow(_ title: String, _ value: String, highlight: Bool = false) -> some View {
-        HStack {
+        HStack(alignment: .top) {
             Text(title)
                 .font(theme.typography.caption)
                 .foregroundStyle(theme.colorTextSecondary)
-            Spacer()
+            Spacer(minLength: 12)
             Text(value)
                 .font(theme.typography.subheadline.weight(.semibold))
                 .foregroundStyle(highlight ? theme.colorWarning : theme.colorTextPrimary)
+                .multilineTextAlignment(.trailing)
         }
+    }
+
+    private func statusForAssociation(named productionName: String) -> TraceabilityLotOperationalStatus.Presentation? {
+        if let production = associatedProductions.first(where: {
+            $0.name.caseInsensitiveCompare(productionName) == .orderedSame
+        }) {
+            return productionStatusById[production.id]
+        }
+        return nil
     }
 
     private func timelineIcon(for action: TraceabilityActionType) -> String {
@@ -325,24 +425,26 @@ struct TraceabilityRecordDetailSheet: View {
         case .expiryRegistered: return "calendar.badge.clock"
         case .archivedFromExpiryControl: return "archivebox.fill"
         case .removedFromHistory: return "eye.slash"
+        case .updated: return "pencil"
         }
     }
 
     private func timelineTitle(for log: TraceabilityLog) -> String {
         switch log.actionType {
-        case .created: return "Lotto registrato"
+        case .created: return "Creato"
         case .linkedToProduction:
             if let name = log.linkedProductionDisplayName(productionsById: productionsById) {
-                return "Collegato a \(name)"
+                return "Associato a \(name)"
             }
-            return "Collegato a produzione"
-        case .expired: return "Marcato scaduto"
+            return "Associato a produzione"
+        case .expired: return "Segnato come scaduto (data)"
         case .rejected: return "Respinto"
         case .nonCompliance: return "Non conformità"
-        case .withdrawn: return log.detail ?? "Ritirato / scartato"
+        case .withdrawn: return log.detail.map { "Chiusura: \($0)" } ?? "Chiusura (usato / scarto)"
         case .expiryRegistered: return log.detail ?? "Scadenza registrata"
-        case .archivedFromExpiryControl: return log.detail ?? "Rimosso da controllo scadenze"
-        case .removedFromHistory: return log.detail ?? "Nascosto dallo storico (Documenti ok)"
+        case .archivedFromExpiryControl: return log.detail.map { "Chiusura: \($0)" } ?? "Chiusura lotto"
+        case .removedFromHistory: return "Nascosto dallo storico (resta in Documenti)"
+        case .updated: return log.detail.map { "Modifica: \($0)" } ?? "Dati modificati"
         }
     }
 }

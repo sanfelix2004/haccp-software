@@ -1,13 +1,18 @@
 import SwiftUI
+import SwiftData
 
 /// Dettaglio etichetta letta da QR — scansione dall’app su iPad.
 struct ProductionLabelScannedDetailView: View {
     let data: ProductionLabelScanData
     var showsOfflineBanner: Bool = true
+    var restaurantId: UUID? = nil
     var onOpenInArchive: (() -> Void)?
 
     @Environment(\.theme) private var theme
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var modelContext
+
+    @State private var productionContext: ProductionLabelProductionContext?
 
     var body: some View {
         NavigationStack {
@@ -15,7 +20,11 @@ struct ProductionLabelScannedDetailView: View {
                 VStack(spacing: theme.spacing.sectionSpacing) {
                     if showsOfflineBanner {
                         DashboardCardView(title: "Lettura QR", subtitle: "Solo da iPad") {
-                            Text("Etichetta letta dall’app HACCP su iPad. I dati completi sono disponibili qui sotto.")
+                            Text(
+                                productionContext?.hasProductionInfo == true
+                                    ? "Etichetta riconosciuta. Sotto trovi produzione e tutti gli elementi associati (anche chiusi o scartati)."
+                                    : "Etichetta letta dall’app HACCP su iPad. I dati completi sono disponibili qui sotto."
+                            )
                                 .font(theme.typography.subheadline)
                                 .foregroundStyle(theme.colorTextSecondary)
                         }
@@ -81,6 +90,10 @@ struct ProductionLabelScannedDetailView: View {
                         }
                     }
 
+                    if let productionContext {
+                        ProductionLabelProductionContextSection(context: productionContext)
+                    }
+
                     if !data.allergenList.isEmpty {
                         DashboardCardView(title: "Allergeni") {
                             VStack(alignment: .leading, spacing: 8) {
@@ -107,6 +120,27 @@ struct ProductionLabelScannedDetailView: View {
                     Button("Chiudi") { dismiss() }
                 }
             }
+            .task(id: data.id) {
+                await loadProductionContext()
+            }
+        }
+    }
+
+    @MainActor
+    private func loadProductionContext() async {
+        productionContext = nil
+        do {
+            guard let label = try ProductionLabelLookupService.fetchLabel(
+                id: data.id,
+                restaurantId: restaurantId,
+                context: modelContext
+            ) else { return }
+            productionContext = ProductionLabelProductionContextLoader.load(
+                for: label,
+                context: modelContext
+            )
+        } catch {
+            productionContext = nil
         }
     }
 

@@ -12,13 +12,15 @@ struct IncomingFoodCatalogManagementView: View {
 
     @ObservedObject private var dataStore = ModuleStoreRegistry.shared.incomingFoodCatalog
 
-    @State private var selectedCategory: GoodsCategory = .all
+    /// `nil` = Tutti
+    @State private var selectedCategoryName: String?
     @State private var selectedTemplate: ProductTemplate?
     @State private var showAddSheet = false
     @State private var showEditSheet = false
+    @State private var showAddCategorySheet = false
     @State private var templateToEdit: ProductTemplate?
     @State private var newName = ""
-    @State private var newCategory: GoodsCategory = .frozenProducts
+    @State private var newCategoryName = ""
     @State private var errorMessage: String?
     @State private var masterAuth = MasterAuthCoordinator()
     @State private var presentation = IncomingFoodCatalogPresentation.empty
@@ -27,6 +29,10 @@ struct IncomingFoodCatalogManagementView: View {
 
     private var scopedTemplates: [ProductTemplate] {
         dataStore.templates
+    }
+
+    private var scopedCategories: [IncomingFoodCategory] {
+        dataStore.categories.sorted { $0.orderIndex < $1.orderIndex }
     }
 
     private var visibleTemplates: [ProductTemplate] {
@@ -48,7 +54,7 @@ struct IncomingFoodCatalogManagementView: View {
                     actionTitle: nil
                 ))
                 .padding(theme.spacing.screenPadding)
-            } else if dataStore.isLoading && scopedTemplates.isEmpty {
+            } else if dataStore.isLoading && scopedTemplates.isEmpty && scopedCategories.isEmpty {
                 ProgressView("Caricamento catalogo…")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
@@ -65,7 +71,7 @@ struct IncomingFoodCatalogManagementView: View {
         .onChange(of: dataStore.dataRevision) { _, _ in
             rebuildPresentation()
         }
-        .onChange(of: selectedCategory) { _, _ in
+        .onChange(of: selectedCategoryName) { _, _ in
             rebuildPresentation()
         }
         .onAppear {
@@ -76,6 +82,17 @@ struct IncomingFoodCatalogManagementView: View {
             if let template = templateToEdit {
                 templateEditor(title: "Modifica alimento", template: template)
             }
+        }
+        .sheet(isPresented: $showAddCategorySheet) {
+            CatalogAddCategorySheet(
+                title: "Categoria alimenti",
+                placeholder: "Es. Latticini, Spezie…",
+                existingNames: scopedCategories.map(\.name),
+                onSave: { name in
+                    saveNewCategory(name)
+                },
+                onCancel: { showAddCategorySheet = false }
+            )
         }
         .masterAuthCover(coordinator: masterAuth, master: session.masterUser)
         .alert("Alimenti in ingresso", isPresented: Binding(get: { errorMessage != nil }, set: { _ in errorMessage = nil })) {
@@ -138,6 +155,7 @@ struct IncomingFoodCatalogManagementView: View {
     private var actionBar: some View {
         HStack(spacing: 10) {
             PrimaryButton(title: "Aggiungi alimento", icon: "plus.circle.fill") { requestAdd() }
+            SecondaryButton(title: "Categoria", icon: "folder.badge.plus") { requestAddCategory() }
             if let selected = selectedTemplate {
                 SecondaryButton(title: "Modifica", icon: "pencil") { requestEdit(selected) }
                 Button(role: .destructive) { requestDelete(selected) } label: {
@@ -159,7 +177,7 @@ struct IncomingFoodCatalogManagementView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Selezionato: \(template.name)")
                     .font(theme.typography.subheadline.bold())
-                Text(template.category.rawValue)
+                Text(template.categoryDisplayName)
                     .font(theme.typography.caption)
                     .foregroundStyle(theme.colorTextSecondary)
                 Text("Scadenza in tracciabilità")
@@ -179,22 +197,29 @@ struct IncomingFoodCatalogManagementView: View {
     private var categoryTabs: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 10) {
-                ForEach(GoodsCategory.allCases) { category in
-                    Button {
-                        selectedCategory = category
-                    } label: {
-                        Text(category.rawValue)
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(selectedCategory == category ? theme.colorTextOnPrimary : theme.colorTextSecondary)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 8)
-                            .background(selectedCategory == category ? theme.colorPrimary : theme.colorDivider)
-                            .cornerRadius(10)
-                    }
-                    .buttonStyle(.plain)
+                categoryButton(nil, title: "Tutti")
+                ForEach(scopedCategories) { category in
+                    categoryButton(category.name, title: category.name)
                 }
             }
         }
+    }
+
+    private func categoryButton(_ name: String?, title: String) -> some View {
+        let isSelected = selectedCategoryName == name
+            || (name == nil && selectedCategoryName == nil)
+        return Button {
+            selectedCategoryName = name
+        } label: {
+            Text(title)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(isSelected ? theme.colorTextOnPrimary : theme.colorTextSecondary)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(isSelected ? theme.colorPrimary : theme.colorDivider)
+                .cornerRadius(10)
+        }
+        .buttonStyle(.plain)
     }
 
     private func templateEditor(title: String, template: ProductTemplate?) -> some View {
@@ -202,9 +227,9 @@ struct IncomingFoodCatalogManagementView: View {
             Form {
                 Section(title) {
                     TextField("Nome alimento", text: $newName)
-                    Picker("Categoria", selection: $newCategory) {
-                        ForEach(GoodsCategory.allCases.filter { $0 != .all }) { cat in
-                            Text(cat.rawValue).tag(cat)
+                    Picker("Categoria", selection: $newCategoryName) {
+                        ForEach(scopedCategories) { cat in
+                            Text(cat.name).tag(cat.name)
                         }
                     }
                 }
@@ -224,7 +249,10 @@ struct IncomingFoodCatalogManagementView: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Salva") { saveTemplate(template) }
-                        .disabled(newName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        .disabled(
+                            newName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                                || newCategoryName.isEmpty
+                        )
                 }
             }
         }
@@ -233,15 +261,43 @@ struct IncomingFoodCatalogManagementView: View {
     private func rebuildPresentation() {
         presentation = IncomingFoodCatalogPresentation.build(
             templates: scopedTemplates,
-            selectedCategory: selectedCategory
+            categories: scopedCategories,
+            selectedCategoryName: selectedCategoryName
         )
     }
 
     private func requestAdd() {
         masterAuth.request(permission: .manageIncomingFoodCatalog, permissions: permissions) {
             newName = ""
-            newCategory = selectedCategory == .all ? .frozenProducts : selectedCategory
+            newCategoryName = selectedCategoryName
+                ?? scopedCategories.first?.name
+                ?? GoodsCategory.refrigerated.rawValue
             showAddSheet = true
+        }
+    }
+
+    private func requestAddCategory() {
+        masterAuth.request(permission: .manageIncomingFoodCatalog, permissions: permissions) {
+            showAddCategorySheet = true
+        }
+    }
+
+    private func saveNewCategory(_ name: String) {
+        guard let rid = appState.activeRestaurantId else { return }
+        do {
+            let category = try catalogService.addCategory(
+                name: name,
+                restaurantId: rid,
+                existingCategories: scopedCategories,
+                modelContext: modelContext
+            )
+            showAddCategorySheet = false
+            selectedCategoryName = category.name
+            dataStore.reload(context: modelContext, restaurantId: rid, force: true)
+            HapticManager.shared.notification(.success)
+        } catch {
+            errorMessage = error.localizedDescription
+            showAddCategorySheet = false
         }
     }
 
@@ -249,7 +305,7 @@ struct IncomingFoodCatalogManagementView: View {
         masterAuth.request(permission: .manageIncomingFoodCatalog, permissions: permissions) {
             templateToEdit = template
             newName = template.name
-            newCategory = template.category
+            newCategoryName = template.categoryRaw
             showEditSheet = true
         }
     }
@@ -259,7 +315,6 @@ struct IncomingFoodCatalogManagementView: View {
             deleteTemplate(template)
         }
     }
-
 
     private func saveTemplate(_ template: ProductTemplate?) {
         guard let rid = appState.activeRestaurantId else { return }
@@ -272,7 +327,7 @@ struct IncomingFoodCatalogManagementView: View {
                 try catalogService.updateTemplate(
                     template,
                     name: newName,
-                    category: newCategory,
+                    categoryName: newCategoryName,
                     existing: scopedTemplates,
                     modelContext: modelContext,
                     shelfLifeDays: nil
@@ -281,13 +336,14 @@ struct IncomingFoodCatalogManagementView: View {
             } else {
                 try catalogService.addTemplate(
                     name: newName,
-                    category: newCategory,
+                    categoryName: newCategoryName,
                     restaurantId: rid,
                     existing: scopedTemplates,
                     modelContext: modelContext,
                     shelfLifeDays: nil
                 )
             }
+            showAddSheet = false
             showEditSheet = false
             newName = ""
             dataStore.reload(context: modelContext, restaurantId: rid, force: true)

@@ -78,7 +78,10 @@ struct DocumentsView: View {
     }
 
     private var permissions: UserPermissions { currentUser.permissions }
-    private var canManageDocuments: Bool { permissions.can(.manageDocuments) }
+    private var canManageDocuments: Bool {
+        // Azioni visibili a tutti chi entra in Documenti; delete/regen chiedono sempre PIN MASTER.
+        true
+    }
 
     private var syncedPdfCount: Int {
         scopedItems.filter { $0.localFilePresent && $0.format == .pdf && $0.isSyncedToICloud }.count
@@ -213,7 +216,15 @@ struct DocumentsView: View {
             reloadDocumentsData()
         }
         .onReceive(NotificationCenter.default.publisher(for: .kitchenProcessRecordsDidChange)) { _ in
-            reloadDocumentsData()
+            dataStore.reload(
+                context: modelContext,
+                restaurantId: appState.activeRestaurantId,
+                force: true
+            )
+            // Aggiorna anche cartelle/metriche se i PDF sono stati riscritti dall'archivio.
+            if let rid = appState.activeRestaurantId {
+                dataStore.reloadSynchronously(context: modelContext, restaurantId: rid)
+            }
         }
         .onChange(of: appState.activeRestaurantId) { _, _ in
             vm.selectedFolderId = nil
@@ -532,9 +543,10 @@ struct DocumentsView: View {
                 document: doc,
                 restaurant: restaurant,
                 user: currentUser,
-                reason: "Rigenerazione manuale autorizzata dal MASTER",
+                reason: "Rigenerazione manuale allo stato attuale (correzione errori/mancanze)",
                 in: modelContext
             )
+            HapticManager.shared.notification(.success)
             reloadDocumentsData()
         } catch {
             regenerateError = error.localizedDescription

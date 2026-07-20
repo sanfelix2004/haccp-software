@@ -11,6 +11,7 @@ import Combine
 final class DocumentsDataStore: ObservableObject {
     @Published private(set) var folders: [DocumentFolder] = []
     @Published private(set) var items: [DocumentItem] = []
+    @Published private(set) var recentMovements: [HACCPDocumentMovement] = []
     @Published private(set) var isLoading = false
 
     private var loadTask: Task<Void, Never>?
@@ -25,7 +26,7 @@ final class DocumentsDataStore: ObservableObject {
         }
         guard reloadPolicy.shouldReload(
             restaurantId: restaurantId,
-            hasData: !folders.isEmpty || !items.isEmpty,
+            hasData: !folders.isEmpty || !items.isEmpty || !recentMovements.isEmpty,
             force: force
         ) else { return }
 
@@ -47,6 +48,7 @@ final class DocumentsDataStore: ObservableObject {
 
             folders = data.folders
             items = data.items
+            recentMovements = data.recentMovements
             reloadPolicy.markLoaded(restaurantId: restaurantId)
         }
     }
@@ -57,6 +59,7 @@ final class DocumentsDataStore: ObservableObject {
         let data = DocumentsDataFetcher.fetchArchive(context: context, restaurantId: restaurantId)
         folders = data.folders
         items = data.items
+        recentMovements = data.recentMovements
         isLoading = false
         reloadPolicy.markLoaded(restaurantId: restaurantId)
     }
@@ -65,6 +68,7 @@ final class DocumentsDataStore: ObservableObject {
         reloadPolicy.invalidate()
         folders = []
         items = []
+        recentMovements = []
         isLoading = false
     }
 

@@ -42,7 +42,7 @@ struct SettingsView: View {
                                     .font(.system(size: 44, weight: .black, design: .rounded))
                                     .foregroundColor(ThemeManager.shared.colorTextPrimary)
                                 
-                                Text("Profilo, preferenze e notifiche per tutti. Il resto solo per il responsabile.")
+                                Text("Profilo e preferenze per tutti. Sezioni riservate: apri e autorizza con PIN MASTER.")
                                     .font(.title3)
                                     .foregroundColor(ThemeManager.shared.colorTextSecondary)
                             }

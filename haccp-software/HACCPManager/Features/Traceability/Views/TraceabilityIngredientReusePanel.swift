@@ -11,6 +11,10 @@ struct TraceabilityIngredientReusePanel: View {
     let sessionLottoIds: Set<UUID>
     /// IDs dei record già selezionati per il riutilizzo
     @Binding var selectedRecordIds: Set<UUID>
+    /// Record da tenere sempre visibili (es. alimento in associazione).
+    var pinnedRecordIds: Set<UUID> = []
+    /// Apri già espanso (es. «Usa solo dal magazzino»).
+    var startExpanded: Bool = false
 
     @Environment(\.modelContext) private var modelContext
     @Environment(\.theme) private var theme
@@ -18,6 +22,7 @@ struct TraceabilityIngredientReusePanel: View {
     @State private var availableRecords: [TraceabilityRecord] = []
     @State private var searchText = ""
     @State private var isExpanded = false
+    @State private var didApplyInitialExpand = false
 
     private var filteredRecords: [TraceabilityRecord] {
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
@@ -136,7 +141,13 @@ struct TraceabilityIngredientReusePanel: View {
                 .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
-        .task { loadAvailableRecords() }
+        .task {
+            if startExpanded, !didApplyInitialExpand {
+                isExpanded = true
+                didApplyInitialExpand = true
+            }
+            loadAvailableRecords()
+        }
     }
 
     // MARK: - Actions
@@ -154,29 +165,26 @@ struct TraceabilityIngredientReusePanel: View {
         let rid = restaurantId
         let now = Date()
 
-        // Fetch tutti i TraceabilityRecord del ristorante
         let descriptor = FetchDescriptor<TraceabilityRecord>(
             predicate: #Predicate<TraceabilityRecord> {
-                $0.restaurantId == rid
+                $0.restaurantId == rid && !$0.isArchived
             },
-            sortBy: [SortDescriptor(\.productName)]
+            sortBy: [SortDescriptor(\.receivedAt, order: .reverse)]
         )
         let all = (try? modelContext.fetch(descriptor)) ?? []
-
-        // Fetch LottoFoto della sessione corrente (per escludere duplicati)
-        // Questi sono già nella sessione come nuovi scatti
         let sessionLottoFotoIds = sessionLottoIds
 
+        // Magazzino = lotti ancora Disponibili (anche se già associati a un piatto).
+        // Fuori: chiusi (usato/scartato), scaduti, produzioni finite, foto già in sessione.
         availableRecords = all.filter { record in
-            // Solo alimenti in ingresso, non le produzioni
-            guard record.isIncomingIngredientLot else { return false }
+            if pinnedRecordIds.contains(record.id) { return true }
 
-            // Escludi scaduti e respinti
-            guard record.productStatus != .expired,
-                  record.productStatus != .rejected else { return false }
-            // Escludi prodotti già scaduti per data effettiva
-            if let expiry = record.expiryDate, expiry < now { return false }
-            // Escludi quelli già nella sessione corrente via LottoFoto
+            guard record.isIncomingIngredientLot else { return false }
+            guard record.productStatus == .available else { return false }
+            if let expiry = record.expiryDate,
+               ProductExpiryEvaluator.isExpiredByDate(expiry, now: now) {
+                return false
+            }
             if let lottoId = record.lottoFotoId, sessionLottoFotoIds.contains(lottoId) {
                 return false
             }

@@ -18,6 +18,7 @@ struct ProductionCatalogManagementView: View {
     @State private var selectedProduction: Production?
     @State private var showAddSheet = false
     @State private var showEditSheet = false
+    @State private var showAddCategorySheet = false
     @State private var productionToEdit: Production?
     @State private var newProductionName = ""
     @State private var newProductionCategoryId: UUID?
@@ -86,6 +87,17 @@ struct ProductionCatalogManagementView: View {
                 productionEditor(title: "Modifica piatto", production: production)
             }
         }
+        .sheet(isPresented: $showAddCategorySheet) {
+            CatalogAddCategorySheet(
+                title: "Categoria piatti",
+                placeholder: "Es. Bevande, Finger food…",
+                existingNames: scopedCategories.map(\.name),
+                onSave: { name in
+                    saveNewCategory(name)
+                },
+                onCancel: { showAddCategorySheet = false }
+            )
+        }
         .masterAuthCover(coordinator: masterAuth, master: session.masterUser)
         .alert("Catalogo piatti", isPresented: Binding(get: { errorMessage != nil }, set: { _ in errorMessage = nil })) {
             Button("OK", role: .cancel) {}
@@ -148,6 +160,9 @@ struct ProductionCatalogManagementView: View {
         HStack(spacing: 10) {
             PrimaryButton(title: "Aggiungi piatto", icon: "plus.circle.fill") {
                 requestAdd()
+            }
+            SecondaryButton(title: "Categoria", icon: "folder.badge.plus") {
+                requestAddCategory()
             }
             if let selected = selectedProduction {
                 SecondaryButton(title: "Modifica", icon: "pencil") {
@@ -285,6 +300,31 @@ struct ProductionCatalogManagementView: View {
             let categoryName = scopedCategories.first(where: { $0.id == newProductionCategoryId })?.name ?? ""
             shelfLifeDays = ProductionShelfLifeDefaults.days(forName: "", categoryName: categoryName)
             showAddSheet = true
+        }
+    }
+
+    private func requestAddCategory() {
+        masterAuth.request(permission: .manageProductionLibrary, permissions: permissions) {
+            showAddCategorySheet = true
+        }
+    }
+
+    private func saveNewCategory(_ name: String) {
+        guard let rid = appState.activeRestaurantId else { return }
+        do {
+            let category = try service.addCategory(
+                name: name,
+                restaurantId: rid,
+                existingCategories: scopedCategories,
+                modelContext: modelContext
+            )
+            showAddCategorySheet = false
+            selectedCategoryId = category.id
+            dataStore.reload(context: modelContext, restaurantId: rid, force: true)
+            HapticManager.shared.notification(.success)
+        } catch {
+            errorMessage = error.localizedDescription
+            showAddCategorySheet = false
         }
     }
 

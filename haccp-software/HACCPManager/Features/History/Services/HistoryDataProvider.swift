@@ -5,6 +5,11 @@ private enum HistoryFormat {
         value?.formatted(date: .abbreviated, time: .omitted) ?? "—"
     }
 
+    /// `nil` se la data non c’è — per omettere il campo Scadenza in UI.
+    static func dateIfPresent(_ value: Date?) -> String? {
+        value.map { $0.formatted(date: .abbreviated, time: .omitted) }
+    }
+
     static func dateTime(_ value: Date?) -> String {
         value?.formatted(date: .abbreviated, time: .shortened) ?? "—"
     }
@@ -56,15 +61,19 @@ struct GoodsReceivingHistoryProvider: HistoryDataProvider {
             let photoCount = allPhotos.count
             var details: [HistoryEntryDetail] = [
                 .init(label: "Fornitore", value: HistoryFormat.text(receipt.supplierNameSnapshot)),
-                .init(label: "Lotto", value: HistoryFormat.text(receipt.lotNumber)),
-                .init(label: "Scadenza", value: HistoryFormat.date(receipt.expiryDate)),
+                .init(label: "Lotto", value: HistoryFormat.text(receipt.lotNumber))
+            ]
+            if let expiry = HistoryFormat.dateIfPresent(receipt.expiryDate) {
+                details.append(.init(label: "Scadenza", value: expiry))
+            }
+            details.append(contentsOf: [
                 .init(label: "Temperatura", value: HistoryFormat.temp(receipt.temperatureValue)),
                 .init(label: "Range", value: "\(HistoryFormat.temp(receipt.minAllowed)) / \(HistoryFormat.temp(receipt.maxAllowed))"),
                 .init(label: "Esito temperatura", value: receipt.temperatureStatus.label),
                 .init(label: "Checklist HACCP", value: checklist.isEmpty ? "—" : checklist),
                 .init(label: "Note", value: HistoryFormat.text(receipt.notes)),
                 .init(label: "Azione correttiva", value: HistoryFormat.text(receipt.correctiveAction))
-            ]
+            ])
             if photoCount > 0 {
                 details.insert(
                     .init(label: "Foto documentate", value: photoCount == 1 ? "1 foto" : "\(photoCount) foto"),
@@ -96,8 +105,10 @@ struct TraceabilityHistoryProvider {
         lottoFotos: [LottoFoto],
         batches: [ProduzioneBatch] = [],
         images: [ProductImage] = [],
+        logs: [TraceabilityLog] = [],
         restaurantId: UUID
     ) -> [HistoryEntry] {
+        // Include anche lotti chiusi (.used): in Storia deve restare visibile Terminato/Scartato/Usato.
         let scopedRecords = records.filter {
             $0.restaurantId == restaurantId
                 && !$0.isArchived
@@ -105,14 +116,14 @@ struct TraceabilityHistoryProvider {
                     TraceabilityRecordSupport.isHubRecord($0)
                     || $0.isNonCompliant
                     || $0.productStatus == .rejected
+                    || $0.productStatus == .used
+                    || $0.productStatus == .expired
                 )
         }
         let recordsById = HACCPSafeParse.dictionary(scopedRecords.map { ($0.id, $0) })
         let activeBatches = batches.filter { $0.restaurantId == restaurantId && !$0.isArchived }
         let batchesById = HACCPSafeParse.dictionary(activeBatches.map { ($0.id, $0) })
-        let imagesByRecord = Dictionary(
-            grouping: images.filter { !$0.isArchived && $0.receivedItemId != nil }
-        ) { $0.receivedItemId! }
+        let logsByRecord = Dictionary(grouping: logs, by: \.receivedItemId)
 
         let hub = TraceabilityHubContext(
             records: scopedRecords,
@@ -120,6 +131,7 @@ struct TraceabilityHistoryProvider {
             links: links,
             lottoProductionLinks: lottoProductionLinks,
             batches: activeBatches,
+            logs: logs,
             images: images,
             lottoFotos: lottoFotos,
             productionOutputRecords: records.filter {
@@ -130,32 +142,60 @@ struct TraceabilityHistoryProvider {
         let productionGroups = hub.productionArchiveGroups(
             records: scopedRecords,
             filter: .all,
-            searchText: ""
+            searchText: "",
+            includeClosedProductions: true
         )
 
         let linkedRecordIds = Set(productionGroups.flatMap { $0.ingredients.compactMap(\.recordId) })
         let productionEntries = productionGroups.compactMap { group -> HistoryEntry? in
-            let ingredients = group.ingredients.compactMap { item -> HistoryTraceabilityIngredient? in
+            let batch = group.batchId.flatMap { batchesById[$0] }
+            let internalLot = group.batchCode ?? batch?.batchCode
+            // Stato dal record output (fonte di verità), non solo dal gruppo hub.
+            let outputRecord: TraceabilityRecord? = {
+                if let batchId = group.batchId ?? batch?.id {
+                    return records.first {
+                        $0.produzioneBatchId == batchId && $0.isProductionBatchOutput && !$0.isArchived
+                    }
+                }
+                return nil
+            }()
+            let dishPresentation: TraceabilityLotOperationalStatus.Presentation? = {
+                if let outputRecord {
+                    return TraceabilityLotOperationalStatus.present(
+                        record: outputRecord,
+                        logs: logsByRecord[outputRecord.id] ?? []
+                    )
+                }
+                if let label = group.statusLabel, !label.isEmpty {
+                    return .init(label: label, badgeStyle: group.statusBadgeStyle)
+                }
+                return .init(label: "Disponibile", badgeStyle: .conforme)
+            }()
+            let dishStatus = dishPresentation?.label
+            let dishClosed = outputRecord.map { TraceabilityRecordSupport.isOperationallyClosed($0) } ?? false
+            let ingredients: [HistoryTraceabilityIngredient] = group.ingredients.compactMap { item -> HistoryTraceabilityIngredient? in
                 guard let recordId = item.recordId,
                       let record = recordsById[recordId] else { return nil }
+                let photo = item.photoData
+                    ?? ProductImageBytesResolver.resolve(
+                        record: record,
+                        images: images,
+                        lottoFotos: lottoFotos
+                    )
                 return HistoryTraceabilityIngredient(
                     id: recordId,
                     name: item.name,
                     lotCode: item.lotCode,
                     supplier: item.supplier,
-                    expiryText: HistoryFormat.date(record.expiryDate),
+                    expiryText: HistoryFormat.dateIfPresent(record.expiryDate) ?? "",
                     operatorName: record.createdByNameSnapshot,
                     hasCriticality: ingredientHasCriticality(record),
-                    photoData: ProductImageBytesResolver.resolve(
-                        record: record,
-                        images: images,
-                        lottoFotos: lottoFotos
-                    )
+                    photoData: photo,
+                    // Produzione chiusa: niente badge «Disponibile» sugli ingredienti.
+                    statusLabel: dishClosed ? nil : item.statusLabel
                 )
             }
-            guard !ingredients.isEmpty else { return nil }
-            let batch = group.batchId.flatMap { batchesById[$0] }
-            let internalLot = group.batchCode ?? batch?.batchCode
+            guard !ingredients.isEmpty || group.photoData != nil || group.batchId != nil else { return nil }
             var details: [HistoryEntryDetail] = [
                 .init(label: "Piatto", value: group.productionName),
                 .init(label: "Ingredienti", value: TraceabilityCountLabel.alimenti(ingredients.count)),
@@ -164,7 +204,10 @@ struct TraceabilityHistoryProvider {
             if let internalLot, !internalLot.isEmpty {
                 details.insert(.init(label: "Lotto produzione", value: internalLot), at: 1)
             }
-            // Solo foto del piatto finito — mai etichette/ingredienti collegati al batch.
+            if let dishStatus, !dishStatus.isEmpty {
+                details.insert(.init(label: "Stato produzione", value: dishStatus), at: 1)
+            }
+            // Foto del piatto finito + fallback dal record output.
             let batchId = group.batchId ?? batch?.id
             let productionPhoto = group.photoData
                 ?? batchId.flatMap {
@@ -174,13 +217,22 @@ struct TraceabilityHistoryProvider {
                         records: records
                     )
                 }
+                ?? outputRecord.flatMap {
+                    ProductImageBytesResolver.resolve(
+                        record: $0,
+                        images: images,
+                        lottoFotos: lottoFotos
+                    )
+                }
             return HistoryEntry(
                 id: "trace-prod-\(group.id)",
                 module: .traceability,
                 title: group.productionName,
                 category: "Produzione registrata",
-                status: TraceabilityCountLabel.alimenti(ingredients.count),
-                operatorName: ingredients.first?.operatorName ?? "—",
+                status: dishStatus ?? "Disponibile",
+                operatorName: ingredients.first?.operatorName
+                    ?? outputRecord?.createdByNameSnapshot
+                    ?? "—",
                 date: group.registeredAt,
                 details: details,
                 hasCriticality: ingredients.contains(where: \.hasCriticality),
@@ -192,8 +244,29 @@ struct TraceabilityHistoryProvider {
             )
         }
 
+        // Batch / lotti già coperti dalla card «Produzione registrata» → niente seconda riga.
+        let coveredBatchIds = Set(productionEntries.compactMap(\.produzioneBatchId))
+        let coveredInternalLots = Set(
+            productionEntries.compactMap {
+                $0.internalLotCode?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            }.filter { !$0.isEmpty }
+        )
+
         let standaloneEntries = scopedRecords
-            .filter { !linkedRecordIds.contains($0.id) }
+            .filter { record in
+                guard !linkedRecordIds.contains(record.id), !record.canBeWithdrawn else { return false }
+                // Piatto finito già mostrato nella card produzione (stesso batch / lotto interno).
+                if record.isProductionBatchOutput {
+                    if let batchId = record.produzioneBatchId, coveredBatchIds.contains(batchId) {
+                        return false
+                    }
+                    let lot = record.lotCode.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                    if !lot.isEmpty, coveredInternalLots.contains(lot) {
+                        return false
+                    }
+                }
+                return true
+            }
             .map { record in
                 let sourceLabel: String
                 switch record.source {
@@ -214,11 +287,19 @@ struct TraceabilityHistoryProvider {
                         label: isProductionLot ? "Lotto produzione" : "Lotto fornitore",
                         value: HistoryFormat.text(record.lotCode.nilIfEmpty)
                     ),
-                    .init(label: "Fornitore", value: HistoryFormat.text(record.supplier)),
-                    .init(label: "Scadenza", value: HistoryFormat.date(record.expiryDate)),
-                    .init(label: "Stato", value: record.productStatus.label),
-                    .init(label: "Origine", value: sourceLabel)
+                    .init(label: "Fornitore", value: HistoryFormat.text(record.supplier))
                 ]
+                if let expiry = HistoryFormat.dateIfPresent(record.expiryDate) {
+                    details.append(.init(label: "Scadenza", value: expiry))
+                }
+                let statusLabel = TraceabilityLotOperationalStatus.present(
+                    record: record,
+                    logs: logsByRecord[record.id] ?? []
+                ).label
+                details.append(contentsOf: [
+                    .init(label: "Stato", value: statusLabel),
+                    .init(label: "Origine", value: sourceLabel)
+                ])
                 if !photos.isEmpty {
                     details.insert(
                         .init(
@@ -233,7 +314,7 @@ struct TraceabilityHistoryProvider {
                     module: .traceability,
                     title: record.productName,
                     category: sourceLabel,
-                    status: record.productStatus.label,
+                    status: statusLabel,
                     operatorName: record.createdByNameSnapshot,
                     date: record.receivedAt,
                     details: details,
@@ -259,11 +340,15 @@ struct TraceabilityHistoryProvider {
             records.filter { $0.restaurantId == restaurantId }.map { ($0.id, $0) }
         )
         let productionsById = HACCPSafeParse.dictionary(productions.map { ($0.id, $0) })
-        let meaningful: Set<TraceabilityActionType> = [.withdrawn, .nonCompliance, .rejected]
+        // Chiusure (.withdrawn / .archivedFromExpiryControl) → solo ExpiryHistoryProvider.
+        let meaningful: Set<TraceabilityActionType> = [
+            .nonCompliance, .rejected
+        ]
 
         return logs.compactMap { log -> HistoryEntry? in
             guard meaningful.contains(log.actionType),
-                  let record = recordsById[log.receivedItemId] else { return nil }
+                  let record = recordsById[log.receivedItemId],
+                  !record.isArchived else { return nil }
             let actionLabel = logActionLabel(log.actionType, detail: log.detail)
             let productionName = log.linkedProductionDisplayName(productionsById: productionsById)
             var details: [HistoryEntryDetail] = [
@@ -309,7 +394,8 @@ struct TraceabilityHistoryProvider {
         case .rejected: return "Respinto"
         case .linkedToProduction: return "Associato a produzione"
         case .removedFromHistory: return "Rimossa dallo storico (Documenti ok)"
-        case .archivedFromExpiryControl: return "Archiviata da scadenze"
+        case .archivedFromExpiryControl: return "Chiusura lotto"
+        case .updated: return "Dati modificati"
         default: return action.rawValue
         }
     }
@@ -498,102 +584,57 @@ struct OilControlHistoryProvider: HistoryDataProvider {
 }
 
 struct ExpiryHistoryProvider {
+    /// Lotti scaduti ancora da chiudere (Terminato / Scartato / Scaduto). Le chiusure complete restano anche in hub Storia e Documenti.
     func entries(
         traceabilityRecords: [TraceabilityRecord],
-        traceabilityLogs: [TraceabilityLog],
         lottoFotos: [LottoFoto],
         restaurantId: UUID
     ) -> [HistoryEntry] {
         let lottoById = Dictionary(lottoFotos.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-        let logsByRecord = Dictionary(grouping: traceabilityLogs, by: \.receivedItemId)
 
-        return traceabilityRecords
-            .filter { $0.restaurantId == restaurantId && TraceabilityRecordSupport.isExpiryMonitored($0) }
-            .compactMap { record -> HistoryEntry? in
-                let sourceLabel = TraceabilityRecordSupport.expirySourceLabel(for: record, lottoById: lottoById)
-                let logs = (logsByRecord[record.id] ?? []).sorted { $0.timestamp > $1.timestamp }
+        return traceabilityRecords.compactMap { record -> HistoryEntry? in
+            guard record.restaurantId == restaurantId,
+                  !record.isArchived,
+                  TraceabilityRecordSupport.isExpiryMonitored(record),
+                  record.productStatus == .expired,
+                  record.canBeWithdrawn else { return nil }
 
-                let isProductionLot = record.produzioneBatchId != nil
-                    || InternalLotCodeGenerator.isInternalLotCode(record.lotCode)
-                let lotLabel = isProductionLot ? "Lotto produzione" : "Lotto fornitore"
+            let sourceLabel = TraceabilityRecordSupport.expirySourceLabel(for: record, lottoById: lottoById)
+            let isProductionLot = record.produzioneBatchId != nil
+                || InternalLotCodeGenerator.isInternalLotCode(record.lotCode)
+            let lotLabel = isProductionLot ? "Lotto produzione" : "Lotto fornitore"
 
-                if record.productStatus == .expired, record.canBeWithdrawn {
-                    return HistoryEntry(
-                        id: "expiry-pending-\(record.id)",
-                        module: .expiryControl,
-                        title: record.productName,
-                        category: TraceabilityRecordSupport.expiryTypeLabel(for: record),
-                        status: "Da chiudere",
-                        operatorName: record.createdByNameSnapshot,
-                        date: record.expiryDate ?? record.receivedAt,
-                        details: [
-                            .init(label: "Tipo", value: TraceabilityRecordSupport.expiryTypeLabel(for: record)),
-                            .init(label: "Prodotto", value: record.productName),
-                            .init(label: lotLabel, value: record.lotCode),
-                            .init(label: "Fornitore", value: HistoryFormat.text(record.supplier)),
-                            .init(label: "Scadenza", value: HistoryFormat.date(record.expiryDate)),
-                            .init(label: "Provenienza scadenza", value: HistoryFormat.text(sourceLabel)),
-                            .init(label: "Azione richiesta", value: "Indica se il lotto è stato usato o scartato"),
-                            .init(label: "Operatore", value: record.createdByNameSnapshot)
-                        ],
-                        hasCriticality: true,
-                        pendingTraceabilityRecordId: record.id,
-                        internalLotCode: isProductionLot ? record.lotCode.nilIfEmpty : nil,
-                        produzioneBatchId: record.produzioneBatchId
-                    )
-                }
-
-                guard record.productStatus == .used
-                    || record.productStatus == .rejected
-                    || record.isNonCompliant else { return nil }
-
-                let closureStatus = closureStatusLabel(for: record, logs: logs)
-                let anchorDate = logs.first(where: { $0.actionType == .withdrawn })?.timestamp
-                    ?? record.expiryDate
-                    ?? record.receivedAt
-
-                return HistoryEntry(
-                    id: "expiry-\(record.id)",
-                    module: .expiryControl,
-                    title: record.productName,
-                    category: TraceabilityRecordSupport.expiryTypeLabel(for: record),
-                    status: closureStatus,
-                    operatorName: logs.first(where: { $0.actionType == .withdrawn })?.operatorName
-                        ?? record.createdByNameSnapshot,
-                    date: anchorDate,
-                    details: [
+            return HistoryEntry(
+                id: "expiry-pending-\(record.id)",
+                module: .traceability,
+                title: record.productName,
+                category: TraceabilityRecordSupport.expiryTypeLabel(for: record),
+                status: "Da chiudere",
+                operatorName: record.createdByNameSnapshot,
+                date: record.expiryDate ?? record.receivedAt,
+                details: {
+                    var details: [HistoryEntryDetail] = [
                         .init(label: "Tipo", value: TraceabilityRecordSupport.expiryTypeLabel(for: record)),
                         .init(label: "Prodotto", value: record.productName),
                         .init(label: lotLabel, value: record.lotCode),
-                        .init(label: "Fornitore", value: HistoryFormat.text(record.supplier)),
-                        .init(label: "Scadenza", value: HistoryFormat.date(record.expiryDate)),
-                        .init(label: "Provenienza scadenza", value: HistoryFormat.text(sourceLabel)),
-                        .init(label: "Esito operatore", value: closureStatus),
-                        .init(label: "Operatore", value: logs.first(where: { $0.actionType == .withdrawn })?.operatorName
-                            ?? record.createdByNameSnapshot)
-                    ],
-                    hasCriticality: record.productStatus == .rejected || record.isNonCompliant,
-                    internalLotCode: isProductionLot ? record.lotCode.nilIfEmpty : nil,
-                    produzioneBatchId: record.produzioneBatchId
-                )
-            }
-    }
-
-    private func closureStatusLabel(for record: TraceabilityRecord, logs: [TraceabilityLog]) -> String {
-        if let withdrawn = logs.first(where: { $0.actionType == .withdrawn }) {
-            let detail = withdrawn.detail?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            if detail.localizedCaseInsensitiveContains("scartat") {
-                return TraceabilityWithdrawalKind.scartato.label
-            }
-            if detail.localizedCaseInsensitiveContains("usat")
-                || detail.localizedCaseInsensitiveContains("ritirat") {
-                return TraceabilityWithdrawalKind.ritirato.label
-            }
-            return detail.isEmpty ? TraceabilityWithdrawalKind.ritirato.label : detail
+                        .init(label: "Fornitore", value: HistoryFormat.text(record.supplier))
+                    ]
+                    if let expiry = HistoryFormat.dateIfPresent(record.expiryDate) {
+                        details.append(.init(label: "Scadenza", value: expiry))
+                        details.append(.init(label: "Provenienza scadenza", value: HistoryFormat.text(sourceLabel)))
+                    }
+                    details.append(contentsOf: [
+                        .init(label: "Azione richiesta", value: "Indica Terminato, Scartato o Scaduto"),
+                        .init(label: "Operatore", value: record.createdByNameSnapshot)
+                    ])
+                    return details
+                }(),
+                hasCriticality: true,
+                pendingTraceabilityRecordId: record.id,
+                internalLotCode: isProductionLot ? record.lotCode.nilIfEmpty : nil,
+                produzioneBatchId: record.produzioneBatchId
+            )
         }
-        if record.productStatus == .rejected { return "Respinto" }
-        if record.isNonCompliant { return "Non conforme" }
-        return ProductStatus.used.label
     }
 }
 
