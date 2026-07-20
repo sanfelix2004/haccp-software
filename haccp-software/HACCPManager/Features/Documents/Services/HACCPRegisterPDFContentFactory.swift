@@ -212,6 +212,7 @@ enum HACCPRegisterPDFContentFactory {
         traceability: [TraceabilityRecord],
         productions: [Production],
         links: [TraceabilityLink],
+        logs: [TraceabilityLog] = [],
         operational: HACCPOperationalSourceData,
         df: DateFormatter
     ) -> [HACCPPDFSection] {
@@ -226,6 +227,7 @@ enum HACCPRegisterPDFContentFactory {
             lottoLinks: operational.lottoProductionLinks,
             lottoFotos: operational.lottoFotos,
             productImages: operational.productImages,
+            logs: logs,
             df: df
         )
 
@@ -904,6 +906,7 @@ enum HACCPRegisterPDFContentFactory {
                 traceability: traceability,
                 productions: productions,
                 links: links,
+                logs: logs,
                 operational: operational,
                 df: df()
             ))
@@ -1060,6 +1063,16 @@ enum HACCPRegisterPDFContentFactory {
             sections.append(contentsOf: sectionsRicezione(interval: interval, receipts: receipts, images: images))
             flags.insert(.ricezioneMerci)
         case .tracciabilita:
+            // Documento principale: produzioni + ingredienti + movimenti.
+            sections.append(contentsOf: sectionsRegistroProduzioniTracciabilita(
+                interval: interval,
+                traceability: traceability,
+                productions: productions,
+                links: links,
+                logs: logs,
+                operational: operational,
+                df: formatter
+            ))
             sections.append(contentsOf: sectionsTracciabilita(
                 interval: interval,
                 records: traceability,
@@ -1173,6 +1186,7 @@ enum HACCPRegisterPDFContentFactory {
             let rows = ExpiryControlRegister.productionRows(
                 in: interval,
                 records: traceability,
+                logs: logs,
                 df: formatter
             )
             let table: [[PDFTableCell]] = rows.map {
@@ -1181,11 +1195,12 @@ enum HACCPRegisterPDFContentFactory {
             }
             let body = table.isEmpty ? [emptyOperationalRow(columns: 7)] : table
             sections.append(.dataTable(
-                title: "Registro controllo scadenze e quantità",
-                subtitle: "Monitoraggio scadenze e quantità — alimenti in ingresso e produzioni finite",
+                title: "Registro controllo scadenze",
+                subtitle: "Stato operativo: disponibile, terminato, usato, scaduto, scartato",
                 headers: ["Prodotto", "Lotto", "Scadenza", "Stato", "Tipo", "Registrato il", "Operatore"],
                 rows: body
             ))
+            flags.insert(.tracciabilita)
         default:
             break
         }

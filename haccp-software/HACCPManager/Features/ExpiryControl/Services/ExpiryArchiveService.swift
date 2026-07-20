@@ -33,12 +33,12 @@ struct ExpiryArchiveService {
         let trimmedNote = note?.trimmingCharacters(in: .whitespacesAndNewlines)
         let notePart = (trimmedNote?.isEmpty == false) ? " — \(trimmedNote!)" : ""
         let scope = record.isProductionBatchOutput ? "Produzione" : "Ingrediente"
-        let detail = "\(scope) \(kind.logDetail.lowercased())\(notePart)"
+        // Es. «Produzione Terminato» — parsato in Storia come badge «Terminato».
+        let detail = "\(scope) \(kind.logDetail)\(notePart)"
 
         // Non soft-hide: deve restare visibile in Storia. Solo stato operativo USED.
-        if record.productStatus == .available || record.productStatus == .expired {
-            record.productStatus = .used
-        }
+        record.productStatus = .used
+        record.operationalClosedAt = Date()
 
         if let trimmedNote, !trimmedNote.isEmpty {
             let stamp = Date().formatted(date: .abbreviated, time: .shortened)
@@ -70,10 +70,12 @@ struct ExpiryArchiveService {
         // Non soft-archiviare il batch: la chiusura resta in Storia; nascondere è solo MASTER.
 
         try modelContext.save()
+        KitchenProcessNotifications.postRecordsDidChange()
         HACCPArchiveSyncCoordinator.requestDeferredSync(
             restaurantId: record.restaurantId,
             user: user,
-            modelContext: modelContext
+            modelContext: modelContext,
+            delaySeconds: 1
         )
     }
 }

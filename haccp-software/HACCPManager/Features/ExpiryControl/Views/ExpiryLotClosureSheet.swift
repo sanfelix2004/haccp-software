@@ -161,7 +161,7 @@ struct ExpiryLotClosureSheet: View {
                 } header: {
                     Text(kind.requiresNote ? "Motivazione (obbligatoria)" : "Nota (opzionale)")
                 } footer: {
-                    Text("Esce dalle scadenze attive. La traccia resta in Documenti e nello storico operativo.")
+                    Text("Esce subito da Tracciabilità. Resta 1 giorno in Controllo scadenze, poi solo in Storia e Documenti.")
                         .font(theme.typography.caption2)
                 }
             }

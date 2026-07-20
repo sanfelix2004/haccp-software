@@ -179,6 +179,8 @@ final class DocumentGenerationService {
                 item.title = DocumentArchiveLayout.moduleFolderTitle(module)
             }
         }
+        // Rigenerazione MASTER: sempre dai dati live attuali (anche mese chiuso),
+        // per correggere errori, stati mancanti o PDF obsoleti.
         try writePDF(
             existing: item,
             restaurant: restaurant,
@@ -187,6 +189,8 @@ final class DocumentGenerationService {
             type: effectiveDocType(item),
             module: module,
             interval: interval,
+            isOpenPeriod: true,
+            forceLiveRebuild: true,
             receipts: receipts.filter { $0.restaurantId == rid },
             traceability: traceabilityRecords.filter { $0.restaurantId == rid },
             images: traceabilityImages,
@@ -548,6 +552,7 @@ final class DocumentGenerationService {
         module: DocumentModule,
         interval: DateInterval,
         isOpenPeriod: Bool = false,
+        forceLiveRebuild: Bool = false,
         receipts: [GoodsReceipt],
         traceability: [TraceabilityRecord],
         images: [ProductImage],
@@ -575,7 +580,23 @@ final class DocumentGenerationService {
         )
         let dir = try LocalDocumentStorageService.shared.stablePDFDirectory(restaurantId: restaurant.id)
         let targetURL = dir.appendingPathComponent(officialName)
-        if let resolved = DocumentPDFPathResolver.resolveAndHeal(existing),
+
+        // Rigenerazione forzata: rimuovi il PDF precedente così il file riflette sempre lo stato attuale.
+        if forceLiveRebuild {
+            if fm.fileExists(atPath: targetURL.path) {
+                try? fm.removeItem(at: targetURL)
+            }
+            if !existing.filePath.isEmpty,
+               existing.filePath != targetURL.path,
+               fm.fileExists(atPath: existing.filePath) {
+                try? fm.removeItem(atPath: existing.filePath)
+            }
+            existing.filePath = targetURL.path
+            existing.fileName = officialName
+            existing.localFilePresent = false
+            existing.checksumSHA256 = ""
+            existing.isSyncedToICloud = false
+        } else if let resolved = DocumentPDFPathResolver.resolveAndHeal(existing),
            resolved.path != targetURL.path {
             // Sposta / riallinea al path ufficiale senza perdere il file.
             if resolved.path != existing.filePath {
@@ -1144,6 +1165,9 @@ final class DocumentGenerationService {
         case .ricezioneMerci:
             return !GoodsReceiptRegister.rows(in: interval, receipts: receipts, df: df).isEmpty
         case .tracciabilita:
+            if operational.produzioneBatches.contains(where: { interval.contains($0.producedAt) }) {
+                return true
+            }
             return !TraceabilityRegister.rows(
                 in: interval,
                 records: traceability,
@@ -1180,14 +1204,13 @@ final class DocumentGenerationService {
         case .etichetteProduzione:
             return !ProductionLabelsRegister.rows(in: interval, labels: operational.productionLabels, df: df).isEmpty
         case .controlloScadenze:
-            return !ExpiryControlRegister.productionRows(in: interval, records: traceability, df: df).isEmpty
+            return !ExpiryControlRegister.productionRows(
+                in: interval,
+                records: traceability,
+                df: df
+            ).isEmpty
         case .combinatoTracciabilitaProduzione:
-            if operational.produzioneBatches.contains(where: { interval.contains($0.producedAt) }) {
-                return true
-            }
-            return traceability.contains {
-                TraceabilityRecordSupport.isHubRecord($0) && interval.contains($0.receivedAt)
-            }
+            return false
         default:
             return false
         }

@@ -105,22 +105,25 @@ struct TraceabilityHistoryProvider {
         lottoFotos: [LottoFoto],
         batches: [ProduzioneBatch] = [],
         images: [ProductImage] = [],
+        logs: [TraceabilityLog] = [],
         restaurantId: UUID
     ) -> [HistoryEntry] {
-        // Lotti chiusi (.used) → solo card chiusura (ExpiryHistoryProvider), non hub duplicato.
+        // Include anche lotti chiusi (.used): in Storia deve restare visibile Terminato/Scartato/Usato.
         let scopedRecords = records.filter {
             $0.restaurantId == restaurantId
                 && !$0.isArchived
-                && $0.productStatus != .used
                 && (
                     TraceabilityRecordSupport.isHubRecord($0)
                     || $0.isNonCompliant
                     || $0.productStatus == .rejected
+                    || $0.productStatus == .used
+                    || $0.productStatus == .expired
                 )
         }
         let recordsById = HACCPSafeParse.dictionary(scopedRecords.map { ($0.id, $0) })
         let activeBatches = batches.filter { $0.restaurantId == restaurantId && !$0.isArchived }
         let batchesById = HACCPSafeParse.dictionary(activeBatches.map { ($0.id, $0) })
+        let logsByRecord = Dictionary(grouping: logs, by: \.receivedItemId)
 
         let hub = TraceabilityHubContext(
             records: scopedRecords,
@@ -128,6 +131,7 @@ struct TraceabilityHistoryProvider {
             links: links,
             lottoProductionLinks: lottoProductionLinks,
             batches: activeBatches,
+            logs: logs,
             images: images,
             lottoFotos: lottoFotos,
             productionOutputRecords: records.filter {
@@ -138,12 +142,38 @@ struct TraceabilityHistoryProvider {
         let productionGroups = hub.productionArchiveGroups(
             records: scopedRecords,
             filter: .all,
-            searchText: ""
+            searchText: "",
+            includeClosedProductions: true
         )
 
         let linkedRecordIds = Set(productionGroups.flatMap { $0.ingredients.compactMap(\.recordId) })
         let productionEntries = productionGroups.compactMap { group -> HistoryEntry? in
-            let ingredients = group.ingredients.compactMap { item -> HistoryTraceabilityIngredient? in
+            let batch = group.batchId.flatMap { batchesById[$0] }
+            let internalLot = group.batchCode ?? batch?.batchCode
+            // Stato dal record output (fonte di verità), non solo dal gruppo hub.
+            let outputRecord: TraceabilityRecord? = {
+                if let batchId = group.batchId ?? batch?.id {
+                    return records.first {
+                        $0.produzioneBatchId == batchId && $0.isProductionBatchOutput && !$0.isArchived
+                    }
+                }
+                return nil
+            }()
+            let dishPresentation: TraceabilityLotOperationalStatus.Presentation? = {
+                if let outputRecord {
+                    return TraceabilityLotOperationalStatus.present(
+                        record: outputRecord,
+                        logs: logsByRecord[outputRecord.id] ?? []
+                    )
+                }
+                if let label = group.statusLabel, !label.isEmpty {
+                    return .init(label: label, badgeStyle: group.statusBadgeStyle)
+                }
+                return .init(label: "Disponibile", badgeStyle: .conforme)
+            }()
+            let dishStatus = dishPresentation?.label
+            let dishClosed = outputRecord.map { TraceabilityRecordSupport.isOperationallyClosed($0) } ?? false
+            let ingredients: [HistoryTraceabilityIngredient] = group.ingredients.compactMap { item -> HistoryTraceabilityIngredient? in
                 guard let recordId = item.recordId,
                       let record = recordsById[recordId] else { return nil }
                 let photo = item.photoData
@@ -161,13 +191,11 @@ struct TraceabilityHistoryProvider {
                     operatorName: record.createdByNameSnapshot,
                     hasCriticality: ingredientHasCriticality(record),
                     photoData: photo,
-                    statusLabel: item.statusLabel
+                    // Produzione chiusa: niente badge «Disponibile» sugli ingredienti.
+                    statusLabel: dishClosed ? nil : item.statusLabel
                 )
             }
             guard !ingredients.isEmpty || group.photoData != nil || group.batchId != nil else { return nil }
-            let batch = group.batchId.flatMap { batchesById[$0] }
-            let internalLot = group.batchCode ?? batch?.batchCode
-            let dishStatus = group.statusLabel
             var details: [HistoryEntryDetail] = [
                 .init(label: "Piatto", value: group.productionName),
                 .init(label: "Ingredienti", value: TraceabilityCountLabel.alimenti(ingredients.count)),
@@ -189,29 +217,22 @@ struct TraceabilityHistoryProvider {
                         records: records
                     )
                 }
-                ?? batchId.flatMap { bid in
-                    records.first { $0.produzioneBatchId == bid && $0.isProductionBatchOutput }
-                        .flatMap {
-                            ProductImageBytesResolver.resolve(
-                                record: $0,
-                                images: images,
-                                lottoFotos: lottoFotos
-                            )
-                        }
+                ?? outputRecord.flatMap {
+                    ProductImageBytesResolver.resolve(
+                        record: $0,
+                        images: images,
+                        lottoFotos: lottoFotos
+                    )
                 }
-            let statusLine: String = {
-                if let dishStatus, !dishStatus.isEmpty {
-                    return "\(dishStatus) · \(TraceabilityCountLabel.alimenti(ingredients.count))"
-                }
-                return TraceabilityCountLabel.alimenti(ingredients.count)
-            }()
             return HistoryEntry(
                 id: "trace-prod-\(group.id)",
                 module: .traceability,
                 title: group.productionName,
                 category: "Produzione registrata",
-                status: statusLine,
-                operatorName: ingredients.first?.operatorName ?? "—",
+                status: dishStatus ?? "Disponibile",
+                operatorName: ingredients.first?.operatorName
+                    ?? outputRecord?.createdByNameSnapshot
+                    ?? "—",
                 date: group.registeredAt,
                 details: details,
                 hasCriticality: ingredients.contains(where: \.hasCriticality),
@@ -223,8 +244,29 @@ struct TraceabilityHistoryProvider {
             )
         }
 
+        // Batch / lotti già coperti dalla card «Produzione registrata» → niente seconda riga.
+        let coveredBatchIds = Set(productionEntries.compactMap(\.produzioneBatchId))
+        let coveredInternalLots = Set(
+            productionEntries.compactMap {
+                $0.internalLotCode?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            }.filter { !$0.isEmpty }
+        )
+
         let standaloneEntries = scopedRecords
-            .filter { !linkedRecordIds.contains($0.id) && !$0.canBeWithdrawn }
+            .filter { record in
+                guard !linkedRecordIds.contains(record.id), !record.canBeWithdrawn else { return false }
+                // Piatto finito già mostrato nella card produzione (stesso batch / lotto interno).
+                if record.isProductionBatchOutput {
+                    if let batchId = record.produzioneBatchId, coveredBatchIds.contains(batchId) {
+                        return false
+                    }
+                    let lot = record.lotCode.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                    if !lot.isEmpty, coveredInternalLots.contains(lot) {
+                        return false
+                    }
+                }
+                return true
+            }
             .map { record in
                 let sourceLabel: String
                 switch record.source {
@@ -250,8 +292,12 @@ struct TraceabilityHistoryProvider {
                 if let expiry = HistoryFormat.dateIfPresent(record.expiryDate) {
                     details.append(.init(label: "Scadenza", value: expiry))
                 }
+                let statusLabel = TraceabilityLotOperationalStatus.present(
+                    record: record,
+                    logs: logsByRecord[record.id] ?? []
+                ).label
                 details.append(contentsOf: [
-                    .init(label: "Stato", value: record.productStatus.label),
+                    .init(label: "Stato", value: statusLabel),
                     .init(label: "Origine", value: sourceLabel)
                 ])
                 if !photos.isEmpty {
@@ -268,7 +314,7 @@ struct TraceabilityHistoryProvider {
                     module: .traceability,
                     title: record.productName,
                     category: sourceLabel,
-                    status: record.productStatus.label,
+                    status: statusLabel,
                     operatorName: record.createdByNameSnapshot,
                     date: record.receivedAt,
                     details: details,
@@ -538,7 +584,7 @@ struct OilControlHistoryProvider: HistoryDataProvider {
 }
 
 struct ExpiryHistoryProvider {
-    /// Solo lotti ancora da chiudere. Chiusure/movimenti restano in Documenti, non in Storia.
+    /// Lotti scaduti ancora da chiudere (Terminato / Scartato / Scaduto). Le chiusure complete restano anche in hub Storia e Documenti.
     func entries(
         traceabilityRecords: [TraceabilityRecord],
         lottoFotos: [LottoFoto],

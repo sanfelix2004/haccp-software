@@ -230,7 +230,7 @@ struct TraceabilityRecordHistoryDetailSheet: View {
                     infoRow(label: "Motivazione", value: note, icon: "text.alignleft")
                 }
             } else {
-                Text("Ancora in uso — non terminato / scartato / scaduto.")
+                Text("Ancora disponibile — non terminato / scartato / scaduto.")
                     .font(theme.typography.caption)
                     .foregroundStyle(theme.colorTextSecondary)
             }
@@ -270,13 +270,19 @@ struct TraceabilityRecordHistoryDetailSheet: View {
                     
                     if let closure = lifecycle?.closure {
                         HACCPBadge(
-                            title: "Chiuso · \(closure.outcome)",
-                            style: .neutral,
+                            title: closure.outcome,
+                            style: TraceabilityLotOperationalStatus.style(forOutcome: closure.outcome),
+                            showIcon: false
+                        )
+                    } else if let status = lifecycle?.statusLabel {
+                        HACCPBadge(
+                            title: status,
+                            style: TraceabilityLotOperationalStatus.style(forOutcome: status),
                             showIcon: false
                         )
                     } else {
                         HACCPBadge(
-                            title: record.isNonCompliant ? "Non Conforme" : record.productStatus.label,
+                            title: record.isNonCompliant ? "Non Conforme" : "Disponibile",
                             style: record.isNonCompliant ? .nonConforme : .conforme,
                             showIcon: false
                         )

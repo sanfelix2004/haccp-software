@@ -135,9 +135,18 @@ struct HistoryRecordCard: View, Equatable {
                                 .font(theme.typography.caption.weight(.bold).monospaced())
                                 .foregroundStyle(theme.colorPrimary)
                         }
-                        Text(entry.status)
-                            .font(theme.typography.caption)
-                            .foregroundStyle(theme.colorTextSecondary)
+                        HStack(spacing: 8) {
+                            HACCPBadge(
+                                title: entry.status,
+                                style: entry.statusBadgeStyle,
+                                showIcon: false
+                            )
+                            if let ingredients = entry.traceabilityIngredients {
+                                Text(TraceabilityCountLabel.alimenti(ingredients.count))
+                                    .font(theme.typography.caption)
+                                    .foregroundStyle(theme.colorTextSecondary)
+                            }
+                        }
                     }
 
                     Spacer(minLength: 0)

@@ -268,13 +268,13 @@ struct ExpiryControlView: View {
     private var incomingActive: [TraceabilityRecord] {
         scoped
             .filter(TraceabilityRecordSupport.isIncomingExpiryRecord)
-            .filter { $0.productStatus != .used && $0.productStatus != .rejected }
+            .filter { !TraceabilityRecordSupport.isOperationallyClosed($0) }
     }
 
     private var productionActive: [TraceabilityRecord] {
         scoped
             .filter(TraceabilityRecordSupport.isProductionExpiryRecord)
-            .filter { $0.productStatus != .used && $0.productStatus != .rejected }
+            .filter { !TraceabilityRecordSupport.isOperationallyClosed($0) }
     }
 
     private func alertCount(in records: [TraceabilityRecord]) -> Int {
@@ -283,9 +283,9 @@ struct ExpiryControlView: View {
         }.count
     }
 
-    /// Solo prodotti attivi in Controllo scadenze (chiusure → Storia / Documenti).
+    /// Aperti (non ancora chiusi). I chiusi in grace restano in lista ma fuori dalle stats operative.
     private var activeRecords: [TraceabilityRecord] {
-        tabScoped.filter { $0.productStatus != .used && $0.productStatus != .rejected }
+        tabScoped.filter { !TraceabilityRecordSupport.isOperationallyClosed($0) }
     }
 
     private var stats: ExpiryStats {
@@ -322,9 +322,11 @@ struct ExpiryControlView: View {
         filteredRecords.filter(\.canBeWithdrawn)
     }
 
-    /// Ancora in validità (non scaduti) nella lista filtrata.
+    /// Ancora in validità (non scaduti / non chiusi) nella lista filtrata.
     private var keepRecords: [TraceabilityRecord] {
-        filteredRecords.filter { !$0.canBeWithdrawn && $0.productStatus != .used && $0.productStatus != .rejected }
+        filteredRecords.filter {
+            !$0.canBeWithdrawn && !TraceabilityRecordSupport.isOperationallyClosed($0)
+        }
     }
 
     private var filteredRecords: [TraceabilityRecord] {

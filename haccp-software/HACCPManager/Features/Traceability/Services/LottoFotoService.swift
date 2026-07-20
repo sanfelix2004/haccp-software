@@ -383,6 +383,7 @@ struct LottoFotoService {
                         quantityUsed: 1,
                         operatorName: user.name,
                         links: traceabilityLinks,
+                        produzioneBatchId: batch.id,
                         modelContext: modelContext
                     )
                     traceabilityLinks = (try? modelContext.fetch(FetchDescriptor<TraceabilityLink>())) ?? traceabilityLinks
@@ -406,6 +407,7 @@ struct LottoFotoService {
                     quantityUsed: 1,
                     operatorName: user.name,
                     links: traceabilityLinks,
+                    produzioneBatchId: batch.id,
                     modelContext: modelContext
                 )
                 traceabilityLinks = (try? modelContext.fetch(FetchDescriptor<TraceabilityLink>())) ?? traceabilityLinks
@@ -468,13 +470,15 @@ struct LottoFotoService {
         }
 
         try modelContext.save()
-        
+        KitchenProcessNotifications.postRecordsDidChange()
+
         let restaurantId = lottoFotos.first?.restaurantId ?? reusedRecords.first?.restaurantId
         if let restaurantId {
             HACCPArchiveSyncCoordinator.requestDeferredSync(
                 restaurantId: restaurantId,
                 user: user,
-                modelContext: modelContext
+                modelContext: modelContext,
+                delaySeconds: 1
             )
         }
     }

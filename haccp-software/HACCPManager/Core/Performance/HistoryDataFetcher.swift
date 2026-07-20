@@ -50,6 +50,11 @@ enum HistoryDataFetcher {
         let knownIds = Set(data.traceabilityRecords.map(\.id))
         data.traceabilityRecords += expiredPending.filter { !knownIds.contains($0.id) }
 
+        // Produzioni / lotti chiusi di recente (Terminato/Scartato) devono sempre entrare in Storia.
+        let closedRecent = fetchRecentlyClosedRecords(context, restaurantId: rid, limit: min(limit, 200))
+        let knownAfterExpired = Set(data.traceabilityRecords.map(\.id))
+        data.traceabilityRecords += closedRecent.filter { !knownAfterExpired.contains($0.id) }
+
         let recordIds = Set(data.traceabilityRecords.map(\.id))
         data.traceabilityLinks = fetchTraceabilityLinks(
             context,
@@ -121,6 +126,27 @@ enum HistoryDataFetcher {
                     && $0.productStatusRaw == expired
             },
             sortBy: [SortDescriptor(\TraceabilityRecord.expiryDate, order: .forward)]
+        )
+        descriptor.fetchLimit = limit
+        return (try? context.fetch(descriptor)) ?? []
+    }
+
+    /// Chiusure operative recenti (usato / scartato) per Storia — anche se il createdAt è fuori dal limite.
+    private static func fetchRecentlyClosedRecords(
+        _ context: ModelContext,
+        restaurantId: UUID,
+        limit: Int
+    ) -> [TraceabilityRecord] {
+        let rid = restaurantId
+        let used = ProductStatus.used.rawValue
+        let rejected = ProductStatus.rejected.rawValue
+        var descriptor = FetchDescriptor<TraceabilityRecord>(
+            predicate: #Predicate {
+                $0.restaurantId == rid
+                    && !$0.isArchived
+                    && ($0.productStatusRaw == used || $0.productStatusRaw == rejected)
+            },
+            sortBy: [SortDescriptor(\TraceabilityRecord.operationalClosedAt, order: .reverse)]
         )
         descriptor.fetchLimit = limit
         return (try? context.fetch(descriptor)) ?? []

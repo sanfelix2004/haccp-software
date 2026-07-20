@@ -44,11 +44,13 @@ enum ProductionTraceabilityRegister {
         lottoLinks: [LottoFotoProductionLink],
         lottoFotos: [LottoFoto],
         productImages: [ProductImage] = [],
+        logs: [TraceabilityLog] = [],
         df: DateFormatter
     ) -> [MasterBlock] {
         let traceById = Dictionary(uniqueKeysWithValues: traceability.map { ($0.id, $0) })
         let productionById = Dictionary(uniqueKeysWithValues: productions.map { ($0.id, $0) })
         let lottoById = Dictionary(uniqueKeysWithValues: lottoFotos.map { ($0.id, $0) })
+        let logsByRecord = Dictionary(grouping: logs, by: \.receivedItemId)
         let dayFormatter = dayOnlyFormatter()
 
         let scopedBatches = batches
@@ -68,23 +70,26 @@ enum ProductionTraceabilityRegister {
                 traceById: traceById,
                 lottoLinks: lottoLinks
             )
-            let production = productionById[batch.productionId]
             let dishExpiryDate = resolvedProductionExpiry(
                 batch: batch,
-                label: label,
-                outputRecord: outputRecord,
-                production: production,
-                ingredientRecords: ingredientRecords
+                outputRecord: outputRecord
             )
             let dateLine = "\(dayFormatter.string(from: batch.producedAt)) · \(batch.createdByNameSnapshot)"
             let dishName = batch.productionNameSnapshot
+            let dishStatus = outputRecord.map {
+                TraceabilityLotOperationalStatus.present(
+                    record: $0,
+                    logs: logsByRecord[$0.id] ?? []
+                ).label
+            }
             let ingredients = ingredientRecords.map {
                 ingredientLine(
                     from: $0,
                     productionExpiry: dishExpiryDate,
                     lottoById: lottoById,
                     productImages: productImages,
-                    lottoFotos: lottoFotos
+                    lottoFotos: lottoFotos,
+                    logs: logsByRecord[$0.id] ?? []
                 )
             }
             let dishPhoto = ProductImageBytesResolver.productionDishPhoto(
@@ -99,7 +104,8 @@ enum ProductionTraceabilityRegister {
                 dateOperator: dateLine,
                 productionDetail: productionFoodLine(
                     name: dishName,
-                    expiry: dishExpiryDate
+                    expiry: dishExpiryDate,
+                    status: dishStatus
                 ),
                 lotDetail: internalLot,
                 expiryDetail: productionExpiryCell(dishExpiryDate),
@@ -124,21 +130,15 @@ enum ProductionTraceabilityRegister {
                   let production = productionById[first.productionId] else { continue }
 
             let orphanRecords = groupLinks.compactMap { traceById[$0.receivedItemId] }
-            let dishExpiryDate = resolvedProductionExpiry(
-                batch: nil,
-                label: nil,
-                outputRecord: nil,
-                production: production,
-                ingredientRecords: orphanRecords,
-                referenceDate: groupLinks.map(\.createdAt).max() ?? first.createdAt
-            )
+            let dishExpiryDate: Date? = nil
             let ingredients = orphanRecords.map {
                 ingredientLine(
                     from: $0,
                     productionExpiry: dishExpiryDate,
                     lottoById: lottoById,
                     productImages: productImages,
-                    lottoFotos: lottoFotos
+                    lottoFotos: lottoFotos,
+                    logs: logsByRecord[$0.id] ?? []
                 )
             }
 
@@ -147,7 +147,8 @@ enum ProductionTraceabilityRegister {
                 dateOperator: "\(dayFormatter.string(from: anchor)) · \(production.name)",
                 productionDetail: productionFoodLine(
                     name: production.name,
-                    expiry: dishExpiryDate
+                    expiry: dishExpiryDate,
+                    status: nil
                 ),
                 lotDetail: HACCPRegisterCopy.notAvailable,
                 expiryDetail: productionExpiryCell(dishExpiryDate),
@@ -195,18 +196,51 @@ enum ProductionTraceabilityRegister {
     ) -> [TraceabilityRecord] {
         var records: [TraceabilityRecord] = []
         var seenRecordIds = Set<UUID>()
+        let recordByLottoId: [UUID: TraceabilityRecord] = {
+            var map: [UUID: TraceabilityRecord] = [:]
+            for record in traceById.values {
+                if let lottoId = record.lottoFotoId {
+                    map[lottoId] = record
+                }
+            }
+            return map
+        }()
 
-        let productionLinks = links.filter { $0.productionId == batch.productionId }
+        func append(_ record: TraceabilityRecord) {
+            guard record.isIncomingIngredientLot, seenRecordIds.insert(record.id).inserted else { return }
+            records.append(record)
+        }
 
+        let batchLottoLinks = lottoLinks.filter { $0.produzioneBatchId == batch.id }
+        for lottoLink in batchLottoLinks {
+            if let record = recordByLottoId[lottoLink.lottoFotoId] {
+                append(record)
+            }
+        }
+
+        let scopedLinks = links.filter {
+            $0.productionId == batch.productionId && $0.produzioneBatchId == batch.id
+        }
+        for link in scopedLinks {
+            if let record = traceById[link.receivedItemId] {
+                append(record)
+            }
+        }
+
+        if !batchLottoLinks.isEmpty || !scopedLinks.isEmpty {
+            return records.sorted {
+                $0.productName.localizedCaseInsensitiveCompare($1.productName) == .orderedAscending
+            }
+        }
+
+        let productionLinks = links.filter {
+            $0.productionId == batch.productionId && $0.produzioneBatchId == nil
+        }
         for link in productionLinks {
-            guard let record = traceById[link.receivedItemId],
-                  record.isIncomingIngredientLot,
-                  seenRecordIds.insert(record.id).inserted else { continue }
-
+            guard let record = traceById[link.receivedItemId] else { continue }
             let recordBatchId = batchId(for: record, productionId: batch.productionId, lottoLinks: lottoLinks)
             guard recordBatchId == batch.id else { continue }
-
-            records.append(record)
+            append(record)
         }
 
         return records.sorted {
@@ -214,38 +248,15 @@ enum ProductionTraceabilityRegister {
         }
     }
 
+    /// Solo scadenze effettivamente registrate — mai stimate da durata catalogo / etichetta.
     private static func resolvedProductionExpiry(
         batch: ProduzioneBatch?,
-        label: ProductionLabelRecord?,
-        outputRecord: TraceabilityRecord?,
-        production: Production?,
-        ingredientRecords: [TraceabilityRecord],
-        referenceDate: Date? = nil
+        outputRecord: TraceabilityRecord?
     ) -> Date? {
         if let batch, let internalExpiry = batch.internalExpiryAt {
             return internalExpiry
         }
-        if let labelExpiry = label?.expiryDate {
-            return labelExpiry
-        }
-        if let outputExpiry = outputRecord?.expiryDate {
-            return outputExpiry
-        }
-        guard let production else { return nil }
-
-        let anchor = referenceDate ?? batch?.producedAt ?? Date()
-        let shelfDays = ScadenzaCalculator.shelfLifeDays(for: production)
-        if ingredientRecords.isEmpty {
-            return ScadenzaCalculator.productionExpiryDate(
-                fromDays: shelfDays,
-                referenceDate: anchor
-            )
-        }
-        return ScadenzaCalculator.productionExpiryConstraint(
-            shelfLifeDays: shelfDays,
-            ingredientRecords: ingredientRecords,
-            referenceDate: anchor
-        ).suggestedExpiryDate
+        return outputRecord?.expiryDate
     }
 
     private static func resolvedIngredientExpiry(
@@ -275,7 +286,8 @@ enum ProductionTraceabilityRegister {
         productionExpiry: Date?,
         lottoById: [UUID: LottoFoto],
         productImages: [ProductImage],
-        lottoFotos: [LottoFoto]
+        lottoFotos: [LottoFoto],
+        logs: [TraceabilityLog]
     ) -> IngredientLine {
         let dayFormatter = dayOnlyFormatter()
         let dateOperator = [
@@ -285,11 +297,13 @@ enum ProductionTraceabilityRegister {
 
         let lot = record.lotCode.trimmingCharacters(in: .whitespacesAndNewlines)
         let ingredientExpiry = resolvedIngredientExpiry(for: record, lottoById: lottoById)
+        let status = TraceabilityLotOperationalStatus.present(record: record, logs: logs).label
 
         var foodLines = [
             ingredientFoodLine(
                 name: record.productName,
-                expiry: ingredientExpiry
+                expiry: ingredientExpiry,
+                status: status
             )
         ]
         let supplier = record.supplier.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -307,27 +321,50 @@ enum ProductionTraceabilityRegister {
             dateOperator: dateOperator,
             foodDetail: foodLines.joined(separator: "\n"),
             lot: lot.isEmpty ? HACCPRegisterCopy.notAvailable : lot,
-            expiryDetail: productionExpiryCell(productionExpiry),
+            expiryDetail: ingredientExpiryCell(
+                ingredientExpiry: ingredientExpiry,
+                productionExpiry: productionExpiry
+            ),
             recordId: record.id,
             photoData: photo
         )
     }
 
-    private static func productionFoodLine(name: String, expiry: Date?) -> String {
-        let label = "Produzione: \(name)"
-        guard let expiryText = formattedExpiryText(expiry) else { return label }
-        return "\(label) (\(expiryText))"
+    private static func productionFoodLine(name: String, expiry: Date?, status: String?) -> String {
+        var label = "Produzione: \(name)"
+        if let expiryText = formattedExpiryText(expiry) {
+            label = "\(label) (\(expiryText))"
+        }
+        if let status, !status.isEmpty {
+            label = "\(label)\nStato: \(status)"
+        }
+        return label
     }
 
-    private static func ingredientFoodLine(name: String, expiry: Date?) -> String {
-        let label = "Alimento: \(name)"
-        guard let expiryText = formattedExpiryText(expiry) else { return label }
-        return "\(label) (\(expiryText))"
+    private static func ingredientFoodLine(name: String, expiry: Date?, status: String?) -> String {
+        var label = "Alimento: \(name)"
+        if let expiryText = formattedExpiryText(expiry) {
+            label = "\(label) (\(expiryText))"
+        }
+        if let status, !status.isEmpty {
+            label = "\(label)\nStato: \(status)"
+        }
+        return label
     }
 
     private static func productionExpiryCell(_ productionExpiry: Date?) -> String {
         guard let expiryText = formattedExpiryText(productionExpiry) else { return "" }
         return "Produzione: \(expiryText)"
+    }
+
+    private static func ingredientExpiryCell(
+        ingredientExpiry: Date?,
+        productionExpiry: Date?
+    ) -> String {
+        if let text = formattedExpiryText(ingredientExpiry) {
+            return text
+        }
+        return productionExpiryCell(productionExpiry)
     }
 
     private static func formattedExpiryText(_ date: Date?) -> String? {

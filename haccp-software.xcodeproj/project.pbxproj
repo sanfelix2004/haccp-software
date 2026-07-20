@@ -13,12 +13,18 @@
 
 /* Begin PBXFileReference section */
 		7CB6B65E2F9F6DB800F52708 /* HACCP Manager.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "HACCP Manager.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		B21C0A012F9F700100F52708 /* HACCPManagerTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = HACCPManagerTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		7CB6B6602F9F6DB800F52708 /* haccp-software */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = "haccp-software";
+			sourceTree = "<group>";
+		};
+		B21C0A032F9F700100F52708 /* HACCPManagerTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = HACCPManagerTests;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -33,6 +39,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		B21C0A052F9F700100F52708 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -40,6 +53,7 @@
 			isa = PBXGroup;
 			children = (
 				7CB6B6602F9F6DB800F52708 /* haccp-software */,
+				B21C0A032F9F700100F52708 /* HACCPManagerTests */,
 				7CB6B65F2F9F6DB800F52708 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -48,6 +62,7 @@
 			isa = PBXGroup;
 			children = (
 				7CB6B65E2F9F6DB800F52708 /* HACCP Manager.app */,
+				B21C0A012F9F700100F52708 /* HACCPManagerTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -80,7 +95,48 @@
 			productReference = 7CB6B65E2F9F6DB800F52708 /* HACCP Manager.app */;
 			productType = "com.apple.product-type.application";
 		};
+		B21C0A022F9F700100F52708 /* HACCPManagerTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = B21C0A0B2F9F700100F52708 /* Build configuration list for PBXNativeTarget "HACCPManagerTests" */;
+			buildPhases = (
+				B21C0A042F9F700100F52708 /* Sources */,
+				B21C0A052F9F700100F52708 /* Frameworks */,
+				B21C0A062F9F700100F52708 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				B21C0A072F9F700100F52708 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				B21C0A032F9F700100F52708 /* HACCPManagerTests */,
+			);
+			name = HACCPManagerTests;
+			packageProductDependencies = (
+			);
+			productName = HACCPManagerTests;
+			productReference = B21C0A012F9F700100F52708 /* HACCPManagerTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 /* End PBXNativeTarget section */
+
+/* Begin PBXContainerItemProxy section */
+		B21C0A082F9F700100F52708 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 7CB6B6562F9F6DB800F52708 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 7CB6B65D2F9F6DB800F52708;
+			remoteInfo = "HACCP Manager";
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXTargetDependency section */
+		B21C0A072F9F700100F52708 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 7CB6B65D2F9F6DB800F52708 /* HACCP Manager */;
+			targetProxy = B21C0A082F9F700100F52708 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin PBXProject section */
 		7CB6B6562F9F6DB800F52708 /* Project object */ = {
@@ -95,6 +151,10 @@
 				TargetAttributes = {
 					7CB6B65D2F9F6DB800F52708 = {
 						CreatedOnToolsVersion = 26.4.1;
+					};
+					B21C0A022F9F700100F52708 = {
+						CreatedOnToolsVersion = 26.4.1;
+						TestTargetID = 7CB6B65D2F9F6DB800F52708;
 					};
 				};
 			};
@@ -116,12 +176,20 @@
 			projectRoot = "";
 			targets = (
 				7CB6B65D2F9F6DB800F52708 /* HACCP Manager */,
+				B21C0A022F9F700100F52708 /* HACCPManagerTests */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
 		7CB6B65C2F9F6DB800F52708 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		B21C0A062F9F700100F52708 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -152,6 +220,13 @@
 
 /* Begin PBXSourcesBuildPhase section */
 		7CB6B65A2F9F6DB800F52708 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		B21C0A042F9F700100F52708 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -356,6 +431,48 @@
 			};
 			name = Release;
 		};
+		B21C0A092F9F700100F52708 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 226P9XW6RJ;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.haccpmanager.app.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/HACCP Manager.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/HACCP Manager";
+			};
+			name = Debug;
+		};
+		B21C0A0A2F9F700100F52708 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 226P9XW6RJ;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.haccpmanager.app.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/HACCP Manager.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/HACCP Manager";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -373,6 +490,15 @@
 			buildConfigurations = (
 				7CB6B66A2F9F6DB900F52708 /* Debug */,
 				7CB6B66B2F9F6DB900F52708 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		B21C0A0B2F9F700100F52708 /* Build configuration list for PBXNativeTarget "HACCPManagerTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				B21C0A092F9F700100F52708 /* Debug */,
+				B21C0A0A2F9F700100F52708 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

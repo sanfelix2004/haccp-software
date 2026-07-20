@@ -94,10 +94,13 @@ struct ProduzioneBatchService {
         )
 
         try modelContext.save()
+        KitchenProcessNotifications.postRecordsDidChange()
+        // Aggiorna subito PDF del mese corrente (Storia è già live; Documenti entro ~1s).
         HACCPArchiveSyncCoordinator.requestDeferredSync(
             restaurantId: batch.restaurantId,
             user: user,
-            modelContext: modelContext
+            modelContext: modelContext,
+            delaySeconds: 1
         )
     }
 

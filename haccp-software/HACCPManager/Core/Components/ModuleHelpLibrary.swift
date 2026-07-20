@@ -230,8 +230,8 @@ enum ModuleHelpLibrary {
         ],
         notes: [
             "La soglia «in scadenza» si regola in Impostazioni → Parametri HACCP.",
-            "Le chiusure (terminato / scaduto / scartato) restano nei Documenti (PDF Tracciabilità e produzioni).",
-            "Per dettagli completi del lotto usa Tracciabilità."
+            "Dopo Terminato / Scaduto / Scartato: esce subito da Tracciabilità, resta 1 giorno qui, poi solo in Storia e Documenti.",
+            "Le chiusure restano per sempre nei Documenti (PDF) e nella Storia."
         ]
     )
 

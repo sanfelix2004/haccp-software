@@ -15,7 +15,7 @@ enum ProductStatus: String, Codable, CaseIterable {
     var label: String {
         switch self {
         case .available: return "Disponibile"
-        case .used: return "Chiuso"
+        case .used: return "Usato"
         case .expired: return "Scaduto"
         case .rejected: return "Respinto"
         }
@@ -72,6 +72,8 @@ final class TraceabilityRecord {
     var nonComplianceResolvedByNameSnapshot: String?
     var isArchived: Bool = false
     var archivedAt: Date?
+    /// Chiusura operativa (terminato / scaduto / scartato / usato): per grace period in Controllo scadenze.
+    var operationalClosedAt: Date?
     /// Collegamento al lotto fotografato (flusso camera).
     var lottoFotoId: UUID?
 

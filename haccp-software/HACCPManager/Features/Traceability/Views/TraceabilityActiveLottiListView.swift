@@ -102,10 +102,6 @@ struct TraceabilityActiveLottiListView: View {
 
     private func loadRecords() {
         let rid = restaurantId
-        let now = Date()
-        
-        // Calcola la data di 5 giorni fa per includere i lotti scaduti da pochi giorni
-        let limitDate = Calendar.current.date(byAdding: .day, value: -5, to: now) ?? now
 
         let descriptor = FetchDescriptor<TraceabilityRecord>(
             predicate: #Predicate<TraceabilityRecord> {
@@ -116,18 +112,7 @@ struct TraceabilityActiveLottiListView: View {
         let all = (try? modelContext.fetch(descriptor)) ?? []
 
         records = all.filter { record in
-            // Deve essere un ingrediente in ingresso (non una produzione)
-            guard record.isIncomingIngredientLot else { return false }
-            // Esclude i lotti archiviati/usati completamente o respinti
-            guard record.productStatus != .used,
-                  record.productStatus != .rejected else { return false }
-            
-            // Verifica la scadenza: non scaduto OPPURE scaduto da al massimo 5 giorni
-            if let expiry = record.expiryDate {
-                return expiry >= limitDate
-            }
-            // Se non ha scadenza, consideralo valido
-            return true
+            TraceabilityRecordSupport.isHubRecord(record)
         }
 
         let images = ((try? modelContext.fetch(FetchDescriptor<ProductImage>())) ?? [])

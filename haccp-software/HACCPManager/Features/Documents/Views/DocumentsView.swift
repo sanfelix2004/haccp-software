@@ -221,6 +221,10 @@ struct DocumentsView: View {
                 restaurantId: appState.activeRestaurantId,
                 force: true
             )
+            // Aggiorna anche cartelle/metriche se i PDF sono stati riscritti dall'archivio.
+            if let rid = appState.activeRestaurantId {
+                dataStore.reloadSynchronously(context: modelContext, restaurantId: rid)
+            }
         }
         .onChange(of: appState.activeRestaurantId) { _, _ in
             vm.selectedFolderId = nil
@@ -539,9 +543,10 @@ struct DocumentsView: View {
                 document: doc,
                 restaurant: restaurant,
                 user: currentUser,
-                reason: "Rigenerazione manuale autorizzata dal MASTER",
+                reason: "Rigenerazione manuale allo stato attuale (correzione errori/mancanze)",
                 in: modelContext
             )
+            HapticManager.shared.notification(.success)
             reloadDocumentsData()
         } catch {
             regenerateError = error.localizedDescription

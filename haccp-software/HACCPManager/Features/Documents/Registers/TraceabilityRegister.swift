@@ -76,10 +76,7 @@ enum TraceabilityRegister {
                     }
                     return parts.joined(separator: " · ")
                 }
-                if t.productStatus == .used || t.productStatus == .rejected {
-                    return t.productStatus.label
-                }
-                return "In uso"
+                return "—"
             }()
 
             var ncParts: [String] = []
@@ -109,6 +106,8 @@ enum TraceabilityRegister {
                 )
             }()
 
+            let operational = TraceabilityLotOperationalStatus.present(record: t, logs: recordLogs)
+
             return Row(
                 product: t.productName,
                 lot: life.lotValue,
@@ -117,7 +116,7 @@ enum TraceabilityRegister {
                 createdBy: life.createdBy,
                 associations: associationsLabel,
                 closure: closureLabel,
-                status: life.statusLabel,
+                status: operational.label,
                 nonCompliance: ncParts.isEmpty ? "—" : ncParts.joined(separator: "; "),
                 operatorName: life.createdBy,
                 photoData: photo

@@ -75,6 +75,7 @@ struct TraceabilityService {
         record.nonComplianceNote = trimmedNote
         record.nonComplianceCorrectiveAction = trimmedAction
         record.productStatus = .rejected
+        record.operationalClosedAt = Date()
         modelContext.insert(
             TraceabilityLog(
                 receivedItemId: record.id,
@@ -131,6 +132,7 @@ struct TraceabilityService {
 
         let auditDetail = trimmedNote.isEmpty ? kind.label : "\(kind.label) — \(trimmedNote)"
         record.productStatus = .used
+        record.operationalClosedAt = Date()
         modelContext.insert(
             TraceabilityLog(
                 receivedItemId: record.id,
@@ -362,6 +364,7 @@ struct TraceabilityService {
     }
 
     /// Elimina un gruppo produzione dall'hub per errore: cancellazione definitiva.
+    /// Solo il lotto (batch) della card, non tutte le produzioni dello stesso piatto.
     func deleteProductionGroupFromHub(
         group: TraceabilityProductionArchiveGroup,
         batches: [ProduzioneBatch],
@@ -371,23 +374,33 @@ struct TraceabilityService {
     ) throws {
         try unlinkIncomingLots(
             productionId: group.productionId,
-            batchId: nil,
+            batchId: group.batchId,
             modelContext: modelContext,
             writeAuditLogs: false
         )
 
-        let relatedBatches = batches.filter { $0.productionId == group.productionId }
-        if !relatedBatches.isEmpty {
-            for batch in relatedBatches {
+        if let batchId = group.batchId,
+           let batch = batches.first(where: { $0.id == batchId }) {
+            try hardPurgeProductionBatch(
+                batch: batch,
+                unlinkIncoming: false,
+                user: user,
+                modelContext: modelContext
+            )
+        } else if let finishedRecord {
+            try hardPurgeTraceabilityRecord(record: finishedRecord, user: user, modelContext: modelContext)
+        } else {
+            // Legacy senza batchId: solo l'ultimo batch del piatto.
+            if let latest = batches
+                .filter({ $0.productionId == group.productionId })
+                .max(by: { $0.producedAt < $1.producedAt }) {
                 try hardPurgeProductionBatch(
-                    batch: batch,
+                    batch: latest,
                     unlinkIncoming: false,
                     user: user,
                     modelContext: modelContext
                 )
             }
-        } else if let finishedRecord {
-            try hardPurgeTraceabilityRecord(record: finishedRecord, user: user, modelContext: modelContext)
         }
 
         KitchenProcessNotifications.postRecordsDidChange()
@@ -579,7 +592,7 @@ struct TraceabilityService {
         for link in lottoLinks where link.productionId == productionId {
             let batchMatches: Bool = {
                 guard let batchId else { return true }
-                return link.produzioneBatchId == batchId || link.produzioneBatchId == nil
+                return link.produzioneBatchId == batchId
             }()
             guard batchMatches else { continue }
             modelContext.delete(link)
@@ -587,7 +600,19 @@ struct TraceabilityService {
         }
 
         let remainingLottoLinks = lottoLinks.filter { !deletedLottoLinkIds.contains($0.id) }
-        let linksToRemove = allLinks.filter { $0.productionId == productionId }
+        let linksToRemove = allLinks.filter { link in
+            guard link.productionId == productionId else { return false }
+            guard let batchId else { return true }
+            if let linkBatch = link.produzioneBatchId {
+                return linkBatch == batchId
+            }
+            // Legacy senza batch: rimuovi solo se il lotto foto era collegato a questo batch.
+            guard let record = recordsById[link.receivedItemId],
+                  let lottoId = record.lottoFotoId else { return false }
+            return lottoLinks.contains {
+                deletedLottoLinkIds.contains($0.id) && $0.lottoFotoId == lottoId
+            }
+        }
         let affectedRecordIds = Set(linksToRemove.map(\.receivedItemId))
             .union(records.compactMap { record -> UUID? in
                 guard let lottoId = record.lottoFotoId else { return nil }
@@ -603,7 +628,8 @@ struct TraceabilityService {
             modelContext.delete(link)
         }
 
-        let survivingLinks = allLinks.filter { $0.productionId != productionId }
+        let removedLinkIds = Set(linksToRemove.map(\.id))
+        let survivingLinks = allLinks.filter { !removedLinkIds.contains($0.id) }
 
         for recordId in affectedRecordIds {
             guard let record = recordsById[recordId] else { continue }

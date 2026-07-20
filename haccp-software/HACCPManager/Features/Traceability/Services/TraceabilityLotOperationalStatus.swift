@@ -25,9 +25,11 @@ enum TraceabilityLotOperationalStatus {
         case .expired:
             return Presentation(label: "Scaduto", badgeStyle: .warning)
         case .used:
-            return Presentation(label: "Usato", badgeStyle: .info)
+            // Produzione chiusa da Controllo scadenze → «Terminato» (non «Usato»).
+            let label = record.isProductionBatchOutput ? "Terminato" : "Usato"
+            return Presentation(label: label, badgeStyle: .info)
         case .rejected:
-            return Presentation(label: "Respinto", badgeStyle: .nonConforme)
+            return Presentation(label: "Scartato", badgeStyle: .nonConforme)
         case .available:
             return Presentation(label: "Disponibile", badgeStyle: .conforme)
         }

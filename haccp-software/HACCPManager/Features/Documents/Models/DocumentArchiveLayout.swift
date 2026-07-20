@@ -5,6 +5,10 @@ import Foundation
 /// Struttura cartelle:
 /// `{Ristorante} / Mensili / {Modulo}`
 ///
+/// Due registri tracciabilità separati:
+/// - **Tracciabilità** — produzioni, lotti, ingredienti, movimenti
+/// - **Controllo scadenze** — stato operativo (disponibile / terminato / scaduto / scartato)
+///
 /// Politica di generazione:
 /// - **Durante il mese corrente**: PDF aggiornati in modo incrementale man mano che arrivano i dati.
 /// - **A fine mese** (mese chiuso): PDF finali congelati (non rigenerati se già presenti).
@@ -20,7 +24,8 @@ enum DocumentArchiveLayout {
 
     /// Ordine cartelle in archivio (una cartella per funzione).
     static let monthlyArchiveModules: [DocumentModule] = [
-        .combinatoTracciabilitaProduzione,
+        .tracciabilita,
+        .controlloScadenze,
         .ricezioneMerci,
         .controlloOlio,
         .decongelamento,
@@ -33,6 +38,8 @@ enum DocumentArchiveLayout {
 
     /// Moduli con registro PDF singolo.
     static let singleMonthlyModules: [DocumentModule] = [
+        .tracciabilita,
+        .controlloScadenze,
         .ricezioneMerci,
         .controlloOlio,
         .decongelamento,
@@ -44,17 +51,27 @@ enum DocumentArchiveLayout {
 
     /// Report mensili combinati per affinità funzionale.
     static let combinedMonthlyModules: [DocumentModule] = [
-        .combinatoTracciabilitaProduzione,
         .nonConformita
     ]
 
-    /// Cartelle sostituite da «Tracciabilità e produzioni».
-    static let retiredTracciabilitaFolderTitles: Set<String> = [
-        moduleFolderTitle(.tracciabilita),
+    /// Cartelle legacy fuse in «Tracciabilità».
+    static let retiredIntoTracciabilitaFolderTitles: Set<String> = [
+        "Tracciabilità e produzioni",
         moduleFolderTitle(.etichetteProduzione),
-        moduleFolderTitle(.controlloScadenze),
+        moduleFolderTitle(.combinatoTracciabilitaProduzione),
+        "Tracciabilità status"
+    ]
+
+    /// Cartelle legacy fuse in «Controllo scadenze».
+    static let retiredIntoControlloScadenzeFolderTitles: Set<String> = [
+        "Controllo scadenze e quantità",
         "Controllo scadenze abbattimento"
     ]
+
+    /// Cartelle sostituite da «Tracciabilità» o «Controllo scadenze».
+    static let retiredTracciabilitaFolderTitles: Set<String> = {
+        retiredIntoTracciabilitaFolderTitles.union(retiredIntoControlloScadenzeFolderTitles)
+    }()
 
     /// Cartelle affinità precedenti (sostituite da moduli singoli).
     static let retiredAffinityFolderTitles: Set<String> = [
@@ -75,25 +92,28 @@ enum DocumentArchiveLayout {
 
     /// Moduli non più generati come PDF mensili autonomi.
     static let retiredMonthlyGenerationModules: Set<DocumentModule> = [
-        .tracciabilita,
         .etichetteProduzione,
-        .controlloScadenze,
         .haccpCombinato,
         .combinatoIngressoTracciabilita,
         .combinatoCatenaFreddo,
         .combinatoIgieneControlli,
-        .combinatoProduzione
+        .combinatoProduzione,
+        .combinatoTracciabilitaProduzione
     ]
 
     static func isRetiredMonthlyModule(_ module: DocumentModule) -> Bool {
         retiredMonthlyGenerationModules.contains(module)
     }
 
-    /// Moduli ritirati che devono comparire/rigenerarsi come «Tracciabilità e produzioni».
+    /// Remap moduli ritirati → due cartelle attive.
     static func remappedArchiveModule(for module: DocumentModule) -> DocumentModule {
         switch module {
-        case .tracciabilita, .etichetteProduzione, .controlloScadenze:
-            return .combinatoTracciabilitaProduzione
+        case .etichetteProduzione, .combinatoTracciabilitaProduzione:
+            return .tracciabilita
+        case .controlloScadenze:
+            return .controlloScadenze
+        case .tracciabilita:
+            return .tracciabilita
         default:
             return module
         }
@@ -121,7 +141,11 @@ enum DocumentArchiveLayout {
     }
 
     static var tracciabilitaProduzioneFolderTitle: String {
-        moduleFolderTitle(.combinatoTracciabilitaProduzione)
+        moduleFolderTitle(.tracciabilita)
+    }
+
+    static var controlloScadenzeFolderTitle: String {
+        moduleFolderTitle(.controlloScadenze)
     }
 
     static func venueFolderName(for restaurant: Restaurant) -> String {
@@ -169,7 +193,7 @@ enum DocumentArchiveLayout {
         case .abbattimento: return "Abbattimento"
         case .decongelamento: return "Decongelamento"
         case .controlloOlio: return "Controllo olio"
-        case .controlloScadenze: return "Controllo scadenze e quantità"
+        case .controlloScadenze: return "Controllo scadenze"
         case .checklist: return "Checklist"
         case .etichetteProduzione: return "Etichette di produzione"
         case .combinatoIngressoTracciabilita: return "Ingresso e tracciabilità"

@@ -102,7 +102,7 @@ struct DocumentItemCard: View {
                         Button {
                             onRegenerate()
                         } label: {
-                            Label("Rigenera", systemImage: "arrow.clockwise")
+                            Label("Rigenera allo stato attuale", systemImage: "arrow.clockwise")
                         }
 
                         Button(role: .destructive) {

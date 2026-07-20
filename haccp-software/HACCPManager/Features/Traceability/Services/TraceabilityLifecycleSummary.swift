@@ -74,6 +74,19 @@ struct TraceabilityLifecycleSummary: Equatable {
         }
 
         let isProduction = record.isProductionBatchOutput
+        let statusLabel: String = {
+            if let closure { return closure.outcome }
+            let effective = ProductExpiryEvaluator.effectiveDisplayStatus(
+                record,
+                expiryDate: record.expiryDate
+            )
+            switch effective {
+            case .expired: return "Scaduto"
+            case .used: return record.isProductionBatchOutput ? "Terminato" : "Usato"
+            case .rejected: return "Scartato"
+            case .available: return "Disponibile"
+            }
+        }()
         return TraceabilityLifecycleSummary(
             createdAt: record.createdAt,
             createdBy: record.createdByNameSnapshot,
@@ -83,7 +96,7 @@ struct TraceabilityLifecycleSummary: Equatable {
             expiryDate: record.expiryDate,
             associations: associations,
             closure: closure,
-            statusLabel: record.productStatus.label
+            statusLabel: statusLabel
         )
     }
 

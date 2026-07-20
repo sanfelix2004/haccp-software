@@ -100,6 +100,7 @@ struct HistoryService {
             lottoFotos: lottoFotos,
             batches: produzioneBatches,
             images: productImages,
+            logs: traceabilityLogs,
             restaurantId: restaurantId
         )
         let traceabilityTimeline = TraceabilityHistoryProvider().logEntries(
