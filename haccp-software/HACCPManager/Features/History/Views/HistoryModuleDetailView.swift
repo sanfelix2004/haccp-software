@@ -13,24 +13,9 @@ struct HistoryModuleDetailView: View {
     @StateObject private var vm = HistoryModuleDetailViewModel()
     @State private var visibleCount = PerformanceConfig.historyPageSize
     @State private var withdrawRecord: TraceabilityRecord?
-    @State private var masterAuth = MasterAuthCoordinator()
-    @State private var entryPendingRemoval: HistoryEntry?
-    @State private var removalError: String?
 
     private var currentUser: LocalUser? {
         users.first { $0.id == appState.currentUserId }
-    }
-
-    private var masterUser: LocalUser? {
-        users.first { $0.role == .master }
-    }
-
-    private var permissions: UserPermissions {
-        currentUser?.permissions ?? UserPermissions(role: .viewer)
-    }
-
-    private var canManageHistory: Bool {
-        permissions.can(.manageHistory)
     }
 
     private var filteredEntries: [HistoryEntry] {
@@ -65,9 +50,6 @@ struct HistoryModuleDetailView: View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: theme.spacing.sectionSpacing) {
                 moduleHeader
-                if canManageHistory, module == .traceability {
-                    historyControlHint
-                }
                 filtersCard
 
                 if filteredEntries.isEmpty {
@@ -105,43 +87,6 @@ struct HistoryModuleDetailView: View {
                 )
             }
         }
-        .masterAuthCover(coordinator: masterAuth, master: masterUser)
-        .alert(
-            "Nascondi dallo storico?",
-            isPresented: Binding(
-                get: { entryPendingRemoval != nil },
-                set: { if !$0 { entryPendingRemoval = nil } }
-            )
-        ) {
-            Button("Annulla", role: .cancel) { entryPendingRemoval = nil }
-            Button("Nascondi", role: .destructive) {
-                confirmHistoryRemoval()
-            }
-        } message: {
-            Text("La voce sparisce dallo storico operativo, ma resta nei Documenti con tutti i movimenti. Operazione riservata al MASTER.")
-        }
-        .alert("Operazione non riuscita", isPresented: Binding(
-            get: { removalError != nil },
-            set: { if !$0 { removalError = nil } }
-        )) {
-            Button("OK", role: .cancel) { removalError = nil }
-        } message: {
-            Text(removalError ?? "")
-        }
-    }
-
-    private var historyControlHint: some View {
-        HStack(alignment: .top, spacing: 10) {
-            Image(systemName: "lock.shield.fill")
-                .foregroundStyle(theme.colorPrimary)
-            Text("Swipe a sinistra per nascondere una produzione o un lotto dallo storico. Nei Documenti ogni traccia resta permanente.")
-                .font(theme.typography.caption)
-                .foregroundStyle(theme.colorTextSecondary)
-        }
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(theme.colorPrimary.opacity(0.08))
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 
     private func openPendingClosure(recordId: UUID) {
@@ -157,62 +102,8 @@ struct HistoryModuleDetailView: View {
     }
 
     private func handlePendingClosure(recordId: UUID) {
-        guard module == .expiryControl else { return }
+        guard module == .traceability else { return }
         openPendingClosure(recordId: recordId)
-    }
-
-    private func requestHistoryRemoval(_ entry: HistoryEntry) {
-        guard entry.allowsHistoryRemoval else { return }
-        masterAuth.request(permission: .manageHistory, permissions: permissions) {
-            entryPendingRemoval = entry
-        }
-    }
-
-    private func confirmHistoryRemoval() {
-        guard let entry = entryPendingRemoval,
-              let user = currentUser else {
-            entryPendingRemoval = nil
-            return
-        }
-        entryPendingRemoval = nil
-        do {
-            let control = HistoryControlService()
-            if let batchId = entry.produzioneBatchId {
-                var descriptor = FetchDescriptor<ProduzioneBatch>(
-                    predicate: #Predicate<ProduzioneBatch> { $0.id == batchId }
-                )
-                descriptor.fetchLimit = 1
-                guard let batch = (try? modelContext.fetch(descriptor))?.first else {
-                    removalError = "Produzione non trovata."
-                    return
-                }
-                try control.removeProductionFromHistory(
-                    batch: batch,
-                    user: user,
-                    modelContext: modelContext
-                )
-            } else if let recordId = entry.historyRemovalRecordId {
-                var descriptor = FetchDescriptor<TraceabilityRecord>(
-                    predicate: #Predicate<TraceabilityRecord> { $0.id == recordId }
-                )
-                descriptor.fetchLimit = 1
-                guard let record = (try? modelContext.fetch(descriptor))?.first else {
-                    removalError = "Voce di tracciabilità non trovata."
-                    return
-                }
-                try control.softDeleteTraceabilityRecord(
-                    record: record,
-                    user: user,
-                    modelContext: modelContext
-                )
-            } else {
-                removalError = "Voce non eliminabile."
-                return
-            }
-            onDataChanged?()
-        } catch {
-            removalError = error.localizedDescription
-        }
     }
 
     private var moduleHeader: some View {
@@ -276,9 +167,7 @@ struct HistoryModuleDetailView: View {
                 HistoryDateSection(
                     date: group.date,
                     entries: group.entries,
-                    onPendingClosure: handlePendingClosure,
-                    canRemoveFromHistory: canManageHistory && module == .traceability,
-                    onRemoveFromHistory: requestHistoryRemoval
+                    onPendingClosure: handlePendingClosure
                 )
             }
         }

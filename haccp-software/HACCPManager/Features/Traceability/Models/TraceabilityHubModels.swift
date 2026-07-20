@@ -47,6 +47,9 @@ struct TraceabilityArchiveIngredientItem: Identifiable, Equatable {
     let receivedAt: Date
     /// Miniatura foto etichetta / NC (visibile in archivio).
     var photoData: Data? = nil
+    /// Es. Scaduto / Scartato / Usato / Disponibile.
+    var statusLabel: String? = nil
+    var statusBadgeStyle: HACCPBadgeStyle = .neutral
 }
 
 struct TraceabilityProductionArchiveGroup: Identifiable, Equatable {
@@ -60,6 +63,9 @@ struct TraceabilityProductionArchiveGroup: Identifiable, Equatable {
     let ingredients: [TraceabilityArchiveIngredientItem]
     /// Foto del piatto finito (mai quella degli ingredienti in ingresso).
     var photoData: Data? = nil
+    /// Stato del piatto finito (scaduto / scartato / usato / …).
+    var statusLabel: String? = nil
+    var statusBadgeStyle: HACCPBadgeStyle = .neutral
 }
 
 // MARK: - Contesto display (indici pre-calcolati)
@@ -355,6 +361,11 @@ struct TraceabilityHubContext {
                 )
             }
 
+            let dishStatus = productionOutputStatus(
+                productionId: productionId,
+                batchId: latestBatch?.id
+            )
+
             return TraceabilityProductionArchiveGroup(
                 id: productionId.uuidString,
                 productionId: productionId,
@@ -363,7 +374,9 @@ struct TraceabilityHubContext {
                 batchCode: latestBatch?.batchCode,
                 registeredAt: latestBatch?.producedAt ?? ingredients.map(\.receivedAt).max() ?? Date(),
                 ingredients: ingredients,
-                photoData: dishPhoto
+                photoData: dishPhoto,
+                statusLabel: dishStatus?.label,
+                statusBadgeStyle: dishStatus?.badgeStyle ?? .neutral
             )
         }
 
@@ -419,6 +432,7 @@ struct TraceabilityHubContext {
             .filter {
                 $0.isIncomingIngredientLot
                     && isActionable($0)
+                    // Già usato in una produzione: non deve uscire in «Da associare».
                     && (productionIdsByRecord[$0.id]?.isEmpty ?? true)
             }
             .sorted { $0.receivedAt > $1.receivedAt }
@@ -483,13 +497,38 @@ struct TraceabilityHubContext {
         actionable: Bool
     ) -> (String, HACCPBadgeStyle) {
         if record.isNonCompliant { return ("Non conforme", .nonConforme) }
-        if record.productStatus == .used { return ("Archiviato", .conforme) }
-        if record.productStatus == .rejected { return ("Respinto", .nonConforme) }
+
+        let operational = operationalStatus(for: record)
+        let effective = ProductExpiryEvaluator.effectiveDisplayStatus(
+            record,
+            expiryDate: record.expiryDate
+        )
+        if record.productStatus == .used
+            || record.productStatus == .rejected
+            || record.productStatus == .expired
+            || effective == .expired {
+            return (operational.label, operational.badgeStyle)
+        }
+
         if actionable && productionCount == 0 && record.isIncomingIngredientLot {
             return ("Da associare", .info)
         }
         if productionCount > 0 { return ("Collegato", .conforme) }
         return ("Registrato", .info)
+    }
+
+    func operationalStatus(for record: TraceabilityRecord) -> TraceabilityLotOperationalStatus.Presentation {
+        TraceabilityLotOperationalStatus.present(
+            record: record,
+            logs: logsByRecord[record.id] ?? []
+        )
+    }
+
+    func operationalStatus(forProductionId productionId: UUID) -> TraceabilityLotOperationalStatus.Presentation? {
+        let latestBatch = batches
+            .filter { $0.productionId == productionId }
+            .max(by: { $0.producedAt < $1.producedAt })
+        return productionOutputStatus(productionId: productionId, batchId: latestBatch?.id)
     }
 
     private func lotDisplay(for record: TraceabilityRecord) -> String {
@@ -552,9 +591,29 @@ struct TraceabilityHubContext {
                     name: name,
                     lotCode: lot,
                     supplier: "Produzione",
-                    receivedAt: tracked.lotRegisteredAt ?? tracked.createdAt
+                    receivedAt: tracked.lotRegisteredAt ?? tracked.createdAt,
+                    statusLabel: nil,
+                    statusBadgeStyle: .neutral
                 )
             }
+    }
+
+    private func productionOutputStatus(
+        productionId: UUID,
+        batchId: UUID?
+    ) -> TraceabilityLotOperationalStatus.Presentation? {
+        if let batchId,
+           let output = recordsById.values.first(where: {
+               $0.produzioneBatchId == batchId && $0.isProductionBatchOutput
+           }) {
+            return operationalStatus(for: output)
+        }
+        let batchIds = Set(batches.filter { $0.productionId == productionId }.map(\.id))
+        guard let output = recordsById.values.first(where: { record in
+            guard record.isProductionBatchOutput, let bid = record.produzioneBatchId else { return false }
+            return batchIds.contains(bid)
+        }) else { return nil }
+        return operationalStatus(for: output)
     }
 
     private func archiveGroupMatchesFilter(
@@ -582,6 +641,7 @@ struct TraceabilityHubContext {
             images: imagesForPhotoLookup(record),
             lottoFotos: Array(lottoFotoById.values)
         )
+        let status = operationalStatus(for: record)
         return TraceabilityArchiveIngredientItem(
             id: record.id,
             recordId: record.id,
@@ -589,7 +649,9 @@ struct TraceabilityHubContext {
             lotCode: lotDisplay(for: record),
             supplier: supplierDisplay(for: record),
             receivedAt: record.receivedAt,
-            photoData: photos.first
+            photoData: photos.first,
+            statusLabel: status.label,
+            statusBadgeStyle: status.badgeStyle
         )
     }
 

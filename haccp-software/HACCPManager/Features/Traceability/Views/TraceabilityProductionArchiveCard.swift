@@ -13,6 +13,8 @@ struct TraceabilityProductionArchiveCard: View, Equatable {
     let onOpenIngredient: (UUID) -> Void
     /// Swipe elimina sul singolo alimento (se consentito).
     var onDeleteIngredient: ((UUID) -> Void)? = nil
+    /// Elimina la produzione (errore): gli alimenti restano scollegati.
+    var onDeleteProduction: (() -> Void)? = nil
 
     @Environment(\.theme) private var theme
 
@@ -21,6 +23,7 @@ struct TraceabilityProductionArchiveCard: View, Equatable {
             && lhs.isExpanded == rhs.isExpanded
             && lhs.searchText == rhs.searchText
             && (lhs.onDeleteIngredient == nil) == (rhs.onDeleteIngredient == nil)
+            && (lhs.onDeleteProduction == nil) == (rhs.onDeleteProduction == nil)
     }
 
     private var searchTokens: [String] {
@@ -100,10 +103,26 @@ struct TraceabilityProductionArchiveCard: View, Equatable {
                     }
                     .font(theme.typography.caption2)
                     .foregroundStyle(theme.colorTextSecondary)
+
+                    if let status = group.statusLabel, !status.isEmpty {
+                        HACCPBadge(title: status, style: group.statusBadgeStyle, showIcon: false)
+                    }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             .buttonStyle(.plain)
+
+            if let onDeleteProduction {
+                Button(role: .destructive, action: onDeleteProduction) {
+                    Image(systemName: "trash")
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(theme.colorError)
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.borderless)
+                .accessibilityLabel("Elimina produzione")
+            }
 
             Button(action: onToggleExpanded) {
                 Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
@@ -200,6 +219,10 @@ struct TraceabilityProductionArchiveCard: View, Equatable {
                     Text(ingredient.supplier)
                         .font(theme.typography.caption2)
                         .foregroundStyle(theme.colorTextSecondary)
+                }
+
+                if let status = ingredient.statusLabel, !status.isEmpty {
+                    HACCPBadge(title: status, style: ingredient.statusBadgeStyle, showIcon: false)
                 }
             }
 

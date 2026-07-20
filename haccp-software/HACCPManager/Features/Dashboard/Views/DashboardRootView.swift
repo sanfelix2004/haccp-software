@@ -9,7 +9,7 @@ enum SidebarItem: String, Identifiable {
     case blastChilling = "Abbattimento"
     case productionCatalog = "Catalogo piatti"
     case incomingFoodCatalog = "Alimenti in ingresso"
-    case expiryControl = "Controllo scadenze"
+    case expiryControl = "Controllo scadenze e quantità"
     case defrost = "Decongelamento"
     case oilControl = "Controllo olio"
     case productionLabels = "Etichette di produzione"
@@ -111,7 +111,9 @@ struct DashboardRootView: View {
                 restaurantsCount: restaurants.count,
                 permissions: permissions,
                 onSwitchRestaurant: {
-                    withAnimation(theme.spring) { appState.activeRestaurantId = nil }
+                    masterAuth.request(permission: .switchRestaurant, permissions: permissions) {
+                        withAnimation(theme.spring) { appState.activeRestaurantId = nil }
+                    }
                 },
                 onLogout: { appState.logout() }
             )
@@ -431,12 +433,14 @@ struct DashboardRootView: View {
         case .history:
             HistoryView()
         case .documents:
-            if permissions.canAccessModule(.documents) {
+            MasterGatedContent(
+                permission: .accessModule(.documents),
+                permissions: permissions,
+                master: session.masterUser ?? users.first(where: { $0.role == .master }),
+                title: "Documenti HACCP",
+                message: "L’archivio PDF è riservato. Autorizza con PIN MASTER per consultare o gestire i documenti."
+            ) {
                 DocumentsView()
-            } else {
-                accessDeniedView(
-                    message: "L'archivio documenti PDF è riservato al responsabile MASTER o al titolare."
-                )
             }
         case .analytics:
             AnalyticsView()
@@ -448,7 +452,7 @@ struct DashboardRootView: View {
                 permissions: permissions,
                 master: session.masterUser ?? users.first(where: { $0.role == .master }),
                 title: "Gestione collaboratori",
-                message: "Solo il responsabile MASTER può creare e modificare gli utenti. Inserisci il PIN MASTER per continuare."
+                message: "Solo con PIN MASTER puoi creare e modificare gli utenti."
             ) {
                 UsersManagementView()
             }

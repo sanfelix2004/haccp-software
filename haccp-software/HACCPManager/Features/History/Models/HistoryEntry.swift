@@ -16,6 +16,8 @@ struct HistoryTraceabilityIngredient: Identifiable, Equatable {
     let operatorName: String
     let hasCriticality: Bool
     var photoData: Data? = nil
+    /// Es. Scaduto / Scartato / Usato.
+    var statusLabel: String? = nil
 }
 
 struct HistoryEntry: Identifiable, Equatable {

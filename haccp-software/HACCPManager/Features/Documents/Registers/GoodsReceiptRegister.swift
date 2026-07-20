@@ -57,7 +57,7 @@ enum GoodsReceiptRegister {
                 category: r.category.rawValue,
                 supplier: r.supplierNameSnapshot,
                 lot: r.lotNumber ?? "—",
-                expiry: r.expiryDate.map { df.string(from: $0) } ?? "—",
+                expiry: r.expiryDate.map { df.string(from: $0) } ?? "",
                 receivedAt: df.string(from: r.receivedAt),
                 temperatureRead: temp,
                 temperatureRange: range,

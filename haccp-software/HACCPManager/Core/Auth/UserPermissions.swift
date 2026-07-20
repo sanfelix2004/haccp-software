@@ -170,13 +170,24 @@ struct UserPermissions: Equatable {
         return .requiresMaster(.privilegedAction)
     }
 
-    /// Sezioni impostazioni personali sempre visibili; le altre con lucchetto o nascoste.
+    /// Sezioni: le personali sempre; le admin sempre visibili (lucchetto + PIN MASTER se serve).
     func isSettingsSectionVisible(_ section: SettingsSection) -> Bool {
-        switch section {
-        case .profile, .appearance, .notifications, .info:
+        true
+    }
+
+    /// Voce sidebar: accessibile di ruolo, oppure elevabile con PIN MASTER.
+    func isListedInSidebar(_ item: SidebarItem) -> Bool {
+        if canAccessModule(item) { return true }
+        switch item {
+        case .documents, .users:
             return true
-        case .security, .restaurant, .haccp, .data, .printer:
-            return canAccessSettingsSection(section)
+        case .dashboard, .history, .alerts, .settings, .analytics:
+            return true
+        case .traceability, .fridges, .cleaningControl, .blastChilling,
+             .expiryControl, .defrost, .oilControl, .productionLabels,
+             .goodsReceiving, .checklist, .productionCatalog, .incomingFoodCatalog:
+            // Fuori ruolo (es. Cucina → ricezione): visibile con lucchetto.
+            return true
         }
     }
 
@@ -226,9 +237,17 @@ struct UserPermissions: Equatable {
         guard SettingsStorageService.shared.security.requireMasterAuthForCriticalActions else {
             return false
         }
-        guard isExternalCollaborator else { return false }
+        // Qualsiasi non-MASTER: azioni distruttive / archivio richiedono PIN.
         switch permission {
-        case .deleteOperationalRecords, .deleteTraceabilityRecords, .manageHistory, .clearCleaningHistory, .manageDataAndBackup:
+        case .deleteOperationalRecords,
+             .deleteTraceabilityRecords,
+             .manageHistory,
+             .clearCleaningHistory,
+             .manageDataAndBackup,
+             .manageDocuments,
+             .manageUsers,
+             .manageSecuritySettings,
+             .switchRestaurant:
             return true
         default:
             return false
@@ -294,6 +313,11 @@ extension Optional where Wrapped == LocalUser {
 extension SidebarItem {
     func isAccessible(by permissions: UserPermissions) -> Bool {
         permissions.canAccessModule(self)
+    }
+
+    /// Visibile in sidebar/dashboard (anche con lucchetto se serve PIN MASTER).
+    func isListedInSidebar(by permissions: UserPermissions) -> Bool {
+        permissions.isListedInSidebar(self)
     }
 
     func needsMasterAuthToAccess(by permissions: UserPermissions) -> Bool {

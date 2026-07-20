@@ -6,17 +6,25 @@ enum TraceabilityRecordSupport {
 
     // MARK: - Filtri modulo
 
-    /// Alimento in ingresso nel hub tracciabilità (esclude solo batch produzione finiti).
+    /// Alimento in ingresso nel hub tracciabilità (esclude batch produzione e chiusure operative).
     static func isHubRecord(_ record: TraceabilityRecord) -> Bool {
         record.isIncomingIngredientLot
             && !record.isArchived
             && record.productStatus != .rejected
+            && record.productStatus != .used
     }
 
-    /// Voce monitorata in Controllo scadenze (ingresso + produzione finita).
+    /// Voce attiva in Controllo scadenze (ingresso + produzione finita).
+    /// Include lotti senza data scadenza; esclude chiusure (terminato / scaduto / scartato / usato).
+    /// La traccia resta in Storia e Documenti.
     static func isExpiryMonitored(_ record: TraceabilityRecord) -> Bool {
-        !record.isArchived
-            && (record.expiryDate != nil || record.productStatus == .expired)
+        guard !record.isArchived else { return false }
+        switch record.productStatus {
+        case .used, .rejected:
+            return false
+        case .available, .expired:
+            return true
+        }
     }
 
     static func isIncomingExpiryRecord(_ record: TraceabilityRecord) -> Bool {
@@ -27,9 +35,18 @@ enum TraceabilityRecordSupport {
         isExpiryMonitored(record) && record.isProductionBatchOutput
     }
 
-    /// Sorgente etichetta: solo piatti preparati (batch produzione), non materie prime in ingresso.
+    /// Sorgente etichetta: solo piatti preparati ancora da gestire, con foto del piatto.
+    /// Esclude alimenti in ingresso, chiusure (usato/scartato) e produzioni senza foto.
     static func isLabelTraceabilitySource(_ record: TraceabilityRecord) -> Bool {
-        isProductionExpiryRecord(record)
+        guard record.isProductionBatchOutput, !record.isArchived else { return false }
+        switch record.productStatus {
+        case .used, .rejected:
+            return false
+        case .available, .expired:
+            break
+        }
+        guard let photo = record.photoData, !photo.isEmpty else { return false }
+        return true
     }
 
     // MARK: - Etichette UI

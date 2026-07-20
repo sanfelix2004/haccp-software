@@ -14,7 +14,9 @@ struct TraceabilityQuickAddIncomingFoodSheet: View {
     @Environment(\.theme) private var theme
 
     @State private var name: String
-    @State private var category: GoodsCategory
+    @State private var categoryName: String
+    @State private var categories: [IncomingFoodCategory] = []
+    @State private var showAddCategory = false
 
     private let catalogService = ProductTemplateCatalogService()
 
@@ -33,7 +35,7 @@ struct TraceabilityQuickAddIncomingFoodSheet: View {
         self.onCancel = onCancel
         self.onError = onError
         _name = State(initialValue: suggestedName)
-        _category = State(initialValue: .refrigerated)
+        _categoryName = State(initialValue: GoodsCategory.refrigerated.rawValue)
     }
 
     var body: some View {
@@ -41,10 +43,15 @@ struct TraceabilityQuickAddIncomingFoodSheet: View {
             Form {
                 Section("Nuovo alimento in ingresso") {
                     TextField("Nome", text: $name)
-                    Picker("Categoria", selection: $category) {
-                        ForEach(GoodsCategory.allCases.filter { $0 != .all }) { cat in
-                            Text(cat.rawValue).tag(cat)
+                    Picker("Categoria", selection: $categoryName) {
+                        ForEach(categories) { cat in
+                            Text(cat.name).tag(cat.name)
                         }
+                    }
+                    Button {
+                        showAddCategory = true
+                    } label: {
+                        Label("Aggiungi categoria", systemImage: "folder.badge.plus")
                     }
                 }
 
@@ -62,9 +69,51 @@ struct TraceabilityQuickAddIncomingFoodSheet: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Aggiungi") { save() }
-                        .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        .disabled(
+                            name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                                || categoryName.isEmpty
+                        )
                 }
             }
+            .onAppear(perform: reloadCategories)
+            .sheet(isPresented: $showAddCategory) {
+                CatalogAddCategorySheet(
+                    title: "Categoria alimenti",
+                    placeholder: "Es. Latticini…",
+                    existingNames: categories.map(\.name),
+                    onSave: { newName in
+                        do {
+                            let created = try catalogService.addCategory(
+                                name: newName,
+                                restaurantId: restaurantId,
+                                existingCategories: categories,
+                                modelContext: modelContext
+                            )
+                            categoryName = created.name
+                            showAddCategory = false
+                            reloadCategories()
+                        } catch {
+                            onError?(error.localizedDescription)
+                            showAddCategory = false
+                        }
+                    },
+                    onCancel: { showAddCategory = false }
+                )
+            }
+        }
+    }
+
+    private func reloadCategories() {
+        catalogService.ensureCategories(restaurantId: restaurantId, modelContext: modelContext)
+        let rid = restaurantId
+        var descriptor = FetchDescriptor<IncomingFoodCategory>(
+            predicate: #Predicate { $0.restaurantId == rid },
+            sortBy: [SortDescriptor(\IncomingFoodCategory.orderIndex)]
+        )
+        descriptor.fetchLimit = 200
+        categories = (try? modelContext.fetch(descriptor)) ?? []
+        if categories.contains(where: { $0.name == categoryName }) == false {
+            categoryName = categories.first?.name ?? GoodsCategory.refrigerated.rawValue
         }
     }
 
@@ -72,7 +121,7 @@ struct TraceabilityQuickAddIncomingFoodSheet: View {
         do {
             try catalogService.addTemplate(
                 name: name,
-                category: category,
+                categoryName: categoryName,
                 restaurantId: restaurantId,
                 existing: existingTemplates,
                 modelContext: modelContext,
@@ -107,6 +156,8 @@ struct TraceabilityQuickAddProductionSheet: View {
     @State private var name: String
     @State private var categoryId: UUID
     @State private var shelfLifeDays: Int
+    @State private var localCategories: [ProductionCategory]
+    @State private var showAddCategory = false
 
     private let libraryService = ProductionLibraryService()
 
@@ -131,6 +182,7 @@ struct TraceabilityQuickAddProductionSheet: View {
         let catName = defaultCategory?.name ?? ""
         _name = State(initialValue: suggestedName)
         _categoryId = State(initialValue: catId)
+        _localCategories = State(initialValue: categories)
         _shelfLifeDays = State(
             initialValue: ProductionShelfLifeDefaults.days(
                 forName: suggestedName,
@@ -140,7 +192,7 @@ struct TraceabilityQuickAddProductionSheet: View {
     }
 
     private var selectedCategory: ProductionCategory? {
-        categories.first { $0.id == categoryId }
+        localCategories.first { $0.id == categoryId }
     }
 
     private var suggestedDays: Int {
@@ -156,7 +208,7 @@ struct TraceabilityQuickAddProductionSheet: View {
                 Section("Nuovo piatto di produzione") {
                     TextField("Nome piatto", text: $name)
                     Picker("Categoria", selection: $categoryId) {
-                        ForEach(categories.filter { $0.name != "Tutti" }) { category in
+                        ForEach(localCategories.filter { $0.name != "Tutti" }) { category in
                             Text(category.name).tag(category.id)
                         }
                     }
@@ -165,6 +217,11 @@ struct TraceabilityQuickAddProductionSheet: View {
                     }
                     .onChange(of: name) { _, _ in
                         shelfLifeDays = suggestedDays
+                    }
+                    Button {
+                        showAddCategory = true
+                    } label: {
+                        Label("Aggiungi categoria", systemImage: "folder.badge.plus")
                     }
                 }
 
@@ -188,6 +245,31 @@ struct TraceabilityQuickAddProductionSheet: View {
                     Button("Aggiungi") { save() }
                         .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
+            }
+            .sheet(isPresented: $showAddCategory) {
+                CatalogAddCategorySheet(
+                    title: "Categoria piatti",
+                    placeholder: "Es. Bevande…",
+                    existingNames: localCategories.map(\.name),
+                    onSave: { newName in
+                        do {
+                            let created = try libraryService.addCategory(
+                                name: newName,
+                                restaurantId: restaurantId,
+                                existingCategories: localCategories,
+                                modelContext: modelContext
+                            )
+                            localCategories.append(created)
+                            categoryId = created.id
+                            shelfLifeDays = suggestedDays
+                            showAddCategory = false
+                        } catch {
+                            onError?(error.localizedDescription)
+                            showAddCategory = false
+                        }
+                    },
+                    onCancel: { showAddCategory = false }
+                )
             }
         }
     }

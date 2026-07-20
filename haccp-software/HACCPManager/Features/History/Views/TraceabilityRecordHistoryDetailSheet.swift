@@ -18,6 +18,7 @@ struct TraceabilityRecordHistoryDetailSheet: View {
     @State private var extraPhotos: [Data] = []
     @State private var linkedProductions: [Production] = []
     @State private var productionLotCode: String?
+    @State private var lifecycle: TraceabilityLifecycleSummary?
     @State private var isLoading = true
 
     var body: some View {
@@ -33,18 +34,24 @@ struct TraceabilityRecordHistoryDetailSheet: View {
                             if let productionLotCode, !productionLotCode.isEmpty {
                                 ProductionInternalLotBadge(batchCode: productionLotCode, compact: true)
                             }
-                            infoCard(record)
+                            if let lifecycle {
+                                lifecycleOpeningCard(lifecycle)
+                                lifecycleAssociationsCard(lifecycle)
+                                lifecycleClosureCard(lifecycle)
+                            } else {
+                                infoCard(record)
+                            }
                             
                             if record.isNonCompliant {
                                 nonComplianceCard(record)
                             }
                             
-                            if !linkedProductions.isEmpty {
+                            if !linkedProductions.isEmpty && (lifecycle?.associations.isEmpty ?? true) {
                                 productionsCard
                             }
                             
                             if let photo = photoData {
-                                photoCard(photo, title: "Documentazione fotografica")
+                                photoCard(photo, title: "Foto")
                             }
                             if !extraPhotos.isEmpty {
                                 extraPhotosCard
@@ -151,8 +158,86 @@ struct TraceabilityRecordHistoryDetailSheet: View {
            InternalLotCodeGenerator.isInternalLotCode(fetchedRecord.lotCode) {
             productionLotCode = fetchedRecord.lotCode
         }
+
+        var logDescriptor = FetchDescriptor<TraceabilityLog>(
+            predicate: #Predicate<TraceabilityLog> { $0.receivedItemId == targetId },
+            sortBy: [SortDescriptor(\TraceabilityLog.timestamp)]
+        )
+        let logs = (try? modelContext.fetch(logDescriptor)) ?? []
+        let productionsById = Dictionary(
+            uniqueKeysWithValues: linkedProductions.map { ($0.id, $0) }
+        )
+        lifecycle = TraceabilityLifecycleSummary.build(
+            record: fetchedRecord,
+            logs: logs,
+            productionsById: productionsById
+        )
         
         isLoading = false
+    }
+
+    private func lifecycleOpeningCard(_ life: TraceabilityLifecycleSummary) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("1. Apertura lotto")
+                .font(theme.typography.headline)
+            VStack(spacing: 8) {
+                infoRow(label: "Creato il", value: life.createdAt.formatted(date: .long, time: .shortened), icon: "calendar")
+                infoRow(label: "Registrato da", value: life.createdBy, icon: "person.fill")
+                infoRow(label: life.lotLabel, value: life.lotValue, icon: "barcode")
+                infoRow(label: "Fornitore", value: life.supplier, icon: "building.2")
+                if let expiry = life.expiryDate {
+                    infoRow(label: "Scadenza", value: TraceabilityLifecycleSummary.fmtDate(expiry), icon: "calendar.badge.exclamationmark")
+                }
+            }
+        }
+        .padding(16)
+        .background(theme.colorSurfaceElevated)
+        .clipShape(RoundedRectangle(cornerRadius: theme.spacing.cornerLarge, style: .continuous))
+    }
+
+    private func lifecycleAssociationsCard(_ life: TraceabilityLifecycleSummary) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("2. Associazioni")
+                .font(theme.typography.headline)
+            if life.associations.isEmpty {
+                Text("Nessuna associazione a piatto registrata.")
+                    .font(theme.typography.caption)
+                    .foregroundStyle(theme.colorTextSecondary)
+            } else {
+                ForEach(life.associations) { item in
+                    infoRow(
+                        label: "Associato a \(item.productionName)",
+                        value: "Il \(item.occurredAt.formatted(date: .abbreviated, time: .shortened)) da \(item.operatorName)",
+                        icon: "link"
+                    )
+                }
+            }
+        }
+        .padding(16)
+        .background(theme.colorSurfaceElevated)
+        .clipShape(RoundedRectangle(cornerRadius: theme.spacing.cornerLarge, style: .continuous))
+    }
+
+    private func lifecycleClosureCard(_ life: TraceabilityLifecycleSummary) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("3. Chiusura")
+                .font(theme.typography.headline)
+            if let closure = life.closure {
+                infoRow(label: "Esito", value: closure.outcome, icon: "archivebox")
+                infoRow(label: "Quando", value: closure.occurredAt.formatted(date: .abbreviated, time: .shortened), icon: "calendar")
+                infoRow(label: "Operatore", value: closure.operatorName, icon: "person.fill")
+                if let note = closure.note, !note.isEmpty {
+                    infoRow(label: "Motivazione", value: note, icon: "text.alignleft")
+                }
+            } else {
+                Text("Ancora in uso — non terminato / scartato / scaduto.")
+                    .font(theme.typography.caption)
+                    .foregroundStyle(theme.colorTextSecondary)
+            }
+        }
+        .padding(16)
+        .background(theme.colorSurfaceElevated)
+        .clipShape(RoundedRectangle(cornerRadius: theme.spacing.cornerLarge, style: .continuous))
     }
 
     // MARK: - Components
@@ -183,11 +268,24 @@ struct TraceabilityRecordHistoryDetailSheet: View {
                         .font(theme.typography.caption.weight(.bold).monospaced())
                         .foregroundStyle(theme.colorPrimary)
                     
-                    HACCPBadge(
-                        title: record.isNonCompliant ? "Non Conforme" : "Conforme",
-                        style: record.isNonCompliant ? .nonConforme : .conforme,
-                        showIcon: false
-                    )
+                    if let closure = lifecycle?.closure {
+                        HACCPBadge(
+                            title: "Chiuso · \(closure.outcome)",
+                            style: .neutral,
+                            showIcon: false
+                        )
+                    } else {
+                        HACCPBadge(
+                            title: record.isNonCompliant ? "Non Conforme" : record.productStatus.label,
+                            style: record.isNonCompliant ? .nonConforme : .conforme,
+                            showIcon: false
+                        )
+                    }
+                }
+                if let line = lifecycle?.createdLine {
+                    Text(line)
+                        .font(theme.typography.caption2)
+                        .foregroundStyle(theme.colorTextSecondary)
                 }
             }
             Spacer()

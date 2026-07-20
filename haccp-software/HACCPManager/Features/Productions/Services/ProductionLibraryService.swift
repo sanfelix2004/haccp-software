@@ -432,6 +432,47 @@ struct ProductionLibraryService {
         try modelContext.save()
     }
 
+    /// Aggiunge una categoria piatti personalizzata.
+    @discardableResult
+    func addCategory(
+        name: String,
+        restaurantId: UUID,
+        existingCategories: [ProductionCategory],
+        modelContext: ModelContext
+    ) throws -> ProductionCategory {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            throw NSError(
+                domain: "ProductionLibraryService",
+                code: 7010,
+                userInfo: [NSLocalizedDescriptionKey: "Inserisci un nome categoria."]
+            )
+        }
+        guard normalized(trimmed) != "tutti" else {
+            throw NSError(
+                domain: "ProductionLibraryService",
+                code: 7011,
+                userInfo: [NSLocalizedDescriptionKey: "«Tutti» è riservato."]
+            )
+        }
+        if existingCategories.contains(where: { normalized($0.name) == normalized(trimmed) }) {
+            throw NSError(
+                domain: "ProductionLibraryService",
+                code: 7012,
+                userInfo: [NSLocalizedDescriptionKey: "Categoria già presente."]
+            )
+        }
+        let nextIndex = (existingCategories.map(\.orderIndex).max() ?? 0) + 1
+        let category = ProductionCategory(
+            restaurantId: restaurantId,
+            name: trimmed,
+            orderIndex: nextIndex
+        )
+        modelContext.insert(category)
+        try modelContext.save()
+        return category
+    }
+
     func updateProduction(
         _ production: Production,
         name: String,

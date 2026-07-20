@@ -1,7 +1,6 @@
 import SwiftUI
 import SwiftData
 import LabelScanningContract
-import LabelScannerV2
 
 /// Flusso tracciabilità: scatta → etichetta/alimento → produzione.
 struct TraceabilityLotCaptureFlowView: View {
@@ -48,8 +47,9 @@ struct TraceabilityLotCaptureFlowView: View {
     @StateObject private var productionDishCamera = FinalizeReceiptCameraViewModel()
     @State private var errorMessage: String?
     @State private var showExitWithoutProductionAlert = false
-    @State private var selectedScanEngine: LabelScanEngineSelection = .current
     @State private var selectedReusedRecordIds: Set<UUID> = []
+    /// Picker aperto da «Usa solo dal magazzino» (senza foto nuove in sessione).
+    @State private var isWarehouseOnlyPicker = false
 
     private var sessionIngredientRecords: [TraceabilityRecord] {
         sessionItems.compactMap { lottoService.traceabilityRecord(for: $0, modelContext: modelContext) }
@@ -167,10 +167,6 @@ struct TraceabilityLotCaptureFlowView: View {
 
             VStack {
                 captureHeader
-                if pendingCapture == nil && !isProductionPickerPresented {
-                    enginePicker
-                        .padding(.top, 8)
-                }
                 Spacer()
                     .allowsHitTesting(false)
                 if pendingCapture == nil, !sessionItems.isEmpty, !isProductionPickerPresented {
@@ -298,23 +294,6 @@ struct TraceabilityLotCaptureFlowView: View {
         }
         .padding(.horizontal, 12)
         .padding(.top, 52)
-    }
-
-    private var enginePicker: some View {
-        Picker("Motore OCR", selection: $selectedScanEngine) {
-            ForEach(LabelScanEngineSelection.allCases) { engine in
-                Text(engine.title).tag(engine)
-            }
-        }
-        .pickerStyle(.segmented)
-        .frame(maxWidth: 160)
-        .padding(.horizontal, 10)
-        .padding(.vertical, 6)
-        .background(.black.opacity(0.45), in: Capsule())
-        .onChange(of: selectedScanEngine) { _, newValue in
-            LabelScanEngineSelection.current = newValue
-        }
-        .accessibilityLabel("Motore scansione etichetta V1 o V2")
     }
 
     // MARK: - Revisione scatto
@@ -694,7 +673,8 @@ struct TraceabilityLotCaptureFlowView: View {
                     TraceabilityIngredientReusePanel(
                         restaurantId: restaurantId,
                         sessionLottoIds: Set(sessionItems.map(\.id)),
-                        selectedRecordIds: $selectedReusedRecordIds
+                        selectedRecordIds: $selectedReusedRecordIds,
+                        startExpanded: isWarehouseOnlyPicker
                     )
 
                     Divider()
@@ -1039,72 +1019,10 @@ struct TraceabilityLotCaptureFlowView: View {
         }
     }
 
-    /// OCR/AI su thread di background; aggiornamenti UI sul MainActor (niente freeze).
+    /// OCR V2 su thread di background; aggiornamenti UI sul MainActor (niente freeze).
     @MainActor
     private func extractLotInBackground(captureId: UUID, photoData: Data) async {
-        if selectedScanEngine == .v2 {
-            await extractLotWithSelectedEngine(captureId: captureId, photoData: photoData)
-            return
-        }
-
-        let service = LottoFotoService()
-        var previewOutcome: ProductionLotCaptureOutcome?
-
-        let preview = await Task.detached(priority: .userInitiated) {
-            await service.extractLotLocalPreview(from: photoData)
-        }.value
-
-        if let preview {
-            previewOutcome = preview
-            applyLotOutcome(preview, to: captureId, isFinal: false)
-            if preview.lotCode != nil, preview.expiryDate != nil {
-                applyLotOutcome(preview, to: captureId, isFinal: true)
-                return
-            }
-        }
-
-        if GroqApiKeyService.hasAnyKey() {
-            do {
-                let enhanced = try await Task.detached(priority: .userInitiated) {
-                    try await service.extractLotGroqOnly(from: photoData)
-                }.value
-                let merged = mergeLotOutcomes(preview: previewOutcome, enhanced: enhanced)
-                applyLotOutcome(merged, to: captureId, isFinal: true)
-                return
-            } catch {
-                if let previewOutcome {
-                    applyLotOutcome(previewOutcome, to: captureId, isFinal: true)
-                    return
-                }
-                guard var current = pendingCapture, current.id == captureId else { return }
-                current.isLotExtracting = false
-                current.lotExtractionError = friendlyLotExtractionError(error)
-                pendingCapture = current
-                return
-            }
-        }
-
-        if let previewOutcome {
-            applyLotOutcome(previewOutcome, to: captureId, isFinal: true)
-            return
-        }
-
-        do {
-            let outcome = try await Task.detached(priority: .userInitiated) {
-                try await service.extractLot(from: photoData)
-            }.value
-            applyLotOutcome(outcome, to: captureId, isFinal: true)
-        } catch {
-            guard var current = pendingCapture, current.id == captureId else { return }
-            current.isLotExtracting = false
-            current.lotExtractionError = friendlyLotExtractionError(error)
-            pendingCapture = current
-        }
-    }
-
-    @MainActor
-    private func extractLotWithSelectedEngine(captureId: UUID, photoData: Data) async {
-        let engine = LabelScanningEngineFactory.make(selection: selectedScanEngine)
+        let engine = LabelScanningEngineFactory.make()
         do {
             let result = try await Task.detached(priority: .userInitiated) {
                 try await engine.scan(imageData: photoData)
@@ -1116,71 +1034,6 @@ struct TraceabilityLotCaptureFlowView: View {
             current.lotExtractionError = friendlyLotExtractionError(error)
             pendingCapture = current
         }
-    }
-
-    private func mergeLotOutcomes(
-        preview: ProductionLotCaptureOutcome?,
-        enhanced: ProductionLotCaptureOutcome
-    ) -> ProductionLotCaptureOutcome {
-        guard let preview else { return enhanced }
-
-        // Groq vince sul lotto solo se valido; scarta etichette tipo "number"/"LATTY".
-        let mergedLot: String? = {
-            let context = [preview.rawText, enhanced.rawText].joined(separator: "\n")
-            let groq = enhanced.lotCode.flatMap {
-                LabelLotSanitizer.validateLot($0, rawContext: context)
-            }
-            if let groq, !groq.isEmpty { return groq }
-            return preview.lotCode.flatMap {
-                LabelLotSanitizer.validateLot($0, rawContext: context)
-            }
-        }()
-
-        // Scadenza: mai far vincere un'allucinazione Groq (nil o anno folle) sulla data Apple Vision.
-        let mergedExpiry = preferredMergedExpiry(
-            preview: preview.expiryDate,
-            enhanced: enhanced.expiryDate
-        )
-
-        return ProductionLotCaptureOutcome(
-            rawText: [preview.rawText, enhanced.rawText].filter { !$0.isEmpty }.joined(separator: "\n"),
-            lotCode: mergedLot,
-            ingredientName: enhanced.ingredientName ?? preview.ingredientName,
-            expiryDate: mergedExpiry,
-            confidence: max(preview.confidence, enhanced.confidence),
-            lotParseAudit: preview.lotParseAudit + enhanced.lotParseAudit + [
-                mergedExpiryAudit(preview: preview.expiryDate, enhanced: enhanced.expiryDate, chosen: mergedExpiry)
-            ].compactMap { $0 },
-            analysisNote: enhanced.analysisNote ?? preview.analysisNote
-        )
-    }
-
-    /// Se Groq non ha scadenza (scartata dal guardrail) o ha un anno folle, prevale Apple Vision.
-    private func preferredMergedExpiry(preview: Date?, enhanced: Date?) -> Date? {
-        guard let enhanced else { return preview }
-        guard let preview else { return enhanced }
-
-        let currentYear = Calendar.current.component(.year, from: Date())
-        let enhancedYear = Calendar.current.component(.year, from: enhanced)
-        if enhancedYear > currentYear + 3 || enhancedYear < currentYear - 1 {
-            return preview
-        }
-        // Entrambi plausibili: preferisci Groq (visione multi-crop) ma non azzerare il locale.
-        return enhanced
-    }
-
-    private func mergedExpiryAudit(preview: Date?, enhanced: Date?, chosen: Date?) -> String? {
-        let df = DateFormatter()
-        df.dateFormat = "dd/MM/yyyy"
-        df.locale = Locale(identifier: "it_IT")
-        func fmt(_ d: Date?) -> String { d.map { df.string(from: $0) } ?? "nil" }
-        if enhanced == nil, preview != nil, chosen == preview {
-            return "Merge scadenza: Groq nil → preservata anteprima locale \(fmt(preview))"
-        }
-        if let enhanced, let preview, chosen == preview, enhanced != preview {
-            return "Merge scadenza: scartata allucinazione Groq \(fmt(enhanced)) → locale \(fmt(preview))"
-        }
-        return nil
     }
 
     private func selectTemplate(_ template: ProductTemplate) {
@@ -1305,6 +1158,7 @@ struct TraceabilityLotCaptureFlowView: View {
         showAddProductionInPicker = false
         selectedReusedRecordIds = []
         productionDishPhotoData = nil
+        isWarehouseOnlyPicker = false
         camera.stop()
         presentedSheet = .productionPicker
     }
@@ -1319,6 +1173,7 @@ struct TraceabilityLotCaptureFlowView: View {
         showAddProductionInPicker = false
         selectedReusedRecordIds = []
         productionDishPhotoData = nil
+        isWarehouseOnlyPicker = true
         camera.stop()
         presentedSheet = .productionPicker
     }

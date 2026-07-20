@@ -44,6 +44,12 @@ enum HistoryDataFetcher {
         data.labelRecords = fetchLimited(context, restaurantId: rid, limit: limit, sort: SortDescriptor(\ProductionLabelRecord.createdAt, order: .reverse))
         data.goodsRecords = fetchLimited(context, restaurantId: rid, limit: limit, sort: SortDescriptor(\GoodsReceipt.receivedAt, order: .reverse))
         data.traceabilityRecords = fetchLimited(context, restaurantId: rid, limit: limit, sort: SortDescriptor(\TraceabilityRecord.createdAt, order: .reverse))
+
+        // Lotti scaduti da chiudere possono avere createdAt vecchio: reintroducili.
+        let expiredPending = fetchExpiredPendingRecords(context, restaurantId: rid, limit: min(limit, 200))
+        let knownIds = Set(data.traceabilityRecords.map(\.id))
+        data.traceabilityRecords += expiredPending.filter { !knownIds.contains($0.id) }
+
         let recordIds = Set(data.traceabilityRecords.map(\.id))
         data.traceabilityLinks = fetchTraceabilityLinks(
             context,
@@ -63,7 +69,12 @@ enum HistoryDataFetcher {
         )
         data.productions = fetchLimited(context, restaurantId: rid, limit: 500, sort: SortDescriptor(\Production.name, order: .forward))
         data.produzioneBatches = fetchLimited(context, restaurantId: rid, limit: limit, sort: SortDescriptor(\ProduzioneBatch.producedAt, order: .reverse))
-        data.productImages = fetchProductImages(context, restaurantId: rid, limit: limit * 3)
+        data.productImages = fetchProductImages(
+            context,
+            recordIds: Set(data.traceabilityRecords.map(\.id)),
+            batchIds: Set(data.produzioneBatches.map(\.id)),
+            limit: max(limit * 4, 400)
+        )
         data.oilRecords = fetchLimited(context, restaurantId: rid, limit: limit, sort: SortDescriptor(\OilControlRecord.checkedAt, order: .reverse))
         return data
     }
@@ -93,6 +104,26 @@ enum HistoryDataFetcher {
         )
         descriptor.fetchLimit = limit
         return ((try? context.fetch(descriptor)) ?? []).filter { recordIds.contains($0.receivedItemId) }
+    }
+
+    /// Lotti scaduti ancora da chiudere (anche se creati da tempo).
+    private static func fetchExpiredPendingRecords(
+        _ context: ModelContext,
+        restaurantId: UUID,
+        limit: Int
+    ) -> [TraceabilityRecord] {
+        let rid = restaurantId
+        let expired = ProductStatus.expired.rawValue
+        var descriptor = FetchDescriptor<TraceabilityRecord>(
+            predicate: #Predicate {
+                $0.restaurantId == rid
+                    && !$0.isArchived
+                    && $0.productStatusRaw == expired
+            },
+            sortBy: [SortDescriptor(\TraceabilityRecord.expiryDate, order: .forward)]
+        )
+        descriptor.fetchLimit = limit
+        return (try? context.fetch(descriptor)) ?? []
     }
 
     private static func fetchTraceabilityLinks(
@@ -151,16 +182,30 @@ enum HistoryDataFetcher {
 
     private static func fetchProductImages(
         _ context: ModelContext,
-        restaurantId: UUID,
+        recordIds: Set<UUID>,
+        batchIds: Set<UUID>,
         limit: Int
     ) -> [ProductImage] {
-        _ = restaurantId
         var descriptor = FetchDescriptor<ProductImage>(
             predicate: #Predicate { !$0.isArchived },
             sortBy: [SortDescriptor(\ProductImage.createdAt, order: .reverse)]
         )
-        descriptor.fetchLimit = limit
-        return (try? context.fetch(descriptor)) ?? []
+        descriptor.fetchLimit = max(limit, 200)
+        let all = (try? context.fetch(descriptor)) ?? []
+        // Preferisci foto dei lotti / batch in Storia; tieni anche le altre fino al limite.
+        let prioritized = all.filter { image in
+            if let rid = image.receivedItemId, recordIds.contains(rid) { return true }
+            if let bid = image.produzioneBatchId, batchIds.contains(bid) { return true }
+            return false
+        }
+        if prioritized.count >= limit { return Array(prioritized.prefix(limit)) }
+        var seen = Set(prioritized.map(\.id))
+        var result = prioritized
+        for image in all where seen.insert(image.id).inserted {
+            result.append(image)
+            if result.count >= limit { break }
+        }
+        return result
     }
 }
 

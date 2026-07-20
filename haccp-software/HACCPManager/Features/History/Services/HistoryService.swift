@@ -110,7 +110,6 @@ struct HistoryService {
         )
         let expiry = ExpiryHistoryProvider().entries(
             traceabilityRecords: traceabilityRecords,
-            traceabilityLogs: traceabilityLogs,
             lottoFotos: lottoFotos,
             restaurantId: restaurantId
         )

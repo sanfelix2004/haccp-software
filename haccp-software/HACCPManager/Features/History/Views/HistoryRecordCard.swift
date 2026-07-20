@@ -158,16 +158,26 @@ struct HistoryRecordCard: View, Equatable {
                             ProductionInternalLotBadge(batchCode: lot, compact: true)
                         }
                         if let photo = entry.photoData {
-                            photoCard(photo)
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Foto produzione")
+                                    .font(theme.typography.caption.weight(.semibold))
+                                    .foregroundStyle(theme.colorTextSecondary)
+                                photoCard(photo)
+                            }
                         }
-                        VStack(spacing: 8) {
-                            ForEach(ingredients) { ingredient in
-                                Button {
-                                    selectedIngredientId = IdentifiableUUID(id: ingredient.id)
-                                } label: {
-                                    ingredientRow(ingredient)
+                        if !ingredients.isEmpty {
+                            Text("Alimenti associati")
+                                .font(theme.typography.caption.weight(.semibold))
+                                .foregroundStyle(theme.colorTextSecondary)
+                            VStack(spacing: 8) {
+                                ForEach(ingredients) { ingredient in
+                                    Button {
+                                        selectedIngredientId = IdentifiableUUID(id: ingredient.id)
+                                    } label: {
+                                        ingredientRow(ingredient)
+                                    }
+                                    .buttonStyle(.plain)
                                 }
-                                .buttonStyle(.plain)
                             }
                         }
                     }
@@ -184,16 +194,18 @@ struct HistoryRecordCard: View, Equatable {
             if let photo = ingredient.photoData,
                let thumb = HACCPZoomablePhotoThumbnail(
                 data: photo,
-                size: 44,
+                size: 56,
                 zoomTitle: ingredient.name
                ) {
                 thumb
             } else {
-                Image(systemName: "shippingbox.fill")
-                    .font(.caption)
-                    .foregroundStyle(theme.colorPrimary)
-                    .frame(width: 20)
-                    .padding(.top, 2)
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(theme.colorPrimary.opacity(0.1))
+                    .frame(width: 56, height: 56)
+                    .overlay {
+                        Image(systemName: "shippingbox.fill")
+                            .foregroundStyle(theme.colorPrimary)
+                    }
             }
 
             VStack(alignment: .leading, spacing: 4) {
@@ -209,13 +221,21 @@ struct HistoryRecordCard: View, Equatable {
                         .foregroundStyle(theme.colorTextSecondary)
                 }
                 HStack(spacing: 8) {
-                    if ingredient.expiryText != "—" {
+                    if ingredient.expiryText != "—" && !ingredient.expiryText.isEmpty {
                         Label(ingredient.expiryText, systemImage: "calendar")
                     }
                     Text(ingredient.operatorName)
                 }
                 .font(theme.typography.caption2)
                 .foregroundStyle(theme.colorTextSecondary)
+
+                if let status = ingredient.statusLabel, !status.isEmpty {
+                    HACCPBadge(
+                        title: status,
+                        style: TraceabilityLotOperationalStatus.style(forOutcome: status),
+                        showIcon: false
+                    )
+                }
             }
 
             Spacer(minLength: 0)
@@ -301,7 +321,7 @@ struct HistoryRecordCard: View, Equatable {
 
     private var detailsGrid: some View {
         LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], alignment: .leading, spacing: 8) {
-            ForEach(entry.details) { detail in
+            ForEach(entry.details.filter { Self.shouldShowDetail($0) }) { detail in
                 VStack(alignment: .leading, spacing: 3) {
                     Text(detail.label.uppercased())
                         .font(.system(size: 9, weight: .bold))
@@ -318,6 +338,16 @@ struct HistoryRecordCard: View, Equatable {
                 .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
             }
         }
+    }
+
+    /// Non mostrare «Scadenza» se non indicata (—, N.d., Non indicata, vuoto).
+    private static func shouldShowDetail(_ detail: HistoryEntryDetail) -> Bool {
+        let isExpiry = detail.label.localizedCaseInsensitiveContains("scadenz")
+        guard isExpiry else { return true }
+        let value = detail.value.trimmingCharacters(in: .whitespacesAndNewlines)
+        if value.isEmpty || value == "—" || value == "N.d." { return false }
+        if value.localizedCaseInsensitiveContains("non indicat") { return false }
+        return true
     }
 
     private func photoCard(_ data: Data) -> some View {

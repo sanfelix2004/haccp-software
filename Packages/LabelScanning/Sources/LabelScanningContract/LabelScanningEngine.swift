@@ -1,8 +1,6 @@
 import Foundation
 
 /// Contratto comune per motori di lettura lotto/scadenza da foto etichetta.
-///
-/// Estendibile a motori cloud futuri senza rompere V1/V2: basta conformarsi al protocollo.
 public protocol LabelScanningEngine: Sendable {
     func scan(imageData: Data) async throws -> LabelScanResult
 }

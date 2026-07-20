@@ -15,7 +15,7 @@ enum ProductStatus: String, Codable, CaseIterable {
     var label: String {
         switch self {
         case .available: return "Disponibile"
-        case .used: return "Usato"
+        case .used: return "Chiuso"
         case .expired: return "Scaduto"
         case .rejected: return "Respinto"
         }

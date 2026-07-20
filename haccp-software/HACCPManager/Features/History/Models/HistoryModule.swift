@@ -7,7 +7,7 @@ enum HistoryModule: String, CaseIterable, Identifiable {
     case cleaningControl = "Controllo pulizia"
     case blastChilling = "Abbattimento"
     case scheduling = "Programmazione"
-    case expiryControl = "Controllo scadenze"
+    case expiryControl = "Controllo scadenze e quantità"
     case defrost = "Decongelamento"
     case oilControl = "Controllo olio"
     case productionLabels = "Etichette di produzione"
@@ -22,7 +22,6 @@ enum HistoryModule: String, CaseIterable, Identifiable {
         .fridges,
         .cleaningControl,
         .blastChilling,
-        .expiryControl,
         .defrost,
         .oilControl,
         .productionLabels,
@@ -54,7 +53,7 @@ enum HistoryModule: String, CaseIterable, Identifiable {
         case .cleaningControl: return "Pulizia"
         case .blastChilling: return "Abbattimento"
         case .scheduling: return "Programm."
-        case .expiryControl: return "Scadenze"
+        case .expiryControl: return "Scadenze e qtà"
         case .defrost: return "Decongel."
         case .oilControl: return "Olio"
         case .productionLabels: return "Etichette"

@@ -63,7 +63,7 @@ enum DocumentModule: String, Codable, CaseIterable {
         case .controlloPulizia: return "Controllo pulizia"
         case .abbattimento: return "Abbattimento"
         case .programmazione: return "Programmazione"
-        case .controlloScadenze: return "Controllo scadenze abbattimento"
+        case .controlloScadenze: return "Controllo scadenze e quantità"
         case .decongelamento: return "Decongelamento"
         case .controlloOlio: return "Controllo olio"
         case .etichetteProduzione: return "Etichette di produzione"

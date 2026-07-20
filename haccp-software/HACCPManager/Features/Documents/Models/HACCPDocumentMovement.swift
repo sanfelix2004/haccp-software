@@ -6,6 +6,8 @@ enum HACCPDocumentMovementKind: String, Codable {
     case productionCompleted = "PRODUCTION_COMPLETED"
     case productionRemovedFromHistory = "PRODUCTION_REMOVED_FROM_HISTORY"
     case traceabilitySoftDeleted = "TRACEABILITY_SOFT_DELETED"
+    /// Chiusura operativa da Controllo scadenze (usato / scartato / scaduto / terminato).
+    case lotClosedFromExpiryControl = "LOT_CLOSED_FROM_EXPIRY"
 }
 
 /// Traccia immutabile di ogni movimento operativo rilevante per ASL/Documenti.
@@ -68,6 +70,8 @@ final class HACCPDocumentMovement {
             return "Rimossa dallo storico operativo"
         case .traceabilitySoftDeleted:
             return "Voce nascosta dallo storico (conservata in documenti)"
+        case .lotClosedFromExpiryControl:
+            return "Chiusura lotto"
         }
     }
 }

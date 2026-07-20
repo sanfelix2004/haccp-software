@@ -125,7 +125,7 @@ extension View {
     }
 }
 
-/// Contenuto visibile solo dopo autorizzazione MASTER (o se l'utente è già MASTER).
+/// Contenuto visibile se permesso diretto/elevato, altrimenti lucchetto + PIN MASTER.
 struct MasterGatedContent<Content: View>: View {
     let permission: AppPermission
     let permissions: UserPermissions
@@ -139,7 +139,7 @@ struct MasterGatedContent<Content: View>: View {
 
     var body: some View {
         Group {
-            if permissions.isMaster || unlocked {
+            if permissions.canPerform(permission) || unlocked {
                 content()
             } else {
                 VStack(spacing: 20) {

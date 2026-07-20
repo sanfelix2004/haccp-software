@@ -1,6 +1,6 @@
 import Foundation
 
-/// Monitoraggio scadenze produzioni finite (post-abbattimento / preparazione).
+/// Monitoraggio scadenze e quantità (alimenti in ingresso e produzioni finite).
 enum ExpiryControlRegister {
     struct Row {
         let product: String
@@ -28,7 +28,7 @@ enum ExpiryControlRegister {
                 Row(
                     product: record.productName,
                     lot: record.lotCode.isEmpty ? "—" : record.lotCode,
-                    expiry: record.expiryDate.map { df.string(from: $0) } ?? "—",
+                    expiry: record.expiryDate.map { df.string(from: $0) } ?? "",
                     status: record.productStatus.label,
                     source: TraceabilityRecordSupport.expiryTypeLabel(for: record),
                     registeredAt: df.string(from: record.receivedAt),

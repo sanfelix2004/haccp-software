@@ -6,7 +6,7 @@ import Foundation
 
 struct IncomingFoodCatalogGridSection: Identifiable {
     let id: String
-    let category: GoodsCategory
+    let categoryName: String
     let products: [ProductTemplate]
 }
 
@@ -18,9 +18,11 @@ struct IncomingFoodCatalogPresentation {
 
     static let empty = IncomingFoodCatalogPresentation()
 
+    /// - Parameter selectedCategoryName: `nil` = Tutti
     static func build(
         templates: [ProductTemplate],
-        selectedCategory: GoodsCategory
+        categories: [IncomingFoodCategory],
+        selectedCategoryName: String?
     ) -> IncomingFoodCatalogPresentation {
         guard !templates.isEmpty else { return .empty }
 
@@ -30,12 +32,14 @@ struct IncomingFoodCatalogPresentation {
 
         var presentation = IncomingFoodCatalogPresentation()
 
-        if selectedCategory != .all {
-            presentation.flatProducts = sorted.filter { $0.category == selectedCategory }
+        if let selectedCategoryName, !selectedCategoryName.isEmpty {
+            presentation.flatProducts = sorted.filter {
+                $0.categoryRaw.caseInsensitiveCompare(selectedCategoryName) == .orderedSame
+            }
             presentation.sections = presentation.flatProducts.isEmpty ? [] : [
                 IncomingFoodCatalogGridSection(
-                    id: selectedCategory.rawValue,
-                    category: selectedCategory,
+                    id: selectedCategoryName,
+                    categoryName: selectedCategoryName,
                     products: presentation.flatProducts
                 )
             ]
@@ -44,14 +48,29 @@ struct IncomingFoodCatalogPresentation {
             return presentation
         }
 
+        let orderedNames = categories
+            .sorted { $0.orderIndex < $1.orderIndex }
+            .map(\.name)
+        var seen = Set(orderedNames.map { $0.lowercased() })
+        var allNames = orderedNames
+        for template in sorted {
+            let key = template.categoryRaw.lowercased()
+            if !key.isEmpty, !seen.contains(key) {
+                seen.insert(key)
+                allNames.append(template.categoryRaw)
+            }
+        }
+
         var sections: [IncomingFoodCatalogGridSection] = []
-        for category in GoodsCategory.allCases where category != .all {
-            let items = sorted.filter { $0.category == category }
+        for name in allNames {
+            let items = sorted.filter {
+                $0.categoryRaw.caseInsensitiveCompare(name) == .orderedSame
+            }
             guard !items.isEmpty else { continue }
             sections.append(
                 IncomingFoodCatalogGridSection(
-                    id: category.rawValue,
-                    category: category,
+                    id: name,
+                    categoryName: name,
                     products: items
                 )
             )
@@ -61,5 +80,26 @@ struct IncomingFoodCatalogPresentation {
         presentation.usesSectionHeaders = sections.count > 1
         presentation.showsCategoryOnCard = !presentation.usesSectionHeaders
         return presentation
+    }
+
+    /// Compatibilità con filtri ancora basati su `GoodsCategory`.
+    static func build(
+        templates: [ProductTemplate],
+        selectedCategory: GoodsCategory
+    ) -> IncomingFoodCatalogPresentation {
+        build(
+            templates: templates,
+            categories: GoodsCategory.allCases
+                .filter { $0 != .all }
+                .enumerated()
+                .map {
+                    IncomingFoodCategory(
+                        restaurantId: UUID(),
+                        name: $0.element.rawValue,
+                        orderIndex: $0.offset
+                    )
+                },
+            selectedCategoryName: selectedCategory == .all ? nil : selectedCategory.rawValue
+        )
     }
 }

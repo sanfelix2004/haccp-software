@@ -17,7 +17,7 @@ struct DashboardView: View {
         (.fridges, "Temperature e allarmi", "thermometer.medium"),
         (.cleaningControl, "Piani pulizia", "sparkles"),
         (.blastChilling, "Abbattimento termico", "wind.snow"),
-        (.expiryControl, "Scadenze prodotti", "calendar.badge.exclamationmark"),
+        (.expiryControl, "Scadenze e quantità", "calendar.badge.exclamationmark"),
         (.defrost, "Decongelamenti", "snowflake"),
         (.oilControl, "Olio frittura", "drop.fill"),
         (.productionLabels, "Etichette produzione", "tag.fill"),
@@ -73,7 +73,8 @@ struct DashboardView: View {
                                     title: row.item.rawValue,
                                     icon: row.icon,
                                     description: row.description,
-                                    badge: badgeCount(for: row.item)
+                                    badge: badgeCount(for: row.item),
+                                    locked: row.item.needsMasterAuthToAccess(by: permissions)
                                 )
                             }
                             .buttonStyle(PremiumPressButtonStyle())
@@ -92,7 +93,8 @@ struct DashboardView: View {
                                     title: row.item.rawValue,
                                     icon: row.icon,
                                     description: row.description,
-                                    badge: toolBadge(for: row.item)
+                                    badge: toolBadge(for: row.item),
+                                    locked: row.item.needsMasterAuthToAccess(by: permissions)
                                 )
                             }
                             .buttonStyle(PremiumPressButtonStyle())
@@ -186,11 +188,11 @@ struct DashboardView: View {
     }
 
     private var visibleHaccpModules: [(item: SidebarItem, description: String, icon: String)] {
-        haccpDashboardModules.filter { $0.item.isAccessible(by: permissions) }
+        haccpDashboardModules.filter { $0.item.isListedInSidebar(by: permissions) }
     }
 
     private var visibleToolModules: [(item: SidebarItem, description: String, icon: String)] {
-        toolModules.filter { $0.item.isAccessible(by: permissions) }
+        toolModules.filter { $0.item.isListedInSidebar(by: permissions) }
     }
 
     private var activeRestaurant: Restaurant? {

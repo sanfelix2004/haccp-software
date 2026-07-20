@@ -4,28 +4,67 @@ import SwiftData
 /// Controllo MASTER sullo storico operativo: nasconde voci dalla UI senza cancellare i documenti.
 struct HistoryControlService {
 
-    /// Rimuove una produzione completata dallo storico/hub operativo.
-    /// Soft-archive: i dati e i log restano; Documenti ricevono un movimento permanente.
+    /// Rimuove una produzione dallo storico/hub.
+    /// Con motivo `.error` → cancellazione definitiva (come Tracciabilità).
+    /// Altrimenti soft-hide (resta in Documenti). Ingredienti scollegati se richiesto.
     func removeProductionFromHistory(
         batch: ProduzioneBatch,
+        reason: HistoryRemovalReason,
+        note: String? = nil,
         user: LocalUser,
-        modelContext: ModelContext
+        modelContext: ModelContext,
+        unlinkIngredients: Bool = true
     ) throws {
-        guard !batch.isArchived else { return }
+        guard !batch.isArchived || reason == .error else { return }
+        if reason.requiresNote {
+            let trimmed = note?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            guard !trimmed.isEmpty else {
+                throw NSError(
+                    domain: "HistoryControlService",
+                    code: 1,
+                    userInfo: [NSLocalizedDescriptionKey: "Per «Altro» indica una nota."]
+                )
+            }
+        }
 
+        // Errore di registrazione: niente soft-hide, cancellazione totale.
+        if reason == .error {
+            try TraceabilityService().hardPurgeProductionBatch(
+                batch: batch,
+                unlinkIncoming: unlinkIngredients,
+                user: user,
+                modelContext: modelContext
+            )
+            KitchenProcessNotifications.postRecordsDidChange()
+            return
+        }
+
+        if unlinkIngredients {
+            try TraceabilityService().unlinkIncomingLots(
+                productionId: batch.productionId,
+                batchId: batch.id,
+                modelContext: modelContext
+            )
+        }
+
+        let trimmedNote = note?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
         let ingredientLines = ingredientSummaries(for: batch, modelContext: modelContext)
+        let reasonDetail = Self.auditDetail(reason: reason, note: trimmedNote)
 
         DocumentMovementRecorder.recordProductionRemovedFromHistory(
             batch: batch,
             ingredientLines: ingredientLines,
+            reason: reason,
+            note: trimmedNote,
             user: user,
             modelContext: modelContext
         )
 
         batch.isArchived = true
         batch.archivedAt = Date()
+        batch.historyRemovalReason = reason
+        batch.historyRemovalNote = trimmedNote
 
-        // Nasconde il piatto finito dalle viste operative; non tocca i log.
         let batchId = batch.id
         var outputDescriptor = FetchDescriptor<TraceabilityRecord>(
             predicate: #Predicate<TraceabilityRecord> { $0.produzioneBatchId == batchId }
@@ -40,7 +79,7 @@ struct HistoryControlService {
                     productionId: batch.productionId,
                     actionType: .removedFromHistory,
                     operatorName: user.name,
-                    detail: "Lotto produzione \(batch.batchCode) — nascosto dallo storico (conservato in Documenti)"
+                    detail: "Lotto produzione \(batch.batchCode) — nascosto dallo storico (\(reasonDetail))"
                 )
             )
         }
@@ -53,13 +92,63 @@ struct HistoryControlService {
         )
     }
 
-    /// Soft-delete voce tracciabilità: resta in Documenti, sparisce dallo storico operativo.
+    /// Soft-delete / hard-purge voce tracciabilità.
+    /// `.error` → cancellazione definitiva (non resta in Documenti).
+    /// Altri motivi → soft-hide con audit Documenti.
     func softDeleteTraceabilityRecord(
         record: TraceabilityRecord,
+        reason: HistoryRemovalReason,
+        note: String? = nil,
         user: LocalUser,
         modelContext: ModelContext
     ) throws {
-        guard !record.isArchived else { return }
+        guard !record.isArchived || reason == .error else { return }
+        if reason.requiresNote {
+            let trimmed = note?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            guard !trimmed.isEmpty else {
+                throw NSError(
+                    domain: "HistoryControlService",
+                    code: 1,
+                    userInfo: [NSLocalizedDescriptionKey: "Per «Altro» indica una nota."]
+                )
+            }
+        }
+
+        if reason == .error {
+            try TraceabilityService().deleteTraceabilityEntry(
+                record: record,
+                links: [],
+                logs: [],
+                images: [],
+                user: user,
+                modelContext: modelContext
+            )
+            return
+        }
+
+        if record.isProductionBatchOutput, let batchId = record.produzioneBatchId {
+            var batchDesc = FetchDescriptor<ProduzioneBatch>(
+                predicate: #Predicate<ProduzioneBatch> { $0.id == batchId }
+            )
+            batchDesc.fetchLimit = 1
+            if let batch = (try? modelContext.fetch(batchDesc))?.first, !batch.isArchived {
+                try removeProductionFromHistory(
+                    batch: batch,
+                    reason: reason,
+                    note: note,
+                    user: user,
+                    modelContext: modelContext
+                )
+                return
+            }
+        }
+
+        if record.isIncomingIngredientLot {
+            try unlinkIncomingRecord(record, modelContext: modelContext)
+        }
+
+        let trimmedNote = note?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+        let reasonDetail = Self.auditDetail(reason: reason, note: trimmedNote)
 
         DocumentMovementRecorder.record(
             restaurantId: record.restaurantId,
@@ -69,7 +158,16 @@ struct HistoryControlService {
             entityId: record.id,
             productionName: record.productName,
             lotCode: record.lotCode.nilIfEmpty,
-            summary: "\(record.productName) · Lotto \(record.lotCode.isEmpty ? "—" : record.lotCode) · \(record.supplier.isEmpty ? "—" : record.supplier)",
+            summary: "\(record.productName) · Lotto \(record.lotCode.isEmpty ? "—" : record.lotCode) · Motivo: \(reasonDetail)",
+            detailJSON: DocumentMovementRecorder.encodeRemovalJSON(
+                reason: reason,
+                note: trimmedNote,
+                extra: [
+                    "recordId": record.id.uuidString,
+                    "productName": record.productName,
+                    "lotCode": record.lotCode
+                ]
+            ),
             modelContext: modelContext
         )
 
@@ -80,7 +178,7 @@ struct HistoryControlService {
                 receivedItemId: record.id,
                 actionType: .removedFromHistory,
                 operatorName: user.name,
-                detail: "Nascosto dallo storico operativo — traccia conservata in Documenti"
+                detail: "Nascosto dallo storico operativo — \(reasonDetail)"
             )
         )
         try modelContext.save()
@@ -89,6 +187,30 @@ struct HistoryControlService {
             user: user,
             modelContext: modelContext
         )
+    }
+
+    private func unlinkIncomingRecord(_ record: TraceabilityRecord, modelContext: ModelContext) throws {
+        let recordId = record.id
+        let links = ((try? modelContext.fetch(FetchDescriptor<TraceabilityLink>())) ?? [])
+            .filter { $0.receivedItemId == recordId }
+        for link in links {
+            modelContext.delete(link)
+        }
+        if let lottoId = record.lottoFotoId {
+            let lottoLinks = ((try? modelContext.fetch(FetchDescriptor<LottoFotoProductionLink>())) ?? [])
+                .filter { $0.lottoFotoId == lottoId }
+            for link in lottoLinks {
+                modelContext.delete(link)
+            }
+        }
+        record.productionReference = nil
+    }
+
+    static func auditDetail(reason: HistoryRemovalReason, note: String?) -> String {
+        if let note, !note.isEmpty {
+            return "\(reason.auditLabel): \(note)"
+        }
+        return reason.auditLabel
     }
 
     private func ingredientSummaries(for batch: ProduzioneBatch, modelContext: ModelContext) -> [String] {

@@ -25,7 +25,6 @@ enum DocumentArchiveLayout {
         .controlloOlio,
         .decongelamento,
         .abbattimento,
-        .controlloScadenze,
         .checklist,
         .controlloPulizia,
         .frigoriferi,
@@ -38,7 +37,6 @@ enum DocumentArchiveLayout {
         .controlloOlio,
         .decongelamento,
         .abbattimento,
-        .controlloScadenze,
         .checklist,
         .controlloPulizia,
         .frigoriferi
@@ -53,7 +51,9 @@ enum DocumentArchiveLayout {
     /// Cartelle sostituite da «Tracciabilità e produzioni».
     static let retiredTracciabilitaFolderTitles: Set<String> = [
         moduleFolderTitle(.tracciabilita),
-        moduleFolderTitle(.etichetteProduzione)
+        moduleFolderTitle(.etichetteProduzione),
+        moduleFolderTitle(.controlloScadenze),
+        "Controllo scadenze abbattimento"
     ]
 
     /// Cartelle affinità precedenti (sostituite da moduli singoli).
@@ -77,6 +77,7 @@ enum DocumentArchiveLayout {
     static let retiredMonthlyGenerationModules: Set<DocumentModule> = [
         .tracciabilita,
         .etichetteProduzione,
+        .controlloScadenze,
         .haccpCombinato,
         .combinatoIngressoTracciabilita,
         .combinatoCatenaFreddo,
@@ -86,6 +87,20 @@ enum DocumentArchiveLayout {
 
     static func isRetiredMonthlyModule(_ module: DocumentModule) -> Bool {
         retiredMonthlyGenerationModules.contains(module)
+    }
+
+    /// Moduli ritirati che devono comparire/rigenerarsi come «Tracciabilità e produzioni».
+    static func remappedArchiveModule(for module: DocumentModule) -> DocumentModule {
+        switch module {
+        case .tracciabilita, .etichetteProduzione, .controlloScadenze:
+            return .combinatoTracciabilitaProduzione
+        default:
+            return module
+        }
+    }
+
+    static func displayModuleLabel(for module: DocumentModule) -> String {
+        remappedArchiveModule(for: module).label
     }
 
     static var activeMonthlyGenerationModules: [DocumentModule] {
@@ -154,7 +169,7 @@ enum DocumentArchiveLayout {
         case .abbattimento: return "Abbattimento"
         case .decongelamento: return "Decongelamento"
         case .controlloOlio: return "Controllo olio"
-        case .controlloScadenze: return "Controllo scadenze abbattimento"
+        case .controlloScadenze: return "Controllo scadenze e quantità"
         case .checklist: return "Checklist"
         case .etichetteProduzione: return "Etichette di produzione"
         case .combinatoIngressoTracciabilita: return "Ingresso e tracciabilità"

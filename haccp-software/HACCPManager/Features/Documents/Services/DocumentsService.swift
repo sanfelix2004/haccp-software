@@ -465,6 +465,18 @@ struct DocumentsService {
                 newModuleFolder: DocumentArchiveLayout.legacyReportsArchiveFolderName
             )
         }
+
+        // PDF già in cartella corretta ma ancora tipizzati come modulo ritirato.
+        for item in items {
+            let remapped = DocumentArchiveLayout.remappedArchiveModule(for: item.module)
+            guard remapped != item.module else { continue }
+            item.module = remapped
+            if item.title.localizedCaseInsensitiveContains("scadenze")
+                || item.title.localizedCaseInsensitiveContains("tracciabilit")
+                || item.title.localizedCaseInsensitiveContains("etichette") {
+                item.title = DocumentArchiveLayout.moduleFolderTitle(remapped)
+            }
+        }
     }
 
     private func ensureLegacyArchiveFolder(
@@ -555,6 +567,15 @@ struct DocumentsService {
 
         for item in items where item.folderId == source.id {
             item.folderId = destination.id
+            let remapped = DocumentArchiveLayout.remappedArchiveModule(for: item.module)
+            if remapped != item.module {
+                item.module = remapped
+                if item.title.localizedCaseInsensitiveContains("scadenze")
+                    || item.title.localizedCaseInsensitiveContains("tracciabilità")
+                    || item.title.localizedCaseInsensitiveContains("etichette") {
+                    item.title = DocumentArchiveLayout.moduleFolderTitle(remapped)
+                }
+            }
         }
 
         modelContext.delete(source)

@@ -9,6 +9,8 @@ enum ProductionTraceabilityRegister {
         let foodDetail: String
         let lot: String
         let expiryDetail: String
+        let recordId: UUID?
+        let photoData: Data?
     }
 
     struct MasterBlock {
@@ -18,6 +20,8 @@ enum ProductionTraceabilityRegister {
         let expiryDetail: String
         let ingredients: [IngredientLine]
         let batchId: UUID?
+        /// Foto piatto finito (risolta in fase di build).
+        let dishPhotoData: Data?
     }
 
     struct GiacenzaRow {
@@ -39,6 +43,7 @@ enum ProductionTraceabilityRegister {
         ingredientiTracciati: [IngredienteTracciato],
         lottoLinks: [LottoFotoProductionLink],
         lottoFotos: [LottoFoto],
+        productImages: [ProductImage] = [],
         df: DateFormatter
     ) -> [MasterBlock] {
         let traceById = Dictionary(uniqueKeysWithValues: traceability.map { ($0.id, $0) })
@@ -47,7 +52,7 @@ enum ProductionTraceabilityRegister {
         let dayFormatter = dayOnlyFormatter()
 
         let scopedBatches = batches
-            .filter { interval.contains($0.producedAt) }
+            .filter { !$0.isArchived && interval.contains($0.producedAt) }
             .sorted { $0.producedAt > $1.producedAt }
 
         var blocks: [MasterBlock] = []
@@ -72,15 +77,22 @@ enum ProductionTraceabilityRegister {
                 ingredientRecords: ingredientRecords
             )
             let dateLine = "\(dayFormatter.string(from: batch.producedAt)) · \(batch.createdByNameSnapshot)"
-            let dishName = batch.isArchived
-                ? "\(batch.productionNameSnapshot) [conservata in documenti — nascosta dallo storico]"
-                : batch.productionNameSnapshot
+            let dishName = batch.productionNameSnapshot
             let ingredients = ingredientRecords.map {
                 ingredientLine(
                     from: $0,
                     productionExpiry: dishExpiryDate,
-                    lottoById: lottoById
+                    lottoById: lottoById,
+                    productImages: productImages,
+                    lottoFotos: lottoFotos
                 )
+            }
+            let dishPhoto = ProductImageBytesResolver.productionDishPhoto(
+                batchId: batch.id,
+                images: productImages,
+                records: traceability
+            ) ?? outputRecord.flatMap {
+                ProductImageBytesResolver.resolve(record: $0, images: productImages, lottoFotos: lottoFotos)
             }
 
             blocks.append(MasterBlock(
@@ -90,9 +102,10 @@ enum ProductionTraceabilityRegister {
                     expiry: dishExpiryDate
                 ),
                 lotDetail: internalLot,
-                expiryDetail: "—",
+                expiryDetail: productionExpiryCell(dishExpiryDate),
                 ingredients: ingredients,
-                batchId: batch.id
+                batchId: batch.id,
+                dishPhotoData: dishPhoto
             ))
         }
 
@@ -123,7 +136,9 @@ enum ProductionTraceabilityRegister {
                 ingredientLine(
                     from: $0,
                     productionExpiry: dishExpiryDate,
-                    lottoById: lottoById
+                    lottoById: lottoById,
+                    productImages: productImages,
+                    lottoFotos: lottoFotos
                 )
             }
 
@@ -135,9 +150,10 @@ enum ProductionTraceabilityRegister {
                     expiry: dishExpiryDate
                 ),
                 lotDetail: HACCPRegisterCopy.notAvailable,
-                expiryDetail: "—",
+                expiryDetail: productionExpiryCell(dishExpiryDate),
                 ingredients: ingredients,
-                batchId: nil
+                batchId: nil,
+                dishPhotoData: nil
             ))
         }
 
@@ -163,7 +179,7 @@ enum ProductionTraceabilityRegister {
                     product: record.productName,
                     supplier: record.supplier.isEmpty ? HACCPRegisterCopy.notAvailable : record.supplier,
                     lot: record.lotCode.isEmpty ? HACCPRegisterCopy.notAvailable : record.lotCode,
-                    expiry: record.expiryDate.map { formattedExpiry($0) } ?? HACCPRegisterCopy.notAvailable,
+                    expiry: record.expiryDate.map { formattedExpiry($0) } ?? "",
                     operatorName: record.createdByNameSnapshot
                 )
             }
@@ -257,7 +273,9 @@ enum ProductionTraceabilityRegister {
     private static func ingredientLine(
         from record: TraceabilityRecord,
         productionExpiry: Date?,
-        lottoById: [UUID: LottoFoto]
+        lottoById: [UUID: LottoFoto],
+        productImages: [ProductImage],
+        lottoFotos: [LottoFoto]
     ) -> IngredientLine {
         let dayFormatter = dayOnlyFormatter()
         let dateOperator = [
@@ -279,11 +297,19 @@ enum ProductionTraceabilityRegister {
             foodLines.append("Fornitore: \(supplier)")
         }
 
+        let photo = ProductImageBytesResolver.resolve(
+            record: record,
+            images: productImages,
+            lottoFotos: lottoFotos
+        )
+
         return IngredientLine(
             dateOperator: dateOperator,
             foodDetail: foodLines.joined(separator: "\n"),
             lot: lot.isEmpty ? HACCPRegisterCopy.notAvailable : lot,
-            expiryDetail: productionExpiryCell(productionExpiry)
+            expiryDetail: productionExpiryCell(productionExpiry),
+            recordId: record.id,
+            photoData: photo
         )
     }
 
@@ -300,7 +326,7 @@ enum ProductionTraceabilityRegister {
     }
 
     private static func productionExpiryCell(_ productionExpiry: Date?) -> String {
-        guard let expiryText = formattedExpiryText(productionExpiry) else { return "—" }
+        guard let expiryText = formattedExpiryText(productionExpiry) else { return "" }
         return "Produzione: \(expiryText)"
     }
 
@@ -320,7 +346,7 @@ enum ProductionTraceabilityRegister {
     }
 
     private static func formattedExpiry(_ date: Date?, prefix: String = "") -> String {
-        guard let text = formattedExpiryText(date) else { return HACCPRegisterCopy.notAvailable }
+        guard let text = formattedExpiryText(date) else { return "" }
         return "\(prefix)\(text)"
     }
 

@@ -78,6 +78,7 @@ struct ProductionLabelsView: View {
             ProductionLabelScannedDetailView(
                 data: data,
                 showsOfflineBanner: !dataStore.labels.contains(where: { $0.id == data.id }),
+                restaurantId: appState.activeRestaurantId,
                 onOpenInArchive: dataStore.labels.contains(where: { $0.id == data.id })
                     ? {
                         scannedLabelData = nil

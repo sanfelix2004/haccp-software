@@ -170,13 +170,22 @@ final class DocumentGenerationService {
             throw DocumentGeneratorError.invalidPeriod
         }
         let rid = restaurant.id
+        let module = DocumentArchiveLayout.remappedArchiveModule(for: item.module)
+        if module != item.module {
+            item.module = module
+            if item.title.isEmpty
+                || item.title.localizedCaseInsensitiveContains("scadenze")
+                || item.title.localizedCaseInsensitiveContains("tracciabilit") {
+                item.title = DocumentArchiveLayout.moduleFolderTitle(module)
+            }
+        }
         try writePDF(
             existing: item,
             restaurant: restaurant,
             user: user,
             folders: folders.filter { $0.restaurantId == rid },
             type: effectiveDocType(item),
-            module: item.module,
+            module: module,
             interval: interval,
             receipts: receipts.filter { $0.restaurantId == rid },
             traceability: traceabilityRecords.filter { $0.restaurantId == rid },

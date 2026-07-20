@@ -25,26 +25,24 @@ struct TraceabilityView: View {
     @State private var auxiliaryLoadTask: Task<Void, Never>?
 
     @State private var showLotCapture = false
+    @State private var showInvoiceCapture = false
     @State private var resumeSessionId: UUID?
     @State private var dismissedSessionIds: Set<UUID> = []
 
     @State private var detailRecord: TraceabilityRecord?
     @State private var quickAssociateRecord: TraceabilityRecord?
-    @State private var multiAssociateRecord: TraceabilityRecord?
-    @State private var pendingProductionIds: Set<UUID> = []
-    @State private var showProductionSelection = false
-
     @State private var nonComplianceRecord: TraceabilityRecord?
     @State private var labelDraft: ProductionLabelDraft?
 
     @State private var recordPendingDelete: TraceabilityRecord?
+    @State private var productionGroupPendingDelete: TraceabilityProductionArchiveGroup?
+    @State private var editRecord: TraceabilityRecord?
     @State private var errorMessage: String?
     @State private var openSessions: [TraceabilityOpenSession] = []
     @State private var masterAuth = MasterAuthCoordinator()
     @State private var showActiveLottiList = false
     @State private var sessionToDelete: TraceabilityOpenSession? = nil
 
-    private let productionLibraryService = ProductionLibraryService()
     private let service = TraceabilityService()
     private let labelService = ProductionLabelsService()
     private let lottoService = LottoFotoService()
@@ -125,6 +123,7 @@ struct TraceabilityView: View {
 
     private var permissions: UserPermissions { currentUser?.permissions ?? UserPermissions(role: .viewer) }
     private var canDeleteRecords: Bool { permissions.can(.deleteTraceabilityRecords) }
+    private var canEditRecords: Bool { permissions.can(.executeRecords) }
 
     private var activeOpenSession: TraceabilityOpenSession? {
         openSessions.first { !dismissedSessionIds.contains($0.id) }
@@ -156,10 +155,60 @@ struct TraceabilityView: View {
         } message: {
             Text(errorMessage ?? "")
         }
+        .alert(
+            "Eliminare la produzione?",
+            isPresented: Binding(
+                get: { productionGroupPendingDelete != nil },
+                set: { if !$0 { productionGroupPendingDelete = nil } }
+            )
+        ) {
+            Button("Annulla", role: .cancel) { productionGroupPendingDelete = nil }
+            Button("Elimina produzione", role: .destructive) {
+                if let group = productionGroupPendingDelete {
+                    performDeleteProductionGroup(group)
+                }
+            }
+        } message: {
+            Text("Cancellazione definitiva: non resta in Storia né nei Documenti/PDF. Gli alimenti sotto restano e vengono scollegati.")
+        }
         .fullScreenCover(isPresented: $showLotCapture) { lotCaptureOverlay }
+        .fullScreenCover(isPresented: $showInvoiceCapture) { invoiceCaptureOverlay }
         .sheet(item: $detailRecord) { record in detailSheet(for: record) }
-        .sheet(item: $quickAssociateRecord) { record in quickAssociateSheet(for: record) }
-        .sheet(isPresented: $showProductionSelection) { productionSelectionSheet }
+        .sheet(item: $editRecord) { record in
+            if let user = currentUser {
+                TraceabilityRecordEditSheet(
+                    record: record,
+                    batch: batchForEdit(record),
+                    user: user,
+                    onSaved: {
+                        editRecord = nil
+                        detailRecord = nil
+                        reloadAll()
+                    },
+                    onCancel: { editRecord = nil }
+                )
+            }
+        }
+        .sheet(item: $quickAssociateRecord) { record in
+            if let rid = appState.activeRestaurantId {
+                TraceabilityAssociateProductionSheet(
+                    primaryRecords: [record],
+                    restaurantId: rid,
+                    productions: dataStore.productions,
+                    categories: scopedCategories,
+                    onConfirm: { production, extraIds, dishPhoto in
+                        associateRecords(
+                            primary: [record],
+                            extraIds: extraIds,
+                            to: production,
+                            productionPhotoData: dishPhoto
+                        )
+                        quickAssociateRecord = nil
+                    },
+                    onCancel: { quickAssociateRecord = nil }
+                )
+            }
+        }
         .sheet(item: $nonComplianceRecord) { record in
             if let user = currentUser {
                 TraceabilityNonComplianceSheet(
@@ -312,6 +361,17 @@ struct TraceabilityView: View {
             }
 
             Button {
+                showInvoiceCapture = true
+            } label: {
+                Label("Da fattura / DDT", systemImage: "doc.text.viewfinder")
+                    .font(theme.typography.subheadline.weight(.semibold))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+            }
+            .buttonStyle(.bordered)
+            .tint(theme.colorPrimary)
+
+            Button {
                 showActiveLottiList = true
             } label: {
                 Label("Visualizza lotti in magazzino", systemImage: "archivebox.fill")
@@ -396,15 +456,25 @@ struct TraceabilityView: View {
                         },
                         onDeleteIngredient: canDeleteRecords
                             ? { recordId in requestDeleteRecord(id: recordId) }
+                            : nil,
+                        onDeleteProduction: canDeleteRecords
+                            ? { requestDeleteProductionGroup(group) }
                             : nil
                     )
                     .equatable()
                     .contextMenu {
+                        if canEditRecords {
+                            Button {
+                                beginEditProductionGroup(group)
+                            } label: {
+                                Label("Modifica dati", systemImage: "pencil")
+                            }
+                        }
                         if canDeleteRecords {
                             Button(role: .destructive) {
                                 requestDeleteProductionGroup(group)
                             } label: {
-                                Label("Rimuovi piatto", systemImage: "trash")
+                                Label("Elimina produzione (errore)", systemImage: "trash")
                             }
                         }
                     }
@@ -582,11 +652,20 @@ struct TraceabilityView: View {
                     ($0.id, hubContext.ingredientCount(forProduction: $0.id))
                 }
             ),
+            productionStatusById: Dictionary(
+                uniqueKeysWithValues: hubContext.associatedProductions(for: record).compactMap { production in
+                    guard let status = hubContext.operationalStatus(forProductionId: production.id) else {
+                        return nil
+                    }
+                    return (production.id, status)
+                }
+            ),
             linkedIngredientCount: hubContext.ingredientCount(for: record),
             defrostRecords: hubContext.defrostRecords(for: record),
             auditLogs: hubContext.auditLogs(for: record),
             productionsById: Dictionary(dataStore.productions.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first }),
             canDeleteRecords: canDeleteRecords,
+            canEditRecords: canEditRecords,
             hasExistingLabel: {
                 let draft = labelService.draft(from: record)
                 return ProductionLabelLinkMatcher.existingLabel(for: draft, in: scopedLabels) != nil
@@ -595,6 +674,13 @@ struct TraceabilityView: View {
             onAssociate: { beginMultiProductionAssociation(record) },
             onLabel: { beginLabel(for: record) },
             onNonCompliant: { nonComplianceRecord = record },
+            onEdit: {
+                let target = record
+                detailRecord = nil
+                DispatchQueue.main.async {
+                    editRecord = target
+                }
+            },
             onDelete: {
                 recordPendingDelete = record
                 performPendingDelete()
@@ -602,62 +688,6 @@ struct TraceabilityView: View {
             },
             onDismiss: { detailRecord = nil }
         )
-    }
-
-    @ViewBuilder
-    private func quickAssociateSheet(for record: TraceabilityRecord) -> some View {
-        TraceabilityQuickAssociateSheet(
-            record: record,
-            productions: dataStore.productions,
-            categories: scopedCategories,
-            onConfirm: { production, productionPhoto in
-                associate(record: record, to: production, productionPhotoData: productionPhoto)
-                quickAssociateRecord = nil
-            },
-            onCancel: { quickAssociateRecord = nil }
-        )
-    }
-
-    private var productionSelectionSheet: some View {
-        ProductionSelectionView(
-            initialSelectedIds: pendingProductionIds,
-            onCancel: { showProductionSelection = false },
-            onConfirm: { selectedProductions, productionPhoto in
-                guard let record = multiAssociateRecord,
-                      let user = currentUser else { return }
-                do {
-                    let existingLinks = dataStore.links.filter { $0.receivedItemId == record.id }
-                    let existingIds = Set(existingLinks.map(\.productionId))
-                    let selectedIds = Set(selectedProductions.map(\.id))
-
-                    for link in existingLinks where !selectedIds.contains(link.productionId) {
-                        modelContext.delete(link)
-                    }
-
-                    let newlySelected = selectedProductions.filter { !existingIds.contains($0.id) }
-                    if !newlySelected.isEmpty {
-                        try lottoService.associateWithProductions(
-                            lottoFotos: [],
-                            reusedRecords: [record],
-                            productions: newlySelected,
-                            user: user,
-                            modelContext: modelContext,
-                            productionPhotoData: productionPhoto
-                        )
-                    } else {
-                        let names = selectedProductions.map(\.name).sorted()
-                        record.productionReference = names.isEmpty ? nil : names.joined(separator: ", ")
-                        try modelContext.save()
-                    }
-
-                    reloadAll()
-                    showProductionSelection = false
-                } catch {
-                    errorMessage = "Associazione non riuscita."
-                }
-            }
-        )
-        .environmentObject(appState)
     }
 
     @ViewBuilder
@@ -708,6 +738,33 @@ struct TraceabilityView: View {
             .onAppear {
                 if appState.activeRestaurantId == nil {
                     showLotCapture = false
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var invoiceCaptureOverlay: some View {
+        if let rid = appState.activeRestaurantId, let user = currentUser {
+            TraceabilityInvoiceCaptureFlowView(
+                restaurantId: rid,
+                user: user,
+                onDismiss: {
+                    showInvoiceCapture = false
+                    reloadAll()
+                },
+                onUpdated: { reloadAll() }
+            )
+        } else {
+            ZStack {
+                Color.black.ignoresSafeArea()
+                ProgressView("Preparazione…")
+                    .tint(.white)
+                    .foregroundStyle(.white)
+            }
+            .onAppear {
+                if appState.activeRestaurantId == nil {
+                    showInvoiceCapture = false
                 }
             }
         }
@@ -774,29 +831,59 @@ struct TraceabilityView: View {
         requestDeleteUnlinkedRecord(record)
     }
 
+    private func performDeleteProductionGroup(_ group: TraceabilityProductionArchiveGroup) {
+        guard let user = currentUser else { return }
+        do {
+            try service.deleteProductionGroupFromHub(
+                group: group,
+                batches: dataStore.batches,
+                finishedRecord: finishedRecord(for: group),
+                user: user,
+                modelContext: modelContext
+            )
+            productionGroupPendingDelete = nil
+            reloadAll()
+            HapticManager.shared.notification(.success)
+        } catch {
+            errorMessage = "Eliminazione produzione non riuscita."
+            productionGroupPendingDelete = nil
+        }
+    }
+
     private func requestDeleteProductionGroup(_ group: TraceabilityProductionArchiveGroup) {
         masterAuth.request(
             permission: .deleteTraceabilityRecords,
             permissions: permissions,
-            action: { performDeleteProductionGroup(group) }
+            action: { productionGroupPendingDelete = group }
         )
     }
 
-    private func performDeleteProductionGroup(_ group: TraceabilityProductionArchiveGroup) {
-        do {
-            try productionLibraryService.removeProductionGroup(
-                group: group,
-                records: dataStore.records,
-                links: dataStore.links,
-                lottoProductionLinks: dataStore.lottoProductionLinks,
-                productionsById: Dictionary(dataStore.productions.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first }),
-                modelContext: modelContext
-            )
-            reloadAll()
-            HapticManager.shared.notification(.success)
-        } catch {
-            errorMessage = "Rimozione piatto non riuscita."
+    private func beginEditProductionGroup(_ group: TraceabilityProductionArchiveGroup) {
+        if let finished = finishedRecord(for: group) {
+            editRecord = finished
+            return
         }
+        errorMessage = "Nessun lotto produzione modificabile per questo piatto."
+    }
+
+    private func finishedRecord(for group: TraceabilityProductionArchiveGroup) -> TraceabilityRecord? {
+        if let batchId = group.batchId {
+            if let match = dataStore.productionOutputRecords.first(where: { $0.produzioneBatchId == batchId }) {
+                return match
+            }
+            if let match = dataStore.records.first(where: { $0.produzioneBatchId == batchId }) {
+                return match
+            }
+        }
+        return dataStore.productionOutputRecords.first {
+            $0.productionReference == group.productionName
+                || $0.productName == group.productionName
+        }
+    }
+
+    private func batchForEdit(_ record: TraceabilityRecord) -> ProduzioneBatch? {
+        guard let batchId = record.produzioneBatchId else { return nil }
+        return dataStore.batches.first { $0.id == batchId }
     }
 
     private func reloadAll() {
@@ -836,17 +923,24 @@ struct TraceabilityView: View {
     }
 
     private func beginMultiProductionAssociation(_ record: TraceabilityRecord) {
-        multiAssociateRecord = record
-        pendingProductionIds = Set(dataStore.links.filter { $0.receivedItemId == record.id }.map(\.productionId))
-        showProductionSelection = true
+        quickAssociateRecord = record
+        detailRecord = nil
     }
 
-    private func associate(record: TraceabilityRecord, to production: Production, productionPhotoData: Data? = nil) {
+    private func associateRecords(
+        primary: [TraceabilityRecord],
+        extraIds: Set<UUID>,
+        to production: Production,
+        productionPhotoData: Data? = nil
+    ) {
         guard let user = currentUser else { return }
+        let extras = dataStore.records.filter { extraIds.contains($0.id) }
+        let allRecords = primary + extras
+        guard !allRecords.isEmpty else { return }
         do {
             try lottoService.associateWithProductions(
                 lottoFotos: [],
-                reusedRecords: [record],
+                reusedRecords: allRecords,
                 productions: [production],
                 user: user,
                 modelContext: modelContext,
@@ -857,6 +951,15 @@ struct TraceabilityView: View {
         } catch {
             errorMessage = (error as NSError).localizedDescription
         }
+    }
+
+    private func associate(record: TraceabilityRecord, to production: Production, productionPhotoData: Data? = nil) {
+        associateRecords(
+            primary: [record],
+            extraIds: [],
+            to: production,
+            productionPhotoData: productionPhotoData
+        )
     }
 
     private func beginLabel(for record: TraceabilityRecord) {
