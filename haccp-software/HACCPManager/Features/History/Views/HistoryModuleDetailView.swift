@@ -9,13 +9,25 @@ struct HistoryModuleDetailView: View {
     @Environment(\.theme) private var theme
     @Environment(\.modelContext) private var modelContext
     @EnvironmentObject private var appState: AppState
+    @EnvironmentObject private var session: RestaurantSessionContext
     @Query private var users: [LocalUser]
     @StateObject private var vm = HistoryModuleDetailViewModel()
     @State private var visibleCount = PerformanceConfig.historyPageSize
     @State private var withdrawRecord: TraceabilityRecord?
+    @State private var masterAuth = MasterAuthCoordinator()
+    @State private var productionPendingDelete: HistoryEntry?
+    @State private var errorMessage: String?
 
     private var currentUser: LocalUser? {
-        users.first { $0.id == appState.currentUserId }
+        session.currentUser ?? users.first { $0.id == appState.currentUserId }
+    }
+
+    private var permissions: UserPermissions {
+        currentUser?.permissions ?? UserPermissions(role: .viewer)
+    }
+
+    private var canDeleteProduction: Bool {
+        module == .traceability && permissions.can(.manageHistory)
     }
 
     private var filteredEntries: [HistoryEntry] {
@@ -87,6 +99,31 @@ struct HistoryModuleDetailView: View {
                 )
             }
         }
+        .alert("Storia", isPresented: Binding(get: { errorMessage != nil }, set: { _ in errorMessage = nil })) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(errorMessage ?? "")
+        }
+        .alert(
+            "Eliminare la produzione?",
+            isPresented: Binding(
+                get: { productionPendingDelete != nil },
+                set: { if !$0 { productionPendingDelete = nil } }
+            )
+        ) {
+            Button("Annulla", role: .cancel) { productionPendingDelete = nil }
+            Button("Elimina", role: .destructive) {
+                if let entry = productionPendingDelete {
+                    performDeleteProduction(entry)
+                }
+            }
+        } message: {
+            Text("Sei sicuro di voler eliminare questa produzione? La produzione verrà rimossa dalla Storia e non sarà più inclusa nei prossimi documenti PDF.")
+        }
+        .masterAuthCover(
+            coordinator: masterAuth,
+            master: session.masterUser ?? users.first(where: { $0.role == .master })
+        )
     }
 
     private func openPendingClosure(recordId: UUID) {
@@ -104,6 +141,44 @@ struct HistoryModuleDetailView: View {
     private func handlePendingClosure(recordId: UUID) {
         guard module == .traceability else { return }
         openPendingClosure(recordId: recordId)
+    }
+
+    private func requestDeleteProduction(_ entry: HistoryEntry) {
+        guard entry.produzioneBatchId != nil else { return }
+        masterAuth.request(
+            permission: .manageHistory,
+            permissions: permissions,
+            action: { productionPendingDelete = entry }
+        )
+    }
+
+    private func performDeleteProduction(_ entry: HistoryEntry) {
+        guard let batchId = entry.produzioneBatchId, let user = currentUser else {
+            productionPendingDelete = nil
+            return
+        }
+        var descriptor = FetchDescriptor<ProduzioneBatch>(
+            predicate: #Predicate<ProduzioneBatch> { $0.id == batchId }
+        )
+        descriptor.fetchLimit = 1
+        guard let batch = (try? modelContext.fetch(descriptor))?.first else {
+            productionPendingDelete = nil
+            errorMessage = "Produzione non trovata."
+            return
+        }
+        do {
+            try HistoryControlService().deleteProductionPermanently(
+                batch: batch,
+                user: user,
+                modelContext: modelContext
+            )
+            productionPendingDelete = nil
+            onDataChanged?()
+            HapticManager.shared.notification(.success)
+        } catch {
+            productionPendingDelete = nil
+            errorMessage = "Eliminazione non riuscita."
+        }
     }
 
     private var moduleHeader: some View {
@@ -167,7 +242,9 @@ struct HistoryModuleDetailView: View {
                 HistoryDateSection(
                     date: group.date,
                     entries: group.entries,
-                    onPendingClosure: handlePendingClosure
+                    onPendingClosure: handlePendingClosure,
+                    canDeleteProduction: canDeleteProduction,
+                    onDeleteProduction: requestDeleteProduction
                 )
             }
         }

@@ -11,6 +11,8 @@ final class ProduzioneBatch {
     var batchCode: String
     var producedAt: Date
     var internalExpiryAt: Date?
+    /// Giorni di conservazione copiati dall’Alimento Produzione al momento del salvataggio.
+    var shelfLifeDaysSnapshot: Int?
     var statusRaw: String
     var notes: String?
     var createdAt: Date
@@ -30,6 +32,7 @@ final class ProduzioneBatch {
         batchCode: String,
         producedAt: Date = Date(),
         internalExpiryAt: Date? = nil,
+        shelfLifeDaysSnapshot: Int? = nil,
         status: ProduzioneBatchStatus = .inCorso,
         notes: String? = nil,
         createdAt: Date = Date(),
@@ -47,6 +50,7 @@ final class ProduzioneBatch {
         self.batchCode = batchCode
         self.producedAt = producedAt
         self.internalExpiryAt = internalExpiryAt
+        self.shelfLifeDaysSnapshot = shelfLifeDaysSnapshot
         self.statusRaw = status.rawValue
         self.notes = notes
         self.createdAt = createdAt

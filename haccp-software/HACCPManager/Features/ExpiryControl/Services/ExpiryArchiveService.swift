@@ -1,7 +1,10 @@
 import Foundation
 import SwiftData
 
-/// Archiviazione operativa da Controllo scadenze: esce dalla lista attiva, resta in Storia e Documenti.
+/// Chiusura operativa da Controllo scadenze.
+/// - Terminato → solo Storia (nessun movimento Documenti).
+/// - Scartato → Storia + Documenti, motivazione obbligatoria.
+/// - Scaduto → Storia + Documenti (scarto per scadenza).
 struct ExpiryArchiveService {
 
     func archive(
@@ -30,19 +33,28 @@ struct ExpiryArchiveService {
             }
         }
 
-        let trimmedNote = note?.trimmingCharacters(in: .whitespacesAndNewlines)
-        let notePart = (trimmedNote?.isEmpty == false) ? " — \(trimmedNote!)" : ""
+        let trimmedNote: String? = {
+            guard kind.requiresNote || kind.recordsInDocuments else { return nil }
+            let t = note?.trimmingCharacters(in: .whitespacesAndNewlines)
+            return (t?.isEmpty == false) ? t : nil
+        }()
+        // Motivazione solo su Scartato (obbligatoria); note opzionali su Scaduto se presenti.
+        let noteForStorage: String? = {
+            if kind == .finished { return nil }
+            return trimmedNote
+        }()
+        let notePart = noteForStorage.map { " — \($0)" } ?? ""
         let scope = record.isProductionBatchOutput ? "Produzione" : "Ingrediente"
         // Es. «Produzione Terminato» — parsato in Storia come badge «Terminato».
         let detail = "\(scope) \(kind.logDetail)\(notePart)"
 
-        // Non soft-hide: deve restare visibile in Storia. Solo stato operativo USED.
-        record.productStatus = .used
+        // Non soft-hide: resta visibile in Storia con lo stato corretto.
+        record.productStatus = kind.closedProductStatus
         record.operationalClosedAt = Date()
 
-        if let trimmedNote, !trimmedNote.isEmpty {
+        if let noteForStorage {
             let stamp = Date().formatted(date: .abbreviated, time: .shortened)
-            let line = "[\(kind.logDetail) \(stamp)] \(trimmedNote)"
+            let line = "[\(kind.logDetail) \(stamp)] \(noteForStorage)"
             if let existing = record.notes?.trimmingCharacters(in: .whitespacesAndNewlines), !existing.isEmpty {
                 record.notes = "\(existing)\n\(line)"
             } else {
@@ -59,23 +71,26 @@ struct ExpiryArchiveService {
             )
         )
 
-        DocumentMovementRecorder.recordLotClosedFromExpiryControl(
-            record: record,
-            outcomeLabel: kind.logDetail,
-            note: trimmedNote,
-            user: user,
-            modelContext: modelContext
-        )
-
-        // Non soft-archiviare il batch: la chiusura resta in Storia; nascondere è solo MASTER.
+        // Terminato: solo Storia. Scartato/Scaduto: anche Documenti.
+        if kind.recordsInDocuments {
+            DocumentMovementRecorder.recordLotClosedFromExpiryControl(
+                record: record,
+                outcomeLabel: kind.logDetail,
+                note: noteForStorage,
+                user: user,
+                modelContext: modelContext
+            )
+        }
 
         try modelContext.save()
         KitchenProcessNotifications.postRecordsDidChange()
-        HACCPArchiveSyncCoordinator.requestDeferredSync(
-            restaurantId: record.restaurantId,
-            user: user,
-            modelContext: modelContext,
-            delaySeconds: 1
-        )
+        if kind.recordsInDocuments {
+            HACCPArchiveSyncCoordinator.requestDeferredSync(
+                restaurantId: record.restaurantId,
+                user: user,
+                modelContext: modelContext,
+                delaySeconds: 1
+            )
+        }
     }
 }

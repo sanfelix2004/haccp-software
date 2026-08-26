@@ -72,10 +72,7 @@ struct HistoryService {
                     date: $0.createdAt,
                     details: [
                         .init(label: "Prodotto", value: $0.productName),
-                        .init(
-                            label: isProductionLot ? "Lotto produzione" : "Lotto",
-                            value: $0.lotCode ?? "—"
-                        ),
+                        .init(label: "Lotto", value: $0.lotCode ?? "—"),
                         .init(label: "Fornitore", value: $0.supplier ?? "—"),
                         .init(label: "Data produzione", value: $0.productionDate.formatted(date: .abbreviated, time: .omitted)),
                         .init(label: "Scadenza", value: $0.expiryDate.formatted(date: .abbreviated, time: .omitted)),

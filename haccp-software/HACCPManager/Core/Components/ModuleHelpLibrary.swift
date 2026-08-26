@@ -80,7 +80,7 @@ enum ModuleHelpLibrary {
         steps: [
             "Controlla le card in alto: indicano attività urgenti, scadenze vicine e registrazioni di oggi.",
             "Apri un modulo dalla griglia (o dalla sidebar) per lavorare: tracciabilità, temperature, pulizie, etichette, checklist, ecc.",
-            "Nella sezione Alimenti del menu trovi Catalogo piatti e Alimenti in ingresso (materie prime).",
+            "Nella sezione Alimenti del menu trovi Alimenti Produzione e Alimenti in ingresso (materie prime).",
             "In Sistema trovi Documenti PDF, Grafici, Storia, Avvisi, Utenti e Impostazioni.",
             "Se lavori su più locali, assicurati che in alto sia selezionato il ristorante corretto: ogni dato è separato per locale."
         ],
@@ -94,22 +94,20 @@ enum ModuleHelpLibrary {
         id: "traceability",
         title: "Tracciabilità",
         purpose: """
-        È l’hub dei lotti in cucina: archivio di ciò che è entrato e può essere usato nelle preparazioni, con lettura etichetta via fotocamera (OCR/AI) per lotto e scadenza.
-
-        Qui associ i lotti ai piatti, segnali non conformità e prepari il terreno per etichette di produzione e controllo scadenze. È indipendente da Ricezione merci (che registra solo l’ingresso fornitore).
+        In cucina si apre subito la fotocamera. Fotografi tutte le etichette, le assegni a un Alimento Produzione e stampi l’etichetta: fotografare → assegnare → salvare → stampare.
         """,
         steps: [
-            "Nell’archivio consulta i lotti attivi e filtra (da associare, non conformi, registrati oggi, ecc.).",
-            "Tocca «Inizia sessione lotti» / scatta: fotografa l’etichetta; l’app propone codice lotto e scadenza (puoi correggere a mano se la lettura è incerta).",
-            "Seleziona l’alimento in ingresso dal catalogo e, se richiesto, il fornitore; conferma per salvare il lotto.",
-            "Associa i lotti ai piatti dall’archivio (azione rapida) o a fine sessione camera: serve per preparazioni e scadenze interne.",
-            "Apri il dettaglio di un lotto per vedere foto, date, stato e azioni (etichetta, ritiro, non conformità).",
-            "Se interrompi una sessione camera, riprendila dal banner in archivio senza perdere gli scatti già fatti."
+            "Apri Tracciabilità: la fotocamera parte subito.",
+            "Opzionale: tocca Fornitore e scegli dal catalogo (stessi di Ricezione merci). Vale per le foto successive.",
+            "Scatta tutte le etichette della produzione. Restano in una barra in basso; puoi eliminare una foto sbagliata.",
+            "Tocca Assegna alimento, scegli l’Alimento Produzione. Durata e scadenza arrivano dal catalogo, non si reinseriscono.",
+            "Salva: compare STAMPA ETICHETTA per stampare subito il lotto appena creato.",
+            "La produzione resta in Storia. Il MASTER può eliminarla: sparisce anche dai PDF successivi."
         ],
         notes: [
-            "La lettura AI può segnalare «incerta»: controlla sempre lotto e scadenza sull’etichetta fisica prima di confermare.",
-            "Le scadenze operative (FEFO) si gestiscono anche in Controllo scadenze.",
-            "Dopo l’associazione ai piatti, per etichettare il prodotto finito vai in Etichette di produzione."
+            "La durata si configura una volta sull’Alimento Produzione.",
+            "Il fornitore è opzionale e condivide il catalogo con Ricezione merci.",
+            "Storia e Documenti PDF usano le stesse produzioni attive."
         ]
     )
 
@@ -163,7 +161,7 @@ enum ModuleHelpLibrary {
         Registro del ciclo di abbattimento (raffreddamento rapido / surgelazione controllata): temperatura iniziale, tempi, temperatura finale, esito e operatore. Al termine puoi creare subito l’etichetta HACCP (formato 50×30 mm) con i dati essenziali (Abb., Scad, Ti/Tf, Dur.) e QR.
         """,
         steps: [
-            "Premi Nuovo abbattimento e scegli il piatto dal Catalogo piatti.",
+            "Premi Nuovo abbattimento e scegli il piatto da Alimenti Produzione.",
             "Inserisci la temperatura iniziale e avvia il processo / timer.",
             "Al termine registra temperatura finale, note ed eventuali azioni correttive, poi conferma con firma/operatore.",
             "Se proposto, crea e stampa l’etichetta: sull’adesivo compaiono nome, data abbattimento (Abb.), scadenza, temperature iniziale/finale, durata e QR.",
@@ -172,27 +170,27 @@ enum ModuleHelpLibrary {
         ],
         notes: [
             "Un solo abbattimento in corso per lo stesso piatto.",
-            "Il catalogo piatti si gestisce da Alimenti → Catalogo piatti.",
+            "Gli Alimenti Produzione si gestiscono da Alimenti → Alimenti Produzione.",
             "La scansione del QR etichetta funziona dall’app su iPad."
         ]
     )
 
     static let productionCatalog = ModuleHelp(
         id: "catalog",
-        title: "Catalogo piatti",
+        title: "Alimenti Produzione",
         purpose: """
-        Elenco centralizzato delle preparazioni/piatti del menu (es. Barbabietola, Baccalà) usato da Abbattimento, Tracciabilità (associazione lotti) e Etichette. Non contiene le materie prime in ingresso (quelle stanno in Alimenti in ingresso).
+        Elenco delle preparazioni (es. Tiramisù, Baccalà) usato da Tracciabilità, Abbattimento e stampa etichette. Su ogni alimento configuri la durata di conservazione: ogni nuova produzione calcola la scadenza da quella durata. Non contiene le materie prime in ingresso.
         """,
         steps: [
             "Filtra per categoria con i tab in alto.",
-            "Tocca un piatto per selezionarlo; poi Modifica o Elimina (se permesso).",
-            "Usa Aggiungi piatto per creare una voce con nome, categoria e dati utili alla scadenza interna.",
-            "Le modifiche sono subito disponibili in Abbattimento e negli altri moduli collegati."
+            "Tocca un alimento per selezionarlo; poi Modifica o Elimina (se permesso).",
+            "Usa Aggiungi per creare un alimento con nome, categoria e durata in giorni.",
+            "In Tracciabilità, dopo le foto delle etichette, scegli l’alimento: durata e scadenza arrivano da qui."
         ],
         notes: [
             "Aggiunta/modifica/eliminazione possono richiedere PIN MASTER.",
-            "Un piatto già usato nello storico abbattimento non si elimina finché resta referenziato.",
-            "Per etichettare un piatto dopo abbattimento: Etichette → Abbattimento (o stampa a fine ciclo)."
+            "Un alimento già usato nello storico non si elimina finché resta referenziato.",
+            "La durata si imposta una volta: non va reinserita a ogni produzione."
         ]
     )
 
@@ -200,16 +198,16 @@ enum ModuleHelpLibrary {
         id: "incoming-food",
         title: "Alimenti in ingresso",
         purpose: """
-        Catalogo delle materie prime / prodotti in ingresso (surgelati, freschi, scatolame, …) usato in Ricezione merci, Tracciabilità e Decongelamento. È distinto dal Catalogo piatti.
+        Catalogo delle materie prime / prodotti in ingresso (surgelati, freschi, scatolame, …) usato in Ricezione merci e Decongelamento. È distinto dagli Alimenti Produzione.
         """,
         steps: [
             "Filtra per categoria merce con i tab.",
             "Tocca un alimento per selezionarlo; Modifica o Elimina secondo i permessi.",
             "Aggiungi alimento per creare un nuovo tipo usato in ricezione e decongelamento.",
-            "In Tracciabilità, quando fotografi un’etichetta, scegli l’alimento di questo catalogo."
+            "Le materie prime restano in questo catalogo; le preparazioni finite stanno in Alimenti Produzione."
         ],
         notes: [
-            "Non confondere con i piatti del menu.",
+            "Non confondere con gli Alimenti Produzione del menu.",
             "Un alimento già usato in ricezioni o decongelamenti non può essere eliminato liberamente.",
             "Per etichettare un lotto dopo uso in cucina: Etichette → percorso Tracciabilità / produzione collegata."
         ]
@@ -217,21 +215,21 @@ enum ModuleHelpLibrary {
 
     static let expiryControl = ModuleHelp(
         id: "expiry",
-        title: "Controllo scadenze e quantità",
+        title: "Controllo scadenze",
         purpose: """
-        Due aree chiare: Alimenti in ingresso (lotti da associare o già associati) e Produzioni (piatti preparati). Controlli la scadenza, chiudi i scaduti e termini/scarti con motivazione.
+        Elenco delle produzioni salvate: controlli la scadenza, chiudi i scaduti e termini/scarti con motivazione. Solo produzioni, senza alimenti in ingresso.
         """,
         steps: [
-            "Tocca la box Alimenti in ingresso oppure Produzioni.",
-            "Nella sezione «Da chiudere» tocca un scaduto e registra Usato o Scartato (motivazione obbligatoria sullo scarto).",
-            "Nella sezione «In validità / Da tenere» tocca un lotto per Termina / Scarta con motivazione.",
+            "Nella sezione «Da chiudere» tocca un scaduto e registra Terminato (solo Storia) o Scartato (motivazione obbligatoria).",
+            "Nella sezione «Da tenere» tocca una produzione valida per Terminato / Scartato.",
             "I filtri in alto aiutano a vedere solo scaduti o in scadenza.",
             "Nascondere una voce dalla Storia (MASTER) è un’operazione separata: qui gestisci solo lo stock operativo."
         ],
         notes: [
             "La soglia «in scadenza» si regola in Impostazioni → Parametri HACCP.",
-            "Dopo Terminato / Scaduto / Scartato: esce subito da Tracciabilità, resta 1 giorno qui, poi solo in Storia e Documenti.",
-            "Le chiusure restano per sempre nei Documenti (PDF) e nella Storia."
+            "Terminato: resta solo in Storia (nessuna motivazione).",
+            "Scartato: motivazione obbligatoria; resta in Storia e Documenti.",
+            "Dopo la chiusura resta 1 giorno in Controllo scadenze, poi esce dalla lista operativa."
         ]
     )
 
@@ -357,12 +355,12 @@ enum ModuleHelpLibrary {
             "Dalla dashboard Storia vedi i moduli con attività e volumi.",
             "Cerca per testo o filtra i moduli attivi.",
             "Apri un modulo per lo storico cronologico dettagliato (operatore, esito, note).",
-            "Le produzioni collegate mostrano nomi leggibili (piatti), non solo ID interni.",
-            "Usa le card riepilogative per capire criticità e carichi di lavoro."
+            "In Tracciabilità ogni produzione mostra foto, nome, durata e scadenza.",
+            "Il MASTER può eliminare una produzione: sparisce da Storia e dai PDF successivi."
         ],
         notes: [
             "Per documenti formali mensili vai in Documenti / iCloud.",
-            "Chiusure lotti: restano nei Documenti (PDF Tracciabilità e produzioni); in Storia vedi solo i lotti ancora da chiudere.",
+            "Chiusure lotti: restano nei Documenti PDF finché la produzione è attiva; se il MASTER elimina una produzione, i PDF nuovi non la includono.",
             "Ogni voce conserva data, operatore e dettaglio dell’azione."
         ]
     )
@@ -451,7 +449,7 @@ enum ModuleHelpLibrary {
             "Apri la voce che ti serve (Profilo, Aspetto, HACCP, Stampanti, …).",
             "Se compare il lucchetto, autentica come MASTER e procedi.",
             "Dopo aver cambiato soglie o stampante, fai una prova operativa nel modulo interessato.",
-            "Catalogo piatti e Alimenti in ingresso restano nel menu laterale Alimenti, non necessariamente qui."
+            "Alimenti Produzione e Alimenti in ingresso restano nel menu laterale Alimenti, non necessariamente qui."
         ],
         notes: [
             "Ogni ristorante ha le proprie impostazioni: controlla il locale attivo.",

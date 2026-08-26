@@ -313,6 +313,7 @@ final class FinalizePreviewView: UIView {
 struct FullScreenLotCameraView: View {
     @ObservedObject var camera: FinalizeReceiptCameraViewModel
     let isProcessing: Bool
+    var processingMessage: String = "Salvataggio foto…"
     var sessionPhotoCount: Int = 0
     let onCapture: () -> Void
 
@@ -371,7 +372,7 @@ struct FullScreenLotCameraView: View {
                     Spacer()
 
                     if isProcessing {
-                        ProgressView("Lettura lotto…")
+                        ProgressView(processingMessage)
                             .tint(.white)
                             .foregroundStyle(.white)
                             .padding(.bottom, 36)

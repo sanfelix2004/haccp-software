@@ -7,9 +7,9 @@ enum SidebarItem: String, Identifiable {
     case fridges = "Frigoriferi"
     case cleaningControl = "Controllo pulizia"
     case blastChilling = "Abbattimento"
-    case productionCatalog = "Catalogo piatti"
+    case productionCatalog = "Alimenti Produzione"
     case incomingFoodCatalog = "Alimenti in ingresso"
-    case expiryControl = "Controllo scadenze e quantità"
+    case expiryControl = "Controllo scadenze"
     case defrost = "Decongelamento"
     case oilControl = "Controllo olio"
     case productionLabels = "Etichette di produzione"
@@ -27,7 +27,7 @@ enum SidebarItem: String, Identifiable {
     /// Moduli HACCP principali (ordine ufficiale).
     static let haccpModulesInOrder: [SidebarItem] = [
         .traceability, .fridges, .cleaningControl, .blastChilling,
-        .expiryControl, .defrost, .oilControl, .productionLabels, .goodsReceiving,
+        .expiryControl, .defrost, .oilControl, .goodsReceiving,
         .checklist
     ]
 

@@ -1,8 +1,36 @@
 import Foundation
 import SwiftData
 
-/// Controllo MASTER sullo storico operativo: nasconde voci dalla UI senza cancellare i documenti.
+/// Controllo MASTER sullo storico operativo. L’eliminazione di una produzione è definitiva
+/// (Storia, Tracciabilità e PDF successivi usano la stessa fonte dati).
 struct HistoryControlService {
+
+    /// Rimuove definitivamente una produzione da Storia, Tracciabilità e PDF successivi.
+    func deleteProductionPermanently(
+        batch: ProduzioneBatch,
+        user: LocalUser,
+        modelContext: ModelContext
+    ) throws {
+        let batchId = batch.id
+        let lottoService = LottoFotoService()
+        let lottoLinks = ((try? modelContext.fetch(FetchDescriptor<LottoFotoProductionLink>())) ?? [])
+            .filter { $0.produzioneBatchId == batchId }
+        let lottoIds = Set(lottoLinks.map(\.lottoFotoId))
+        if !lottoIds.isEmpty {
+            let lottos = ((try? modelContext.fetch(FetchDescriptor<LottoFoto>())) ?? [])
+                .filter { lottoIds.contains($0.id) }
+            for lotto in lottos {
+                try lottoService.delete(lotto, modelContext: modelContext)
+            }
+        }
+        try TraceabilityService().hardPurgeProductionBatch(
+            batch: batch,
+            unlinkIncoming: true,
+            user: user,
+            modelContext: modelContext
+        )
+        KitchenProcessNotifications.postRecordsDidChange()
+    }
 
     /// Rimuove una produzione dallo storico/hub.
     /// Con motivo `.error` → cancellazione definitiva (come Tracciabilità).
@@ -79,7 +107,7 @@ struct HistoryControlService {
                     productionId: batch.productionId,
                     actionType: .removedFromHistory,
                     operatorName: user.name,
-                    detail: "Lotto produzione \(batch.batchCode) — nascosto dallo storico (\(reasonDetail))"
+                    detail: "Lotto \(batch.batchCode) — nascosto dallo storico (\(reasonDetail))"
                 )
             )
         }

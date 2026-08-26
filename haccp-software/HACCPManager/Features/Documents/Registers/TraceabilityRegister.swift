@@ -88,17 +88,8 @@ enum TraceabilityRegister {
             }
 
             let photo: Data? = {
-                if t.isProductionBatchOutput, let batchId = t.produzioneBatchId {
-                    return ProductImageBytesResolver.productionDishPhoto(
-                        batchId: batchId,
-                        images: images,
-                        records: [t]
-                    ) ?? ProductImageBytesResolver.resolve(
-                        record: t,
-                        images: images,
-                        lottoFotos: lottoFotos
-                    )
-                }
+                // Produzione: nessuna foto nei Documenti.
+                if t.isProductionBatchOutput { return nil }
                 return ProductImageBytesResolver.resolve(
                     record: t,
                     images: images,

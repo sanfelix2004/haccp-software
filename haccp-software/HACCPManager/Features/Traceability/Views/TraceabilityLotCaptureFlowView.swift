@@ -1,90 +1,50 @@
 import SwiftUI
 import SwiftData
-import LabelScanningContract
 
-/// Flusso tracciabilità: scatta → etichetta/alimento → produzione.
+/// Fotografa etichette in sequenza, assegna un Alimento Produzione, salva e stampa.
 struct TraceabilityLotCaptureFlowView: View {
     let restaurantId: UUID
     let user: LocalUser
-    var resumeSessionId: UUID? = nil
-    /// `leavePending == true` mantiene la sessione riprendibile; `sessionId` è la sessione da tenere/chiudere.
-    let onDismiss: (_ leavePending: Bool, _ sessionId: UUID?) -> Void
-    let onUpdated: () -> Void
+    var restaurantName: String? = nil
 
     @Environment(\.modelContext) private var modelContext
     @Environment(\.theme) private var theme
-    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
-    @Query private var productTemplates: [ProductTemplate]
     @Query private var productions: [Production]
     @Query private var categories: [ProductionCategory]
+    @Query private var suppliers: [Supplier]
 
     @StateObject private var camera = FinalizeReceiptCameraViewModel()
 
     @State private var sessionId = UUID()
     @State private var sessionItems: [LottoFoto] = []
-    @State private var pendingCapture: PendingLottoCapture?
-    @State private var lotDraftUserEdited = false
-    @State private var selectedTemplate: ProductTemplate?
-    @State private var supplierName = ""
-    @State private var expiryDate = Date()
-    @State private var expiryFromLabel = false
-    @State private var expiryUserEdited = false
-    @State private var suppressExpiryEditTracking = false
-    @State private var showExpiredProductAlert = false
-    @State private var pendingExpiredConfirm: PendingLottoCapture?
-    @State private var showOptionalDetails = false
-    @State private var foodSearchText = ""
+    @State private var isSavingPhoto = false
+    @State private var showProductionPicker = false
+    @State private var showAddProduction = false
     @State private var productionSearchText = ""
-    @State private var presentedSheet: CaptureFlowSheet?
-    @State private var showAddProductionInPicker = false
-    @State private var productionShelfLifeDays = 3
-    @State private var forcesCatalogDuration = false
     @State private var selectedProduction: Production?
     @State private var selectedProductionCategoryId: UUID?
-    @State private var productionDishPhotoData: Data?
-    @State private var showProductionDishCamera = false
-    @StateObject private var productionDishCamera = FinalizeReceiptCameraViewModel()
+    @State private var showDiscardAlert = false
     @State private var errorMessage: String?
-    @State private var showExitWithoutProductionAlert = false
-    @State private var selectedReusedRecordIds: Set<UUID> = []
-    /// Picker aperto da «Usa solo dal magazzino» (senza foto nuove in sessione).
-    @State private var isWarehouseOnlyPicker = false
-
-    private var sessionIngredientRecords: [TraceabilityRecord] {
-        sessionItems.compactMap { lottoService.traceabilityRecord(for: $0, modelContext: modelContext) }
-    }
-
-    private func productionConstraint(for production: Production) -> ScadenzaCalculator.ProductionExpiryConstraint {
-        ScadenzaCalculator.resolvedProductionExpiry(
-            shelfLifeDays: productionShelfLifeDays,
-            ingredientRecords: sessionIngredientRecords,
-            ignoreIngredientConstraint: forcesCatalogDuration
-        )
-    }
+    @State private var completedBatch: ProduzioneBatch?
+    @State private var isPrinting = false
+    @State private var selectedSupplier: Supplier?
+    @State private var showSupplierPicker = false
+    @State private var showAddSupplier = false
+    @State private var newSupplierName = ""
 
     private let lottoService = LottoFotoService()
-    private let libraryService = ProductionLibraryService()
-    private let productionLibraryService = ProductionLibraryService()
+    private let labelService = ProductionLabelsService()
 
     init(
         restaurantId: UUID,
         user: LocalUser,
-        resumeSessionId: UUID? = nil,
-        onDismiss: @escaping (_ leavePending: Bool, _ sessionId: UUID?) -> Void,
-        onUpdated: @escaping () -> Void
+        restaurantName: String? = nil
     ) {
         self.restaurantId = restaurantId
         self.user = user
-        self.resumeSessionId = resumeSessionId
-        self.onDismiss = onDismiss
-        self.onUpdated = onUpdated
-
+        self.restaurantName = restaurantName
         let rid = restaurantId
-        _productTemplates = Query(
-            filter: #Predicate<ProductTemplate> { $0.restaurantId == rid },
-            sort: [SortDescriptor(\ProductTemplate.name)]
-        )
         _productions = Query(
             filter: #Predicate<Production> { $0.restaurantId == rid },
             sort: [SortDescriptor(\Production.name)]
@@ -93,35 +53,10 @@ struct TraceabilityLotCaptureFlowView: View {
             filter: #Predicate<ProductionCategory> { $0.restaurantId == rid },
             sort: [SortDescriptor(\ProductionCategory.orderIndex)]
         )
-    }
-
-    private var currentStep: TraceabilityCaptureStep {
-        if presentedSheet == .productionPicker { return .production }
-        if pendingCapture != nil { return .label }
-        return .shoot
-    }
-
-    private var isProductionPickerPresented: Bool {
-        presentedSheet == .productionPicker
-    }
-
-    private var scopedTemplates: [ProductTemplate] {
-        productTemplates
-            .filter { $0.restaurantId == restaurantId }
-            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
-    }
-
-    private var filteredFoodTemplates: [ProductTemplate] {
-        let query = foodSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !query.isEmpty else { return scopedTemplates }
-        return scopedTemplates.filter {
-            $0.name.localizedCaseInsensitiveContains(query)
-                || $0.category.rawValue.localizedCaseInsensitiveContains(query)
-        }
-    }
-
-    private var sessionTemplateIds: [UUID] {
-        sessionItems.compactMap(\.alimentoIngressoID)
+        _suppliers = Query(
+            filter: #Predicate<Supplier> { $0.restaurantId == rid },
+            sort: [SortDescriptor(\Supplier.name)]
+        )
     }
 
     private var scopedProductions: [Production] {
@@ -130,10 +65,20 @@ struct TraceabilityLotCaptureFlowView: View {
             .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
 
-    private var scopedProductionCategories: [ProductionCategory] {
+    private var scopedCategories: [ProductionCategory] {
         categories
             .filter { $0.restaurantId == restaurantId }
             .sorted { $0.orderIndex < $1.orderIndex }
+    }
+
+    private var scopedSuppliers: [Supplier] {
+        suppliers
+            .filter { $0.restaurantId == restaurantId }
+            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+
+    private var canManageSuppliers: Bool {
+        user.permissions.can(.manageSuppliers)
     }
 
     private var categoryFilteredProductions: [Production] {
@@ -144,53 +89,43 @@ struct TraceabilityLotCaptureFlowView: View {
     private var filteredProductions: [Production] {
         let query = productionSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty else { return categoryFilteredProductions }
-        return categoryFilteredProductions.filter {
-            $0.name.localizedCaseInsensitiveContains(query)
-        }
+        return categoryFilteredProductions.filter { $0.name.localizedCaseInsensitiveContains(query) }
     }
-
-    private var lotMandatory: Bool { false }
-
-    private var isWideLayout: Bool { horizontalSizeClass == .regular }
 
     var body: some View {
         ZStack {
-            if pendingCapture == nil && !isProductionPickerPresented {
+            if completedBatch == nil {
                 FullScreenLotCameraView(
                     camera: camera,
-                    isProcessing: false,
+                    isProcessing: isSavingPhoto,
+                    processingMessage: "Salvataggio foto…",
                     sessionPhotoCount: sessionItems.count,
                     onCapture: { camera.capturePhoto() }
                 )
                 .ignoresSafeArea()
+            } else {
+                Color.black.ignoresSafeArea()
             }
 
-            VStack {
-                captureHeader
-                Spacer()
-                    .allowsHitTesting(false)
-                if pendingCapture == nil, !sessionItems.isEmpty, !isProductionPickerPresented {
-                    TraceabilitySessionDock(items: sessionItems, onFinish: presentProductionPicker)
+            if completedBatch == nil {
+                VStack {
+                    captureHeader
+                    Spacer()
+                        .allowsHitTesting(false)
+                    if !sessionItems.isEmpty {
+                        TraceabilitySessionDock(
+                            items: sessionItems,
+                            onFinish: presentProductionPicker,
+                            onDelete: deletePhoto
+                        )
                         .padding(.horizontal, 12)
-                        .padding(.bottom, 100)
-                } else if pendingCapture == nil, sessionItems.isEmpty, !isProductionPickerPresented {
-                    // Accesso rapido al magazzino (senza scattare foto)
-                    Button(action: presentProductionPickerFromWarehouse) {
-                        Label("Usa solo dal magazzino", systemImage: "archivebox.fill")
-                            .font(theme.typography.caption.weight(.semibold))
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 10)
-                            .background(.black.opacity(0.5), in: Capsule())
-                            .overlay(Capsule().strokeBorder(.white.opacity(0.25), lineWidth: 1))
+                        .padding(.bottom, 108)
                     }
-                    .buttonStyle(.plain)
-                    .padding(.bottom, 110)
                 }
             }
 
-            if let pending = pendingCapture {
-                captureReviewOverlay(pending)
+            if let batch = completedBatch {
+                printOverlay(for: batch)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -198,498 +133,205 @@ struct TraceabilityLotCaptureFlowView: View {
         .onAppear(perform: beginCaptureSession)
         .onDisappear { camera.stop() }
         .onReceive(camera.$capturedPhotoData) { data in
-            guard let data, !data.isEmpty, pendingCapture == nil else { return }
-            handleCapturedPhoto(data)
+            guard let data, !data.isEmpty, !isSavingPhoto, completedBatch == nil else { return }
+            camera.resetCaptureBuffer()
+            savePhoto(data)
         }
-        .sheet(item: $presentedSheet, onDismiss: handleSheetDismissed) { sheet in
-            switch sheet {
-            case .addIncomingFood:
-                TraceabilityQuickAddIncomingFoodSheet(
-                    restaurantId: restaurantId,
-                    existingTemplates: scopedTemplates,
-                    suggestedName: foodSearchText,
-                    onSaved: { template in
-                        presentedSheet = nil
-                        selectTemplate(template)
-                        foodSearchText = ""
-                    },
-                    onCancel: { presentedSheet = nil },
-                    onError: { message in
-                        presentedSheet = nil
-                        errorMessage = message
-                    }
-                )
-            case .productionPicker:
-                productionPickerSheet
+        .sheet(isPresented: $showProductionPicker, onDismiss: resumeCameraIfNeeded) {
+            productionPickerSheet
+        }
+        .sheet(isPresented: $showSupplierPicker, onDismiss: resumeCameraIfNeeded) {
+            supplierPickerSheet
+        }
+        .alert("Nuovo fornitore", isPresented: $showAddSupplier) {
+            TextField("Nome fornitore", text: $newSupplierName)
+            Button("Annulla", role: .cancel) {
+                newSupplierName = ""
             }
+            Button("Aggiungi") {
+                commitAddSupplier()
+            }
+        } message: {
+            Text("Stesso catalogo di Ricezione merci.")
         }
         .alert("Tracciabilità", isPresented: Binding(get: { errorMessage != nil }, set: { _ in errorMessage = nil })) {
             Button("OK", role: .cancel) {}
         } message: {
             Text(errorMessage ?? "")
         }
-        .alert("Uscire dalla tracciabilità?", isPresented: $showExitWithoutProductionAlert) {
-            Button("Lascia in sospeso") {
-                exitCapture(leavePending: true)
-            }
-            Button("Chiudi sessione", role: .destructive) {
-                exitCapture(leavePending: false)
-            }
-            Button("Resta qui", role: .cancel) {
-                if pendingCapture == nil, !isProductionPickerPresented {
-                    camera.resetCaptureBuffer()
-                    camera.start()
-                }
+        .alert("Scartare le foto?", isPresented: $showDiscardAlert) {
+            Button("Annulla", role: .cancel) {}
+            Button("Elimina foto", role: .destructive) {
+                discardSessionPhotos()
             }
         } message: {
-            Text("Hai \(sessionItems.count) foto non ancora collegate a un piatto. Puoi lasciarle in sospeso e riprendere dopo, oppure chiudere la sessione.")
-        }
-        .alert("Prodotto scaduto", isPresented: $showExpiredProductAlert) {
-            Button("Annulla", role: .cancel) {
-                pendingExpiredConfirm = nil
-            }
-            Button("Accetto comunque", role: .destructive) {
-                if let pending = pendingExpiredConfirm {
-                    performConfirm(pending, acceptedDespiteExpired: true)
-                }
-                pendingExpiredConfirm = nil
-            }
-        } message: {
-            Text("ATTENZIONE: La data di scadenza letta indica che il prodotto è già SCADUTO. Verificare l'etichetta.")
+            Text("Hai \(sessionItems.count) foto non ancora collegate a un Alimento Produzione. Verranno eliminate.")
         }
     }
 
     // MARK: - Header
 
     private var captureHeader: some View {
-        HStack(spacing: 12) {
-            Button(action: attemptClose) {
-                Image(systemName: "xmark")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.white)
-                    .frame(width: 36, height: 36)
-                    .background(.black.opacity(0.45))
-                    .clipShape(Circle())
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top, spacing: 12) {
+                if sessionItems.isEmpty {
+                    Color.clear.frame(width: 36, height: 36)
+                } else {
+                    Button {
+                        showDiscardAlert = true
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.white)
+                            .frame(width: 36, height: 36)
+                            .background(.black.opacity(0.45))
+                            .clipShape(Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Scarta le foto")
+                }
+
+                Spacer()
+
+                VStack(alignment: .trailing, spacing: 4) {
+                    Text("Tracciabilità")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(.white)
+                    Text(sessionItems.isEmpty ? "Fotografa le etichette" : "\(sessionItems.count) etichette")
+                        .font(.caption2)
+                        .foregroundStyle(.white.opacity(0.85))
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(.black.opacity(0.45))
+                .clipShape(Capsule())
+            }
+
+            Button {
+                camera.stop()
+                showSupplierPicker = true
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "building.2")
+                        .font(.caption.weight(.semibold))
+                    Text(selectedSupplier.map { "Fornitore: \($0.name)" } ?? "Fornitore (opzionale)")
+                        .font(.caption.weight(.semibold))
+                        .lineLimit(1)
+                    Spacer(minLength: 0)
+                    Image(systemName: "chevron.down")
+                        .font(.caption2.weight(.bold))
+                }
+                .foregroundStyle(.white)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+                .background(.black.opacity(0.45))
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             }
             .buttonStyle(.plain)
-
-            TraceabilityCaptureStepBar(current: currentStep, sessionCount: sessionItems.count)
-
-            if sessionItems.isEmpty {
-                Color.clear.frame(width: 36, height: 36)
-            } else if pendingCapture == nil && !isProductionPickerPresented {
-                Button(action: presentProductionPicker) {
-                    Image(systemName: "checkmark")
-                        .font(.subheadline.weight(.bold))
-                        .foregroundStyle(.white)
-                        .frame(width: 36, height: 36)
-                        .background(theme.colorPrimary)
-                        .clipShape(Circle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Ho finito le foto")
-            } else {
-                Color.clear.frame(width: 36, height: 36)
-            }
+            .accessibilityLabel(
+                selectedSupplier.map { "Fornitore \($0.name)" } ?? "Scegli fornitore opzionale"
+            )
         }
         .padding(.horizontal, 12)
         .padding(.top, 52)
     }
 
-    // MARK: - Revisione scatto
+    // MARK: - Picker fornitore (stesso catalogo Ricezione merci)
 
-    private func captureReviewOverlay(_ pending: PendingLottoCapture) -> some View {
-        GeometryReader { geometry in
-            ZStack(alignment: .bottom) {
-                Color.black.opacity(0.4).ignoresSafeArea()
-
-                VStack(spacing: 0) {
-                    reviewHeader
-
-                    ScrollView {
-                        if isWideLayout {
-                            HStack(alignment: .top, spacing: 20) {
-                                reviewPhotoColumn(pending)
-                                    .frame(maxWidth: 280)
-                                reviewFormColumn(pending)
+    private var supplierPickerSheet: some View {
+        NavigationStack {
+            List {
+                Section {
+                    Button {
+                        selectedSupplier = nil
+                        TraceabilitySupplierMemory.clear(restaurantId: restaurantId)
+                        showSupplierPicker = false
+                    } label: {
+                        HStack {
+                            Text("Nessun fornitore")
+                            Spacer()
+                            if selectedSupplier == nil {
+                                Image(systemName: "checkmark")
+                                    .foregroundStyle(theme.colorPrimary)
                             }
-                            .padding(20)
-                        } else {
-                            VStack(alignment: .leading, spacing: 16) {
-                                reviewPhotoColumn(pending)
-                                reviewFormColumn(pending)
-                            }
-                            .padding(20)
                         }
                     }
-                    .scrollDismissesKeyboard(.interactively)
-
-                    reviewActionBar(pending)
+                } footer: {
+                    Text("Opzionale. Se lo indichi, vale per le prossime foto di questa sessione. Stessi fornitori di Ricezione merci.")
                 }
-                .frame(maxHeight: isWideLayout ? geometry.size.height * 0.92 : geometry.size.height * 0.88)
-                .background(theme.colorBackground)
-                .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-                .shadow(color: .black.opacity(0.2), radius: 20, y: -6)
-                .padding(.horizontal, isWideLayout ? 24 : 0)
-                .padding(.bottom, isWideLayout ? 24 : 0)
-            }
-        }
-        .transition(.move(edge: .bottom).combined(with: .opacity))
-    }
 
-    private var reviewHeader: some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Etichetta \(sessionItems.count + 1)")
-                    .font(theme.typography.headline)
-                Text("Lotto e alimento in ingresso")
-                    .font(theme.typography.caption)
-                    .foregroundStyle(theme.colorTextSecondary)
-            }
-            Spacer()
-            Button("Annulla") { discardPending() }
-                .font(theme.typography.subheadline.weight(.semibold))
-                .foregroundStyle(theme.colorError)
-        }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 14)
-        .background(theme.colorSurface)
-    }
-
-    private func reviewPhotoColumn(_ pending: PendingLottoCapture) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            if let preview = HACCPZoomablePhotoPreview(
-                data: pending.photoData,
-                height: isWideLayout ? 200 : 140,
-                zoomTitle: "Anteprima etichetta"
-            ) {
-                preview
-            }
-
-            lotStatusBanner(pending)
-            expiredProductBanner
-            lotField(pending)
-            expiryField(pending)
-        }
-    }
-
-    private func reviewFormColumn(_ pending: PendingLottoCapture) -> some View {
-        VStack(alignment: .leading, spacing: 14) {
-            sessionFoodChips
-
-            HStack {
-                TraceabilityInlineSearchField(
-                    placeholder: "Cerca alimento…",
-                    text: $foodSearchText
-                )
-                Button {
-                    presentAddIncomingFood()
-                } label: {
-                    Image(systemName: "plus.circle.fill")
-                        .font(.title2)
-                        .foregroundStyle(theme.colorPrimary)
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Aggiungi alimento")
-            }
-
-            if filteredFoodTemplates.isEmpty {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Nessun alimento trovato.")
-                        .font(theme.typography.caption)
-                        .foregroundStyle(theme.colorTextSecondary)
-                    Button("Aggiungi «\(foodSearchText)» al catalogo") {
-                        presentAddIncomingFood()
-                    }
-                    .font(theme.typography.caption.weight(.semibold))
-                }
-            } else {
-                ProductSelectionGridView(
-                    products: filteredFoodTemplates,
-                    recentProductIds: sessionTemplateIds,
-                    selectedProductId: selectedTemplate?.id,
-                    onSelect: selectTemplate
-                )
-            }
-
-            if selectedTemplate != nil {
-                optionalDetailsSection
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private var sessionFoodChips: some View {
-        Group {
-            if !sessionItems.isEmpty {
-                LazyVGrid(
-                    columns: [GridItem(.adaptive(minimum: 88), spacing: 6)],
-                    alignment: .leading,
-                    spacing: 6
-                ) {
-                    ForEach(sessionItems, id: \.id) { item in
-                        if let name = item.alimentoIngressoNameSnapshot {
-                            Text(name)
-                                .font(.caption2.weight(.semibold))
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 5)
-                                .background(theme.colorSuccess.opacity(0.12))
-                                .foregroundStyle(theme.colorSuccess)
-                                .clipShape(Capsule())
+                Section("Fornitori") {
+                    if scopedSuppliers.isEmpty {
+                        Text("Nessun fornitore in catalogo. Aggiungilo qui o in Ricezione merci.")
+                            .font(theme.typography.caption)
+                            .foregroundStyle(theme.colorTextSecondary)
+                    } else {
+                        ForEach(scopedSuppliers) { supplier in
+                            Button {
+                                selectedSupplier = supplier
+                                TraceabilitySupplierMemory.remember(id: supplier.id, restaurantId: restaurantId)
+                                showSupplierPicker = false
+                            } label: {
+                                HStack {
+                                    Text(supplier.name)
+                                        .foregroundStyle(theme.colorTextPrimary)
+                                    Spacer()
+                                    if selectedSupplier?.id == supplier.id {
+                                        Image(systemName: "checkmark")
+                                            .foregroundStyle(theme.colorPrimary)
+                                    }
+                                }
+                            }
                         }
                     }
                 }
             }
-        }
-    }
-
-    @ViewBuilder
-    private func lotStatusBanner(_ pending: PendingLottoCapture) -> some View {
-        if pending.isLotExtracting {
-            HStack(spacing: 8) {
-                ProgressView()
-                Text(pending.testoLottoOCR != nil || pending.labelExpiryDate != nil
-                     ? "Affinamento lettura…"
-                     : "Lettura lotto in corso…")
-                    .font(theme.typography.caption)
-                    .foregroundStyle(theme.colorTextSecondary)
-            }
-            .padding(10)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(theme.colorSurface)
-            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-        } else if let error = pending.lotExtractionError {
-            Label(error, systemImage: "info.circle.fill")
-                .font(theme.typography.caption)
-                .foregroundStyle(theme.colorWarning)
-                .padding(10)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(theme.colorWarning.opacity(0.1))
-                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-        } else if let lot = pending.testoLottoOCR, !lot.isEmpty {
-            let uncertain = (pending.ocrConfidence ?? 1) < GroqLotExtractor.manualVerificationThreshold
-            Label {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(lot)
-                        .font(theme.typography.caption.weight(.semibold).monospaced())
-                    if uncertain {
-                        Text("Verifica sull'etichetta — lettura AI incerta")
-                            .font(theme.typography.caption2)
+            .navigationTitle("Fornitore")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Chiudi") { showSupplierPicker = false }
+                }
+                if canManageSuppliers {
+                    ToolbarItem(placement: .primaryAction) {
+                        Button {
+                            newSupplierName = ""
+                            showAddSupplier = true
+                        } label: {
+                            Image(systemName: "plus")
+                        }
+                        .accessibilityLabel("Nuovo fornitore")
                     }
                 }
-            } icon: {
-                Image(systemName: uncertain ? "exclamationmark.triangle.fill" : "checkmark.seal.fill")
-            }
-            .font(theme.typography.caption)
-            .foregroundStyle(uncertain ? theme.colorWarning : theme.colorSuccess)
-            .padding(10)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background((uncertain ? theme.colorWarning : theme.colorSuccess).opacity(0.1))
-            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-        }
-    }
-
-    @ViewBuilder
-    private var expiredProductBanner: some View {
-        if isExpiryReadAsExpired {
-            VStack(alignment: .leading, spacing: 6) {
-                Label("PRODOTTO SCADUTO", systemImage: "exclamationmark.octagon.fill")
-                    .font(theme.typography.caption.weight(.bold))
-                    .foregroundStyle(theme.colorError)
-                Text("La scadenza letta è antecedente a oggi. Verifica l'etichetta prima di confermare.")
-                    .font(theme.typography.caption2)
-                    .foregroundStyle(theme.colorError.opacity(0.9))
-            }
-            .padding(12)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(theme.colorError.opacity(0.12))
-            .overlay(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .stroke(theme.colorError.opacity(0.45), lineWidth: 1)
-            )
-            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-        }
-    }
-
-    private var isExpiryReadAsExpired: Bool {
-        ProductExpiryEvaluator.isExpiredByDate(expiryDate)
-            && (expiryFromLabel || pendingCapture?.expiryFromLabel == true)
-            && !expiryUserEdited
-    }
-
-    private func lotField(_ pending: PendingLottoCapture) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Text("Codice lotto")
-                    .font(theme.typography.caption.weight(.semibold))
-                Spacer()
-                Text(lotMandatory ? "Obbligatorio" : "Opzionale")
-                    .font(.caption2)
-                    .foregroundStyle(lotMandatory ? theme.colorError : theme.colorTextSecondary)
-            }
-            TextField("Es. L26160 (opzionale)", text: bindingLotDraft(for: pending))
-                .font(theme.typography.title3.weight(.semibold).monospaced())
-                .textInputAutocapitalization(.characters)
-                .autocorrectionDisabled()
-                .padding(.horizontal, 14)
-                .padding(.vertical, 12)
-                .background(theme.colorSurface)
-                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-            Text("La foto etichetta è obbligatoria e viene salvata in Storia e Documenti.")
-                .font(.caption2)
-                .foregroundStyle(theme.colorTextSecondary)
-        }
-    }
-
-    private func expiryField(_ pending: PendingLottoCapture) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Text("Scadenza")
-                    .font(theme.typography.caption.weight(.semibold))
-                    .foregroundStyle(theme.colorTextSecondary)
-                Spacer()
-                if pending.isLotExtracting {
-                    Text("Lettura in corso…")
-                        .font(.caption2)
-                        .foregroundStyle(theme.colorTextSecondary)
-                } else if expiryFromLabel && !expiryUserEdited {
-                    let uncertain = (pending.ocrConfidence ?? 1) < GroqLotExtractor.manualVerificationThreshold
-                    Label(
-                        uncertain ? "Letta dall'etichetta — da verificare" : "Letta dall'etichetta",
-                        systemImage: uncertain ? "exclamationmark.triangle.fill" : "checkmark.circle.fill"
-                    )
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(uncertain ? theme.colorWarning : theme.colorSuccess)
-                } else if expiryUserEdited {
-                    Text("Impostata manualmente")
-                        .font(.caption2)
-                        .foregroundStyle(theme.colorTextSecondary)
-                }
-            }
-
-            DatePicker(
-                "Scadenza",
-                selection: $expiryDate,
-                displayedComponents: .date
-            )
-            .datePickerStyle(.compact)
-            .labelsHidden()
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .background(theme.colorSurface)
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-            .onChange(of: expiryDate) { _, _ in
-                guard !suppressExpiryEditTracking else { return }
-                expiryUserEdited = true
-                expiryFromLabel = false
             }
         }
     }
-
-    private var optionalDetailsSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Button {
-                withAnimation(.easeInOut(duration: 0.2)) {
-                    showOptionalDetails.toggle()
-                }
-            } label: {
-                HStack {
-                    Label("Fornitore (opzionale)", systemImage: "building.2")
-                        .font(theme.typography.caption.weight(.semibold))
-                    Spacer()
-                    Image(systemName: showOptionalDetails ? "chevron.up" : "chevron.down")
-                        .font(.caption2.weight(.bold))
-                }
-                .foregroundStyle(theme.colorTextSecondary)
-            }
-            .buttonStyle(.plain)
-
-            if showOptionalDetails {
-                TextField("Nome fornitore", text: $supplierName)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 10)
-                    .background(theme.colorSurface)
-                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-            }
-        }
-        .padding(12)
-        .background(theme.colorSurface.opacity(0.6))
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-    }
-
-    private func reviewActionBar(_ pending: PendingLottoCapture) -> some View {
-        let canConfirm = selectedTemplate != nil
-
-        return HStack(spacing: 12) {
-            Button("Scarta") { discardPending() }
-                .buttonStyle(.bordered)
-                .frame(maxWidth: .infinity)
-
-            Button {
-                confirmPending(pending)
-            } label: {
-                Text(sessionItems.isEmpty ? "Conferma e continua" : "Conferma · scatta ancora")
-                    .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.borderedProminent)
-            .disabled(!canConfirm)
-        }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 14)
-        .background(theme.colorSurface)
-    }
-
-    private func bindingLotDraft(for pending: PendingLottoCapture) -> Binding<String> {
-        Binding(
-            get: { pendingCapture?.lotDraft ?? pending.lotDraft },
-            set: { newValue in
-                guard var current = pendingCapture else { return }
-                lotDraftUserEdited = true
-                current.lotDraft = newValue
-                pendingCapture = current
-            }
-        )
-    }
-
-    // MARK: - Produzione
 
     private var productionPickerSheet: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    TraceabilitySessionSummaryStrip(items: sessionItems)
-
                     VStack(alignment: .leading, spacing: 6) {
-                        Text("A quale piatto colleghi questa produzione?")
+                        Text("A quale Alimento Produzione colleghi queste etichette?")
                             .font(theme.typography.headline)
-                        Text("Tutte le etichette della sessione verranno raggruppate sotto il piatto scelto. La foto del piatto è separata da quella degli alimenti in ingresso.")
+                        Text("La durata è quella configurata sull’alimento: la scadenza si calcola da oggi.")
                             .font(theme.typography.caption)
                             .foregroundStyle(theme.colorTextSecondary)
                     }
 
-                    productionDishPhotoSection
-
-                    // Pannello riutilizzo alimenti già in magazzino
-                    TraceabilityIngredientReusePanel(
-                        restaurantId: restaurantId,
-                        sessionLottoIds: Set(sessionItems.map(\.id)),
-                        selectedRecordIds: $selectedReusedRecordIds,
-                        startExpanded: isWarehouseOnlyPicker
-                    )
-
-                    Divider()
+                    TraceabilitySessionSummaryStrip(items: sessionItems)
 
                     TraceabilityInlineSearchField(
-                        placeholder: "Cerca piatto…",
+                        placeholder: "Cerca alimento produzione…",
                         text: $productionSearchText
                     )
 
                     HStack {
                         Spacer()
                         Button {
-                            showAddProductionInPicker = true
+                            showAddProduction = true
                         } label: {
-                            Label("Aggiungi piatto", systemImage: "plus.circle.fill")
+                            Label("Nuovo alimento", systemImage: "plus.circle.fill")
                                 .font(theme.typography.caption.weight(.semibold))
                         }
                     }
@@ -698,12 +340,12 @@ struct TraceabilityLotCaptureFlowView: View {
 
                     if filteredProductions.isEmpty {
                         VStack(alignment: .leading, spacing: 8) {
-                            Text("Nessun piatto trovato.")
+                            Text("Nessun Alimento Produzione trovato.")
                                 .font(theme.typography.caption)
                                 .foregroundStyle(theme.colorTextSecondary)
                             if !productionSearchText.isEmpty {
-                                Button("Aggiungi «\(productionSearchText)» al catalogo") {
-                                    showAddProductionInPicker = true
+                                Button("Aggiungi «\(productionSearchText)»") {
+                                    showAddProduction = true
                                 }
                                 .font(theme.typography.caption.weight(.semibold))
                             }
@@ -713,175 +355,46 @@ struct TraceabilityLotCaptureFlowView: View {
                             productions: filteredProductions,
                             selectedProductionId: selectedProduction?.id,
                             showsShelfLife: true,
-                            onSelect: {
-                                selectedProduction = $0
-                                productionShelfLifeDays = $0.defaultShelfLifeDays
-                                forcesCatalogDuration = false
-                            }
+                            onSelect: { selectedProduction = $0 }
                         )
+                    }
+
+                    if let production = selectedProduction {
+                        durationPreview(for: production)
                     }
                 }
                 .padding()
             }
             .background(theme.colorBackground.ignoresSafeArea())
-            .navigationTitle("Scegli piatto")
+            .navigationTitle("Alimento Produzione")
             .navigationBarTitleDisplayMode(.inline)
-            .interactiveDismissDisabled()
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Altre foto") { presentedSheet = nil }
+                    Button("Altre foto") { showProductionPicker = false }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Salva tracciabilità") {
+                    Button("Salva produzione") {
                         if let production = selectedProduction {
-                            associateProduction(production)
+                            saveProduction(production)
                         }
                     }
                     .fontWeight(.semibold)
-                    .disabled(selectedProduction == nil && selectedReusedRecordIds.isEmpty)
+                    .disabled(selectedProduction == nil)
                 }
             }
-            .safeAreaInset(edge: .bottom) {
-                if let production = selectedProduction {
-                    let constraint = productionConstraint(for: production)
-                    let totalCount = sessionItems.count + selectedReusedRecordIds.count
-                    VStack(alignment: .leading, spacing: 10) {
-                        HStack {
-                            Image(systemName: "fork.knife")
-                            Text(production.name)
-                                .font(theme.typography.subheadline.weight(.semibold))
-                            Spacer()
-                            VStack(alignment: .trailing, spacing: 2) {
-                                Text("\(totalCount) alimenti totali")
-                                    .font(theme.typography.caption.weight(.semibold))
-                                    .foregroundStyle(theme.colorTextPrimary)
-                                if !selectedReusedRecordIds.isEmpty {
-                                    Text("\(sessionItems.count) nuovi · \(selectedReusedRecordIds.count) dal magazzino")
-                                        .font(theme.typography.caption2)
-                                        .foregroundStyle(theme.colorTextSecondary)
-                                }
-                            }
-                        }
-
-                        HStack {
-                            Text("Scadenza: \(constraint.suggestedExpiryDate.formatted(date: .abbreviated, time: .omitted))")
-                                .font(theme.typography.caption.weight(.semibold))
-                                .foregroundStyle(theme.colorPrimary)
-                            Spacer()
-                            if productionShelfLifeDays != production.defaultShelfLifeDays {
-                                Text("Catalogo \(production.defaultShelfLifeDays) gg")
-                                    .font(theme.typography.caption2)
-                                    .foregroundStyle(theme.colorTextSecondary)
-                            }
-                        }
-
-                        if let ingredient = constraint.limitingIngredientName,
-                           !forcesCatalogDuration,
-                           constraint.isIngredientLimited {
-                            Text("Vincolo ingrediente: \(ingredient) scade prima — la produzione non può durare di più.")
-                                .font(theme.typography.caption2)
-                                .foregroundStyle(theme.colorWarning)
-                            Toggle("Forza durata catalogo (cottura)", isOn: $forcesCatalogDuration)
-                                .font(theme.typography.caption)
-                        }
-
-                        ShelfLifeDaysNumberField(days: $productionShelfLifeDays, label: "Durata piatto")
-                    }
-                    .padding()
-                    .background(.ultraThinMaterial)
-                }
-            }
-            .navigationDestination(isPresented: $showAddProductionInPicker) {
+            .sheet(isPresented: $showAddProduction) {
                 TraceabilityQuickAddProductionSheet(
                     restaurantId: restaurantId,
-                    categories: scopedProductionCategories,
+                    categories: scopedCategories,
                     existingProductions: scopedProductions,
                     suggestedName: productionSearchText,
                     onSaved: { production in
-                        showAddProductionInPicker = false
+                        showAddProduction = false
                         selectedProduction = production
-                        productionShelfLifeDays = production.defaultShelfLifeDays
+                        productionSearchText = ""
                     },
-                    onCancel: { showAddProductionInPicker = false },
-                    onError: { message in
-                        showAddProductionInPicker = false
-                        errorMessage = message
-                    }
+                    onCancel: { showAddProduction = false }
                 )
-            }
-            .fullScreenCover(isPresented: $showProductionDishCamera) {
-                productionDishCameraSheet
-            }
-        }
-    }
-
-    private var productionDishPhotoSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Foto piatto finito")
-                .font(theme.typography.subheadline.weight(.semibold))
-            Text("Opzionale — non riusa le foto degli alimenti scansionati.")
-                .font(theme.typography.caption)
-                .foregroundStyle(theme.colorTextSecondary)
-            if let productionDishPhotoData,
-               let thumb = HACCPZoomablePhotoThumbnail(
-                data: productionDishPhotoData,
-                size: 88,
-                zoomTitle: "Piatto finito"
-               ) {
-                HStack(spacing: 12) {
-                    thumb
-                    VStack(alignment: .leading, spacing: 8) {
-                        Button("Scatta di nuovo") { showProductionDishCamera = true }
-                            .font(theme.typography.caption.weight(.semibold))
-                        Button("Rimuovi") { self.productionDishPhotoData = nil }
-                            .font(theme.typography.caption)
-                            .foregroundStyle(theme.colorError)
-                    }
-                }
-            } else {
-                Button {
-                    showProductionDishCamera = true
-                } label: {
-                    Label("Scatta foto del piatto", systemImage: "camera.fill")
-                        .font(theme.typography.subheadline.weight(.semibold))
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 12)
-                }
-                .buttonStyle(.bordered)
-            }
-        }
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(theme.colorSurface)
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-    }
-
-    private var productionDishCameraSheet: some View {
-        NavigationStack {
-            ZStack {
-                FinalizeCameraSessionPreview(session: productionDishCamera.session, cameraViewModel: productionDishCamera)
-                    .ignoresSafeArea()
-                VStack {
-                    Spacer()
-                    Button("Scatta") { productionDishCamera.capturePhoto() }
-                        .buttonStyle(.borderedProminent)
-                        .padding(.bottom, 28)
-                }
-            }
-            .navigationTitle("Foto piatto")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Chiudi") { showProductionDishCamera = false }
-                }
-            }
-            .onAppear { productionDishCamera.start() }
-            .onDisappear { productionDishCamera.stop() }
-            .onReceive(productionDishCamera.$capturedPhotoData) { data in
-                guard let data, !data.isEmpty else { return }
-                productionDishCamera.resetCaptureBuffer()
-                showProductionDishCamera = false
-                productionDishPhotoData = data
             }
         }
     }
@@ -893,7 +406,7 @@ struct TraceabilityLotCaptureFlowView: View {
             spacing: 8
         ) {
             productionCategoryButton(nil, title: "Tutte")
-            ForEach(scopedProductionCategories) { category in
+            ForEach(scopedCategories) { category in
                 productionCategoryButton(category.id, title: category.name)
             }
         }
@@ -914,349 +427,269 @@ struct TraceabilityLotCaptureFlowView: View {
         .buttonStyle(.plain)
     }
 
-    // MARK: - Azioni
-
-    private func beginCaptureSession() {
-        if let resumeSessionId {
-            sessionId = resumeSessionId
+    private func durationPreview(for production: Production) -> some View {
+        let days = production.defaultShelfLifeDays
+        let expiry = ScadenzaCalculator.productionExpiryDate(fromDays: days, referenceDate: Date())
+        return VStack(alignment: .leading, spacing: 8) {
+            Text(production.name)
+                .font(theme.typography.headline)
+            Text("Durata: \(days) \(days == 1 ? "giorno" : "giorni")")
+                .font(theme.typography.subheadline.weight(.semibold))
+            Text("Scadenza: \(expiry.formatted(date: .abbreviated, time: .omitted))")
+                .font(theme.typography.subheadline)
+            Text("Recuperata dall’Alimento Produzione, non va reinserita.")
+                .font(theme.typography.caption)
+                .foregroundStyle(theme.colorTextSecondary)
         }
-        reloadSession()
-        camera.resetCaptureBuffer()
-        camera.start()
-        GroqApiKeyService.prefetchVisionModels()
-        Task { await prepareCatalogIfNeeded() }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(theme.colorPrimary.opacity(0.12))
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 
-    @MainActor
-    private func prepareCatalogIfNeeded() async {
-        await Task.yield()
-        ProductTemplateSeeder.ensureTemplates(restaurantId: restaurantId, modelContext: modelContext)
-        libraryService.ensureDefaults(
-            restaurantId: restaurantId,
-            modelContext: modelContext
-        )
-        reloadSession()
-    }
+    // MARK: - Stampa immediata
 
-    private func reloadSession() {
-        modelContext.processPendingChanges()
-        sessionItems = lottoService.sessionItems(sessionId: sessionId, modelContext: modelContext)
-    }
-
-    @MainActor
-    private func handleCapturedPhoto(_ data: Data) {
-        let pending = lottoService.makePendingCapture(photoData: data)
-        let captureId = pending.id
-        pendingCapture = pending
-        lotDraftUserEdited = false
-        selectedTemplate = nil
-        foodSearchText = ""
-        showOptionalDetails = !supplierName.isEmpty
-        expiryFromLabel = false
-        expiryUserEdited = false
-        camera.resetCaptureBuffer()
-
-        Task {
-            await extractLotInBackground(captureId: captureId, photoData: data)
-        }
-
-        Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(500))
-            if pendingCapture != nil {
-                camera.stop()
-            }
-        }
-    }
-
-    @MainActor
-    private func applyLotOutcome(_ outcome: ProductionLotCaptureOutcome, to captureId: UUID, isFinal: Bool) {
-        guard var current = pendingCapture, current.id == captureId else { return }
-
-        let sanitizedLot = outcome.lotCode.flatMap {
-            LabelLotSanitizer.validateLot($0, rawContext: outcome.rawText)
-        }
-        if !lotDraftUserEdited,
-           let lot = sanitizedLot?.trimmingCharacters(in: .whitespacesAndNewlines),
-           !lot.isEmpty {
-            current.lotDraft = lot
-        }
-        current.testoLottoOCR = sanitizedLot
-        let raw = outcome.rawText.trimmingCharacters(in: .whitespacesAndNewlines)
-        current.ocrRawText = raw.isEmpty ? nil : raw
-        current.ocrConfidence = outcome.confidence
-
-        if isFinal {
-            current.isLotExtracting = false
-            current.lotExtractionError = outcome.analysisNote
-                ?? (outcome.confidence < GroqLotExtractor.manualVerificationThreshold
-                    ? "Verifica lotto e scadenza sull'etichetta — lettura AI incerta."
-                    : nil)
-        }
-
-        if let labelExpiry = outcome.expiryDate {
-            let year = Calendar.current.component(.year, from: labelExpiry)
-            let currentYear = Calendar.current.component(.year, from: Date())
-            // Rete di sicurezza UI: mai bindare allucinazioni 2031+ sul DatePicker.
-            if year > currentYear + 3 || year < currentYear - 1 {
-                // Ignora — lascia scadenza manuale / valore precedente non allucinato.
-            } else {
-                current.labelExpiryDate = labelExpiry
-                current.expiryFromLabel = true
-                suppressExpiryEditTracking = true
-                expiryDate = labelExpiry
-                suppressExpiryEditTracking = false
-                expiryFromLabel = true
-                expiryUserEdited = false
-            }
-        }
-
-        pendingCapture = current
-
-        if isFinal, outcome.lotCode?.isEmpty == false, !lotDraftUserEdited {
-            HapticManager.shared.notification(.success)
-        } else if isFinal, outcome.expiryDate != nil {
-            HapticManager.shared.notification(.success)
-        }
-    }
-
-    /// OCR V2 su thread di background; aggiornamenti UI sul MainActor (niente freeze).
-    @MainActor
-    private func extractLotInBackground(captureId: UUID, photoData: Data) async {
-        let engine = LabelScanningEngineFactory.make()
-        do {
-            let result = try await Task.detached(priority: .userInitiated) {
-                try await engine.scan(imageData: photoData)
-            }.value
-            applyLotOutcome(LabelScanResultBridge.toCaptureOutcome(result), to: captureId, isFinal: true)
-        } catch {
-            guard var current = pendingCapture, current.id == captureId else { return }
-            current.isLotExtracting = false
-            current.lotExtractionError = friendlyLotExtractionError(error)
-            pendingCapture = current
-        }
-    }
-
-    private func selectTemplate(_ template: ProductTemplate) {
-        selectedTemplate = template
-        if supplierName.isEmpty {
-            supplierName = TraceabilitySupplierMemory.lastUsed(for: restaurantId) ?? ""
-            showOptionalDetails = !supplierName.isEmpty
-        }
-        HapticManager.shared.selection()
-    }
-
-    private func discardPending(resumeCamera: Bool = true) {
-        pendingCapture = nil
-        lotDraftUserEdited = false
-        selectedTemplate = nil
-        foodSearchText = ""
-        expiryFromLabel = false
-        expiryUserEdited = false
-        camera.resetCaptureBuffer()
-        if resumeCamera {
-            camera.start()
-        }
-    }
-
-    private func confirmPending(_ pending: PendingLottoCapture) {
-        guard selectedTemplate != nil else {
-            errorMessage = "Seleziona un alimento in ingresso."
-            return
-        }
-        if (expiryUserEdited || expiryFromLabel),
-           ProductExpiryEvaluator.isExpiredByDate(expiryDate) {
-            pendingExpiredConfirm = pending
-            showExpiredProductAlert = true
-            return
-        }
-        performConfirm(pending, acceptedDespiteExpired: false)
-    }
-
-    private func performConfirm(_ pending: PendingLottoCapture, acceptedDespiteExpired: Bool) {
-        guard let template = selectedTemplate else {
-            errorMessage = "Seleziona un alimento in ingresso."
-            return
-        }
-        do {
-            var captureToConfirm = pending
-            if expiryUserEdited || expiryFromLabel {
-                captureToConfirm.labelExpiryDate = expiryDate
-                captureToConfirm.expiryFromLabel = expiryFromLabel && !expiryUserEdited
-            }
-            let lotto = try lottoService.confirmCapture(
-                pending: captureToConfirm,
-                template: template,
-                supplier: supplierName,
-                expiryDate: expiryUserEdited || expiryFromLabel ? expiryDate : nil,
-                expiryFromLabel: expiryFromLabel && !expiryUserEdited,
-                expiryUserEdited: expiryUserEdited,
-                acceptedDespiteExpired: acceptedDespiteExpired,
-                sessionId: sessionId,
-                user: user,
-                modelContext: modelContext
-            )
-            TraceabilitySupplierMemory.remember(supplierName, restaurantId: restaurantId)
-            pendingCapture = nil
-            selectedTemplate = nil
-            foodSearchText = ""
-            expiryFromLabel = false
-            expiryUserEdited = false
-            reloadSession()
-            onUpdated()
-            camera.resetCaptureBuffer()
-            camera.start()
-            HapticManager.shared.notification(.success)
-        } catch let error as ExpiryTrackingError {
-            pendingExpiredConfirm = pending
-            showExpiredProductAlert = true
-        } catch {
-            errorMessage = error.localizedDescription
-        }
-    }
-
-    private func attemptClose() {
-        if pendingCapture != nil {
-            discardPending(resumeCamera: false)
-        }
-        if sessionItems.isEmpty {
-            exitCapture(leavePending: false)
-        } else {
-            showExitWithoutProductionAlert = true
-        }
-    }
-
-    private func exitCapture(leavePending: Bool) {
-        camera.stop()
-        pendingCapture = nil
-        presentedSheet = nil
-        let sid: UUID? = sessionItems.isEmpty ? nil : sessionId
-        onDismiss(leavePending, sid)
-    }
-
-    private func presentAddIncomingFood() {
-        guard presentedSheet == nil else { return }
-        camera.stop()
-        presentedSheet = .addIncomingFood
-    }
-
-    private func handleSheetDismissed() {
-        showAddProductionInPicker = false
-        if pendingCapture == nil, !sessionItems.isEmpty, presentedSheet == nil {
-            resumeCameraAfterProductionPicker()
-        } else if pendingCapture == nil, sessionItems.isEmpty, presentedSheet == nil {
-            camera.resetCaptureBuffer()
-            camera.start()
-        }
-    }
-
-    private func presentProductionPicker() {
-        guard pendingCapture == nil, !sessionItems.isEmpty, presentedSheet == nil else { return }
-        selectedProduction = nil
-        selectedProductionCategoryId = nil
-        productionSearchText = ""
-        forcesCatalogDuration = false
-        showAddProductionInPicker = false
-        selectedReusedRecordIds = []
-        productionDishPhotoData = nil
-        isWarehouseOnlyPicker = false
-        camera.stop()
-        presentedSheet = .productionPicker
-    }
-
-    /// Apre il picker anche senza aver scattato foto (solo per riutilizzo dal magazzino)
-    private func presentProductionPickerFromWarehouse() {
-        guard pendingCapture == nil, presentedSheet == nil else { return }
-        selectedProduction = nil
-        selectedProductionCategoryId = nil
-        productionSearchText = ""
-        forcesCatalogDuration = false
-        showAddProductionInPicker = false
-        selectedReusedRecordIds = []
-        productionDishPhotoData = nil
-        isWarehouseOnlyPicker = true
-        camera.stop()
-        presentedSheet = .productionPicker
-    }
-
-    private func resumeCameraAfterProductionPicker() {
-        guard !sessionItems.isEmpty else { return }
-        camera.resetCaptureBuffer()
-        camera.start()
-    }
-
-    private func associateProduction(_ production: Production) {
-        do {
-            // Raccogli i record riutilizzati dal database
-            var reusedRecords: [TraceabilityRecord] = []
-            if !selectedReusedRecordIds.isEmpty {
-                for recordId in selectedReusedRecordIds {
-                    var descriptor = FetchDescriptor<TraceabilityRecord>(
-                        predicate: #Predicate<TraceabilityRecord> { $0.id == recordId }
-                    )
-                    descriptor.fetchLimit = 1
-                    if let record = (try? modelContext.fetch(descriptor))?.first {
-                        reusedRecords.append(record)
-                    }
+    private func printOverlay(for batch: ProduzioneBatch) -> some View {
+        VStack(spacing: 24) {
+            Spacer()
+            Image(systemName: "checkmark.circle.fill")
+                .font(.system(size: 64))
+                .foregroundStyle(theme.colorSuccess)
+            Text("Produzione salvata")
+                .font(.title2.weight(.bold))
+                .foregroundStyle(.white)
+            VStack(spacing: 6) {
+                Text(batch.productionNameSnapshot)
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(.white)
+                if let days = batch.shelfLifeDaysSnapshot {
+                    Text("Durata: \(days) \(days == 1 ? "giorno" : "giorni")")
+                        .font(.subheadline)
+                        .foregroundStyle(.white.opacity(0.85))
+                }
+                if let expiry = batch.internalExpiryAt {
+                    Text("Scadenza: \(expiry.formatted(date: .abbreviated, time: .omitted))")
+                        .font(.subheadline)
+                        .foregroundStyle(.white.opacity(0.85))
                 }
             }
 
-            // Chiama l'associazione unificata nel service (gestisce sia nuovi scatti che riutilizzati)
-            try lottoService.associateWithProductions(
-                lottoFotos: sessionItems,
-                reusedRecords: reusedRecords,
-                productions: [production],
-                user: user,
-                modelContext: modelContext,
-                productionShelfLifeDays: productionShelfLifeDays != production.defaultShelfLifeDays
-                    ? productionShelfLifeDays
-                    : nil,
-                ignoreIngredientConstraint: forcesCatalogDuration,
-                productionPhotoData: productionDishPhotoData
-            )
+            Button {
+                printLabel(for: batch)
+            } label: {
+                HStack(spacing: 12) {
+                    if isPrinting {
+                        ProgressView()
+                            .tint(.white)
+                    } else {
+                        Image(systemName: "printer.fill")
+                            .font(.title2.weight(.bold))
+                    }
+                    Text("STAMPA ETICHETTA")
+                        .font(.title3.weight(.heavy))
+                        .tracking(0.6)
+                }
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 22)
+                .background(theme.colorPrimary)
+                .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .disabled(isPrinting)
+            .padding(.horizontal, 24)
 
-            presentedSheet = nil
-            selectedProduction = nil
-            selectedProductionCategoryId = nil
-            productionDishPhotoData = nil
-            selectedReusedRecordIds = []
-            sessionId = UUID()
-            sessionItems = []
-            supplierName = ""
-            onUpdated()
-            HapticManager.shared.notification(.success)
-            exitCapture(leavePending: false)
+            Button("Scatta altre etichette") {
+                startFreshSession()
+            }
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(.white.opacity(0.9))
+
+            Spacer()
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color.black.opacity(0.92).ignoresSafeArea())
+    }
+
+    // MARK: - Azioni
+
+    private func beginCaptureSession() {
+        restoreLastSupplier()
+        if let open = lottoService.openSessions(restaurantId: restaurantId, modelContext: modelContext).first {
+            let items = lottoService.unlinkedPhotos(
+                sessionId: open.id,
+                restaurantId: restaurantId,
+                modelContext: modelContext
+            )
+            if !items.isEmpty {
+                sessionId = open.id
+                sessionItems = items
+            }
+        }
+        camera.resetCaptureBuffer()
+        camera.start()
+    }
+
+    private func restoreLastSupplier() {
+        guard let id = TraceabilitySupplierMemory.lastUsedId(for: restaurantId) else {
+            selectedSupplier = nil
+            return
+        }
+        selectedSupplier = scopedSuppliers.first { $0.id == id }
+    }
+
+    private func commitAddSupplier() {
+        let name = newSupplierName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard canManageSuppliers, !name.isEmpty else { return }
+        let supplier = Supplier(restaurantId: restaurantId, name: name)
+        modelContext.insert(supplier)
+        do {
+            try modelContext.save()
+            selectedSupplier = supplier
+            TraceabilitySupplierMemory.remember(id: supplier.id, restaurantId: restaurantId)
+            newSupplierName = ""
+            showAddSupplier = false
         } catch {
             errorMessage = error.localizedDescription
         }
     }
-}
 
-private func friendlyLotExtractionError(_ error: Error) -> String {
-    if let groq = error as? GroqLotError {
-        return "Lettura automatica non riuscita. \(groq.localizedDescription)"
-    }
-    let message = error.localizedDescription
-    if message.localizedCaseInsensitiveContains("model_not_found")
-        || message.localizedCaseInsensitiveContains("maverick")
-        || message.localizedCaseInsensitiveContains("does not exist") {
-        return "Servizio AI etichette non disponibile. Ricompila l'app aggiornata oppure inserisci lotto e scadenza manualmente."
-    }
-    if message.count > 120 {
-        return "Lettura automatica non riuscita. Inserisci lotto e scadenza manualmente."
-    }
-    return "Lettura automatica non riuscita. \(message)"
-}
-
-// MARK: - Sheet unico (evita conflitti SwiftUI)
-
-private enum CaptureFlowSheet: Identifiable {
-    case addIncomingFood
-    case productionPicker
-
-    var id: String {
-        switch self {
-        case .addIncomingFood: "addIncomingFood"
-        case .productionPicker: "productionPicker"
+    private func savePhoto(_ data: Data) {
+        isSavingPhoto = true
+        defer { isSavingPhoto = false }
+        do {
+            let lotto = try lottoService.confirmLabelPhoto(
+                photoData: data,
+                sessionId: sessionId,
+                restaurantId: restaurantId,
+                user: user,
+                modelContext: modelContext,
+                supplier: selectedSupplier?.name ?? ""
+            )
+            sessionItems.append(lotto)
+            if let supplier = selectedSupplier {
+                TraceabilitySupplierMemory.remember(id: supplier.id, restaurantId: restaurantId)
+            }
+            HapticManager.shared.trigger(.light)
+        } catch {
+            errorMessage = error.localizedDescription
         }
+    }
+
+    private func deletePhoto(_ lotto: LottoFoto) {
+        do {
+            try lottoService.delete(lotto, modelContext: modelContext)
+            sessionItems.removeAll { $0.id == lotto.id }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    private func discardSessionPhotos() {
+        for item in sessionItems {
+            try? lottoService.delete(item, modelContext: modelContext)
+        }
+        sessionItems = []
+        sessionId = UUID()
+    }
+
+    private func presentProductionPicker() {
+        guard !sessionItems.isEmpty else { return }
+        selectedProduction = nil
+        selectedProductionCategoryId = nil
+        productionSearchText = ""
+        camera.stop()
+        showProductionPicker = true
+    }
+
+    private func resumeCameraIfNeeded() {
+        guard completedBatch == nil else { return }
+        camera.resetCaptureBuffer()
+        camera.start()
+    }
+
+    private func saveProduction(_ production: Production) {
+        do {
+            let batch = try lottoService.completeKitchenSession(
+                lottoFotos: sessionItems,
+                production: production,
+                user: user,
+                modelContext: modelContext
+            )
+            showProductionPicker = false
+            selectedProduction = production
+            sessionItems = []
+            sessionId = UUID()
+            completedBatch = batch
+            camera.stop()
+            HapticManager.shared.notification(.success)
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    private func printLabel(for batch: ProduzioneBatch) {
+        isPrinting = true
+        let production = scopedProductions.first { $0.id == batch.productionId } ?? selectedProduction
+        var draft = labelService.draft(from: batch, production: production)
+        let batchId = batch.id
+        var outputDescriptor = FetchDescriptor<TraceabilityRecord>(
+            predicate: #Predicate<TraceabilityRecord> { $0.produzioneBatchId == batchId }
+        )
+        outputDescriptor.fetchLimit = 8
+        let output = ((try? modelContext.fetch(outputDescriptor)) ?? [])
+            .first { $0.isProductionBatchOutput }
+        draft.traceabilityRecordId = output?.id
+
+        var labelDescriptor = FetchDescriptor<ProductionLabelRecord>(
+            predicate: #Predicate { $0.restaurantId == restaurantId }
+        )
+        let labels = (try? modelContext.fetch(labelDescriptor)) ?? []
+        let lot = batch.batchCode.trimmingCharacters(in: .whitespacesAndNewlines)
+        let existing = labels.first {
+            ($0.lotCode ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                .caseInsensitiveCompare(lot) == .orderedSame
+        } ?? ProductionLabelLinkMatcher.existingLabel(for: draft, in: labels)
+
+        Task {
+            do {
+                let label: ProductionLabelRecord
+                if let existing {
+                    label = existing
+                } else {
+                    label = try labelService.create(
+                        draft: draft,
+                        restaurantId: restaurantId,
+                        user: user,
+                        modelContext: modelContext
+                    )
+                }
+                await ProductionLabelPrintQueue.shared.schedulePrint(
+                    label: label,
+                    restaurantName: restaurantName,
+                    modelContext: modelContext,
+                    countAsReprint: existing != nil
+                )
+                await MainActor.run {
+                    isPrinting = false
+                    HapticManager.shared.notification(.success)
+                }
+            } catch {
+                await MainActor.run {
+                    isPrinting = false
+                    errorMessage = error.localizedDescription
+                }
+            }
+        }
+    }
+
+    private func startFreshSession() {
+        completedBatch = nil
+        selectedProduction = nil
+        isPrinting = false
+        sessionId = UUID()
+        sessionItems = []
+        camera.resetCaptureBuffer()
+        camera.start()
     }
 }

@@ -173,7 +173,7 @@ private struct ProductionLabelSourceListView: View {
 
     private var emptyMessage: String {
         switch segment {
-        case .traceability: return "Non ci sono piatti preparati da etichettare. Associa i lotti in ingresso a un piatto in Tracciabilità."
+        case .traceability: return "Non ci sono produzioni da etichettare. Completa una Tracciabilità (foto → Alimento Produzione → salva)."
         case .blast: return "Non ci sono abbattimenti completati."
         case .defrost: return "Non ci sono decongelamenti completati."
         }

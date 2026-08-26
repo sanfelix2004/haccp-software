@@ -20,7 +20,7 @@ enum ProductionTraceabilityRegister {
         let expiryDetail: String
         let ingredients: [IngredientLine]
         let batchId: UUID?
-        /// Foto piatto finito (risolta in fase di build).
+        /// Sempre nil: la produzione non ha foto nei Documenti.
         let dishPhotoData: Data?
     }
 
@@ -53,6 +53,7 @@ enum ProductionTraceabilityRegister {
         let logsByRecord = Dictionary(grouping: logs, by: \.receivedItemId)
         let dayFormatter = dayOnlyFormatter()
 
+        // Stessa fonte della Storia: solo batch non archiviati (eliminati = assenti dal fetch).
         let scopedBatches = batches
             .filter { !$0.isArchived && interval.contains($0.producedAt) }
             .sorted { $0.producedAt > $1.producedAt }
@@ -92,13 +93,6 @@ enum ProductionTraceabilityRegister {
                     logs: logsByRecord[$0.id] ?? []
                 )
             }
-            let dishPhoto = ProductImageBytesResolver.productionDishPhoto(
-                batchId: batch.id,
-                images: productImages,
-                records: traceability
-            ) ?? outputRecord.flatMap {
-                ProductImageBytesResolver.resolve(record: $0, images: productImages, lottoFotos: lottoFotos)
-            }
 
             blocks.append(MasterBlock(
                 dateOperator: dateLine,
@@ -111,7 +105,8 @@ enum ProductionTraceabilityRegister {
                 expiryDetail: productionExpiryCell(dishExpiryDate),
                 ingredients: ingredients,
                 batchId: batch.id,
-                dishPhotoData: dishPhoto
+                // Produzione: nessuna foto nei Documenti.
+                dishPhotoData: nil
             ))
         }
 
@@ -296,6 +291,7 @@ enum ProductionTraceabilityRegister {
         ].joined(separator: "\n")
 
         let lot = record.lotCode.trimmingCharacters(in: .whitespacesAndNewlines)
+        let photoCode = LabelPhotoRefCode.make(record: record, lottoById: lottoById)
         let ingredientExpiry = resolvedIngredientExpiry(for: record, lottoById: lottoById)
         let status = TraceabilityLotOperationalStatus.present(record: record, logs: logs).label
 
@@ -311,6 +307,12 @@ enum ProductionTraceabilityRegister {
             foodLines.append("Fornitore: \(supplier)")
         }
 
+        var lotLines: [String] = []
+        if !lot.isEmpty, lot.caseInsensitiveCompare(photoCode) != .orderedSame {
+            lotLines.append(lot)
+        }
+        lotLines.append("Codice foto \(photoCode)")
+
         let photo = ProductImageBytesResolver.resolve(
             record: record,
             images: productImages,
@@ -320,7 +322,7 @@ enum ProductionTraceabilityRegister {
         return IngredientLine(
             dateOperator: dateOperator,
             foodDetail: foodLines.joined(separator: "\n"),
-            lot: lot.isEmpty ? HACCPRegisterCopy.notAvailable : lot,
+            lot: lotLines.joined(separator: "\n"),
             expiryDetail: ingredientExpiryCell(
                 ingredientExpiry: ingredientExpiry,
                 productionExpiry: productionExpiry

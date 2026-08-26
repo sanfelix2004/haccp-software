@@ -98,22 +98,27 @@ struct TraceabilityRecordHistoryDetailSheet: View {
         self.record = fetchedRecord
         
         // 2. Fetch associated photos (ProductImage / inline / disco)
-        var imageDescriptor = FetchDescriptor<ProductImage>(
-            predicate: #Predicate<ProductImage> { !$0.isArchived }
-        )
-        let allImages = (try? modelContext.fetch(imageDescriptor)) ?? []
-        let lottoFotos = (try? modelContext.fetch(FetchDescriptor<LottoFoto>())) ?? []
-        let photos = ProductImageBytesResolver.allPhotos(
-            record: fetchedRecord,
-            images: allImages,
-            lottoFotos: lottoFotos
-        )
-        self.photoData = photos.first
-        if photos.count > 1 {
-            // Conserva tutte le foto per la griglia sotto (prima già in photoData).
-            extraPhotos = Array(photos.dropFirst())
+        // Produzione: nessuna foto in Storia / dettaglio.
+        if fetchedRecord.isProductionBatchOutput {
+            self.photoData = nil
+            self.extraPhotos = []
         } else {
-            extraPhotos = []
+            var imageDescriptor = FetchDescriptor<ProductImage>(
+                predicate: #Predicate<ProductImage> { !$0.isArchived }
+            )
+            let allImages = (try? modelContext.fetch(imageDescriptor)) ?? []
+            let lottoFotos = (try? modelContext.fetch(FetchDescriptor<LottoFoto>())) ?? []
+            let photos = ProductImageBytesResolver.allPhotos(
+                record: fetchedRecord,
+                images: allImages,
+                lottoFotos: lottoFotos
+            )
+            self.photoData = photos.first
+            if photos.count > 1 {
+                extraPhotos = Array(photos.dropFirst())
+            } else {
+                extraPhotos = []
+            }
         }
         
         // 3. Fetch linked productions
@@ -243,9 +248,6 @@ struct TraceabilityRecordHistoryDetailSheet: View {
     // MARK: - Components
 
     private func headerBlock(_ record: TraceabilityRecord) -> some View {
-        let isProductionLot = productionLotCode != nil
-            || record.produzioneBatchId != nil
-            || InternalLotCodeGenerator.isInternalLotCode(record.lotCode)
         return HStack(alignment: .center, spacing: 16) {
             ZStack {
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
@@ -262,9 +264,7 @@ struct TraceabilityRecordHistoryDetailSheet: View {
                     .foregroundStyle(theme.colorTextPrimary)
                 
                 HStack(spacing: 8) {
-                    Text(isProductionLot
-                         ? "Lotto produzione \(record.lotCode)"
-                         : "Lotto \(record.lotCode)")
+                    Text("Lotto \(record.lotCode)")
                         .font(theme.typography.caption.weight(.bold).monospaced())
                         .foregroundStyle(theme.colorPrimary)
                     
@@ -312,11 +312,11 @@ struct TraceabilityRecordHistoryDetailSheet: View {
             
             VStack(spacing: 8) {
                 if let productionLotCode, !productionLotCode.isEmpty {
-                    infoRow(label: "Lotto produzione", value: productionLotCode, icon: "number")
+                    infoRow(label: "Lotto", value: productionLotCode, icon: "number")
                 }
                 if !isProductionLot || record.lotCode != (productionLotCode ?? "") {
                     infoRow(
-                        label: isProductionLot ? "Lotto produzione" : "Lotto fornitore",
+                        label: "Lotto",
                         value: record.lotCode.isEmpty ? "—" : record.lotCode,
                         icon: "barcode"
                     )

@@ -36,14 +36,15 @@ struct TraceabilityWithdrawSheet: View {
             Form {
                 Section {
                     Text(record.isProductionBatchOutput
-                       ? "Chiudi questo piatto di produzione scaduto: usato, scartato o eliminato perché scaduto. Resta in Storia e Documenti."
-                       : "Chiudi questo alimento scaduto: usato, scartato o eliminato perché scaduto. Resta in Storia e Documenti.")
+                       ? "Terminato resta solo in Storia. Scartato richiede motivazione e va anche in Documenti."
+                       : "Terminato resta solo in Storia. Scartato richiede motivazione e va anche in Documenti.")
                         .font(theme.typography.caption)
                         .foregroundStyle(theme.colorTextSecondary)
                 }
 
                 Section(record.isProductionBatchOutput ? "Produzione" : "Prodotto") {
-                    if let photo = record.photoData, !photo.isEmpty,
+                    if !record.isProductionBatchOutput,
+                       let photo = record.photoData, !photo.isEmpty,
                        let thumb = HACCPZoomablePhotoThumbnail(
                         data: photo,
                         size: 96,
@@ -89,14 +90,21 @@ struct TraceabilityWithdrawSheet: View {
                 }
 
                 Section {
-                    TextField(
-                        kind.requiresNote ? "Motivazione obbligatoria…" : "Es. contenitore, ubicazione…",
-                        text: $note,
-                        axis: .vertical
-                    )
-                    .lineLimit(2...4)
+                    if kind.requiresNote {
+                        TextField(
+                            "Motivazione obbligatoria…",
+                            text: $note,
+                            axis: .vertical
+                        )
+                        .lineLimit(2...4)
+                    }
+                    Text(withdrawFooter(for: kind))
+                        .font(theme.typography.caption)
+                        .foregroundStyle(theme.colorTextSecondary)
                 } header: {
-                    Text(kind.requiresNote ? "Motivazione (obbligatoria)" : "Note (opzionale)")
+                    if kind.requiresNote {
+                        Text("Motivazione (obbligatoria)")
+                    }
                 }
             }
             .navigationTitle("Chiudi lotto scaduto")
@@ -129,6 +137,17 @@ struct TraceabilityWithdrawSheet: View {
             }
         }
         .interactiveDismissDisabled(isSubmitting)
+    }
+
+    private func withdrawFooter(for kind: TraceabilityWithdrawalKind) -> String {
+        switch kind {
+        case .ritirato:
+            return "Terminato: salvato solo in Storia."
+        case .scartato:
+            return "Scartato: motivazione obbligatoria. Salvato in Storia e Documenti."
+        case .scaduto:
+            return "Scaduto: salvato in Storia e Documenti."
+        }
     }
 
     private func confirm() {

@@ -65,7 +65,8 @@ struct ProduzioneBatchService {
         internalExpiryAt: Date?,
         ingredientCount: Int,
         user: LocalUser,
-        modelContext: ModelContext
+        modelContext: ModelContext,
+        shelfLifeDays: Int? = nil
     ) throws {
         guard ingredientCount > 0 else {
             throw NSError(
@@ -76,6 +77,9 @@ struct ProduzioneBatchService {
         }
         try ensureInternalLotCode(batch: batch, modelContext: modelContext)
         batch.internalExpiryAt = internalExpiryAt
+        if let shelfLifeDays {
+            batch.shelfLifeDaysSnapshot = shelfLifeDays
+        }
         batch.status = .completato
 
         let ingredientLines = ((try? modelContext.fetch(FetchDescriptor<IngredienteTracciato>())) ?? [])

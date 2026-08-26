@@ -18,6 +18,8 @@ struct HistoryTraceabilityIngredient: Identifiable, Equatable {
     var photoData: Data? = nil
     /// Es. Scaduto / Scartato / Usato.
     var statusLabel: String? = nil
+    /// Codice foto da data/ora scatto (es. F-20260826-112345).
+    var photoCaptureCode: String? = nil
 }
 
 struct HistoryEntry: Identifiable, Equatable {
@@ -41,8 +43,12 @@ struct HistoryEntry: Identifiable, Equatable {
     var produzioneBatchId: UUID? = nil
     /// Record tracciabilità da soft-delete dallo storico (singolo lotto).
     var historyRemovalRecordId: UUID? = nil
-    /// MASTER può nascondere questa voce dallo storico (traccia resta in Documenti).
+    /// MASTER può eliminare questa produzione dallo storico (cancellazione reale).
     var allowsHistoryRemoval: Bool = false
+    /// Giorni di conservazione copiati sull’istanza di produzione.
+    var shelfLifeDays: Int? = nil
+    /// Scadenza calcolata e salvata sulla produzione.
+    var expiryDate: Date? = nil
 
     static func == (lhs: HistoryEntry, rhs: HistoryEntry) -> Bool {
         lhs.id == rhs.id
@@ -55,6 +61,8 @@ struct HistoryEntry: Identifiable, Equatable {
             && lhs.produzioneBatchId == rhs.produzioneBatchId
             && lhs.historyRemovalRecordId == rhs.historyRemovalRecordId
             && lhs.allowsHistoryRemoval == rhs.allowsHistoryRemoval
+            && lhs.shelfLifeDays == rhs.shelfLifeDays
+            && lhs.expiryDate == rhs.expiryDate
             && lhs.details.count == rhs.details.count
     }
 
@@ -63,21 +71,10 @@ struct HistoryEntry: Identifiable, Equatable {
         parts += details.flatMap { [$0.label, $0.value] }
         if let internalLotCode { parts.append(internalLotCode) }
         if let traceabilityIngredients {
-            parts += traceabilityIngredients.flatMap { [$0.name, $0.lotCode, $0.supplier, $0.expiryText] }
+            parts += traceabilityIngredients.flatMap {
+                [$0.name, $0.lotCode, $0.supplier, $0.expiryText, $0.photoCaptureCode].compactMap { $0 }
+            }
         }
         return parts.joined(separator: " ")
-    }
-
-    var supplierLotSearchText: String {
-        var parts: [String] = []
-        if let traceabilityIngredients {
-            parts += traceabilityIngredients.map(\.lotCode)
-        }
-        parts += details.filter { $0.label.localizedCaseInsensitiveContains("lotto") }.map(\.value)
-        return parts.joined(separator: " ")
-    }
-
-    var internalLotSearchText: String {
-        [internalLotCode].compactMap { $0 }.joined(separator: " ")
     }
 }

@@ -33,4 +33,19 @@ enum TraceabilityWithdrawalKind: String, CaseIterable, Identifiable, Codable {
         case .scartato: return true
         }
     }
+
+    /// Terminato (ritirato) solo Storia; scarto/scaduto anche Documenti.
+    var recordsInDocuments: Bool {
+        switch self {
+        case .ritirato: return false
+        case .scartato, .scaduto: return true
+        }
+    }
+
+    var closedProductStatus: ProductStatus {
+        switch self {
+        case .ritirato, .scaduto: return .used
+        case .scartato: return .rejected
+        }
+    }
 }

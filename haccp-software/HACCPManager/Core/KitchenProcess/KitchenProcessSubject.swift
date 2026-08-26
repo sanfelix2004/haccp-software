@@ -3,7 +3,7 @@ import Foundation
 enum KitchenProcessSubjectSource: String, CaseIterable, Identifiable {
     case traceability = "Lotti tracciati"
     case incomingFood = "Alimenti in ingresso"
-    case production = "Piatti"
+    case production = "Alimenti Produzione"
     case manual = "Manuale"
 
     var id: String { rawValue }
@@ -31,7 +31,7 @@ struct KitchenProcessSubject: Equatable {
             switch source {
             case .traceability: return "Lotto tracciato (ricezione)"
             case .incomingFood: return "Catalogo alimenti in ingresso"
-            case .production: return "Catalogo piatti"
+            case .production: return "Alimenti Produzione"
             case .manual: return "Inserimento manuale"
             }
         }

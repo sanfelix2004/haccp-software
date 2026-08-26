@@ -77,6 +77,6 @@ final class LottoFoto {
     }
 
     var isConfirmed: Bool {
-        alimentoIngressoID != nil
+        !isArchived && !localPath.isEmpty
     }
 }

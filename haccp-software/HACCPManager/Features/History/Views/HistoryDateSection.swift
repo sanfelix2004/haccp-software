@@ -4,6 +4,8 @@ struct HistoryDateSection: View {
     let date: Date
     let entries: [HistoryEntry]
     var onPendingClosure: ((UUID) -> Void)? = nil
+    var canDeleteProduction: Bool = false
+    var onDeleteProduction: ((HistoryEntry) -> Void)? = nil
 
     @Environment(\.theme) private var theme
 
@@ -31,7 +33,9 @@ struct HistoryDateSection: View {
                 HistoryRecordCard(
                     entry: entry,
                     isLastInSection: index == entries.count - 1,
-                    onPendingClosure: onPendingClosure
+                    onPendingClosure: onPendingClosure,
+                    canDeleteProduction: canDeleteProduction && entry.allowsHistoryRemoval && entry.produzioneBatchId != nil,
+                    onDeleteProduction: { onDeleteProduction?(entry) }
                 )
                 .equatable()
             }

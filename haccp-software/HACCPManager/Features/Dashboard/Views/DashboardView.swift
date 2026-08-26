@@ -13,14 +13,13 @@ struct DashboardView: View {
     ]
 
     private let haccpDashboardModules: [(item: SidebarItem, description: String, icon: String)] = [
-        (.traceability, "Prodotti, lotti, fornitori", "archivebox.fill"),
+        (.traceability, "Fotocamera → Alimento Produzione → stampa", "archivebox.fill"),
         (.fridges, "Temperature e allarmi", "thermometer.medium"),
         (.cleaningControl, "Piani pulizia", "sparkles"),
         (.blastChilling, "Abbattimento termico", "wind.snow"),
-        (.expiryControl, "Scadenze e quantità", "calendar.badge.exclamationmark"),
+        (.expiryControl, "Scadenze produzioni", "calendar.badge.exclamationmark"),
         (.defrost, "Decongelamenti", "snowflake"),
         (.oilControl, "Olio frittura", "drop.fill"),
-        (.productionLabels, "Etichette produzione", "tag.fill"),
         (.goodsReceiving, "Ricezione merci", "shippingbox.fill")
     ]
 

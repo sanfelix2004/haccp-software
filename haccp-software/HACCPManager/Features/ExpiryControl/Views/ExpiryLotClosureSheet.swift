@@ -32,6 +32,21 @@ enum ExpiryLotClosureKind: String, CaseIterable, Identifiable {
         }
     }
 
+    /// Terminato resta solo in Storia; scarti/scadenze vanno anche in Documenti.
+    var recordsInDocuments: Bool {
+        switch self {
+        case .finished: return false
+        case .discarded, .expired: return true
+        }
+    }
+
+    var closedProductStatus: ProductStatus {
+        switch self {
+        case .finished, .expired: return .used
+        case .discarded: return .rejected
+        }
+    }
+
     /// «Scaduto» selezionabile solo se non c’è data, oppure se la data è già passata.
     func isSelectable(for record: TraceabilityRecord, now: Date = Date()) -> Bool {
         switch self {
@@ -80,14 +95,15 @@ struct ExpiryLotClosureSheet: View {
             Form {
                 Section {
                     Text(isProduction
-                       ? "Chiudi questo piatto di produzione: terminato, scartato o eliminato perché scaduto."
-                       : "Chiudi questo alimento in ingresso: terminato, scartato o eliminato perché scaduto.")
+                       ? "Segna la produzione come Terminata (solo Storia) oppure Scartata (con motivazione)."
+                       : "Segna l’alimento come Terminato (solo Storia) oppure Scartato (con motivazione).")
                         .font(theme.typography.caption)
                         .foregroundStyle(theme.colorTextSecondary)
                 }
 
                 Section(isProduction ? "Produzione" : "Alimento") {
-                    if let photo = record.photoData, !photo.isEmpty,
+                    if !isProduction,
+                       let photo = record.photoData, !photo.isEmpty,
                        let thumb = HACCPZoomablePhotoThumbnail(
                         data: photo,
                         size: 96,
@@ -152,17 +168,21 @@ struct ExpiryLotClosureSheet: View {
                 }
 
                 Section {
-                    TextField(
-                        kind.requiresNote ? "Motivazione obbligatoria…" : "Nota opzionale…",
-                        text: $note,
-                        axis: .vertical
-                    )
-                    .lineLimit(2...4)
+                    if kind.requiresNote {
+                        TextField(
+                            "Motivazione obbligatoria…",
+                            text: $note,
+                            axis: .vertical
+                        )
+                        .lineLimit(2...4)
+                    }
+                    Text(footerText(for: kind))
+                        .font(theme.typography.caption)
+                        .foregroundStyle(theme.colorTextSecondary)
                 } header: {
-                    Text(kind.requiresNote ? "Motivazione (obbligatoria)" : "Nota (opzionale)")
-                } footer: {
-                    Text("Esce subito da Tracciabilità. Resta 1 giorno in Controllo scadenze, poi solo in Storia e Documenti.")
-                        .font(theme.typography.caption2)
+                    if kind.requiresNote {
+                        Text("Motivazione (obbligatoria)")
+                    }
                 }
             }
             .navigationTitle(isProduction ? "Chiudi produzione" : "Chiudi alimento")
@@ -193,6 +213,17 @@ struct ExpiryLotClosureSheet: View {
         .interactiveDismissDisabled(isSubmitting)
     }
 
+    private func footerText(for kind: ExpiryLotClosureKind) -> String {
+        switch kind {
+        case .finished:
+            return "Terminato: esce da Controllo scadenze e resta solo in Storia (nessuna motivazione)."
+        case .discarded:
+            return "Scartato: motivazione obbligatoria. Salvato in Storia e Documenti."
+        case .expired:
+            return "Scaduto: esce da Controllo scadenze. Salvato in Storia e Documenti."
+        }
+    }
+
     private func confirm() {
         guard !isSubmitting else { return }
         isSubmitting = true
@@ -205,7 +236,7 @@ struct ExpiryLotClosureSheet: View {
             try archiveService.archive(
                 record: record,
                 kind: kind,
-                note: trimmedNote.nilIfEmpty,
+                note: kind.requiresNote ? trimmedNote.nilIfEmpty : nil,
                 user: user,
                 modelContext: modelContext
             )

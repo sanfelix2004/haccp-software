@@ -61,7 +61,7 @@ struct TraceabilityProductionArchiveGroup: Identifiable, Equatable {
     let batchCode: String?
     let registeredAt: Date
     let ingredients: [TraceabilityArchiveIngredientItem]
-    /// Foto del piatto finito (mai quella degli ingredienti in ingresso).
+    /// Non usato: la produzione non ha foto (né in Storia né in Documenti).
     var photoData: Data? = nil
     /// Stato del piatto finito (scaduto / scartato / usato / …).
     var statusLabel: String? = nil
@@ -368,12 +368,6 @@ struct TraceabilityHubContext {
                 return nil
             }
 
-            let dishPhoto = ProductImageBytesResolver.productionDishPhoto(
-                batchId: batch.id,
-                images: allProductImages,
-                records: Array(recordsById.values)
-            )
-
             let dishStatus = productionOutputStatus(
                 productionId: batch.productionId,
                 batchId: batch.id
@@ -397,7 +391,8 @@ struct TraceabilityHubContext {
                 batchCode: batch.batchCode,
                 registeredAt: batch.producedAt,
                 ingredients: ingredients,
-                photoData: dishPhoto,
+                // Produzione senza foto: non propagare il piatto alla Storia/hub.
+                photoData: nil,
                 statusLabel: dishStatus?.label,
                 statusBadgeStyle: dishStatus?.badgeStyle ?? .neutral
             )

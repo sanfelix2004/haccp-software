@@ -30,7 +30,7 @@ enum AppPermission: Hashable {
     case manageIncomingFoodCatalog
     case deleteOperationalRecords
     case deleteTraceabilityRecords
-    /// MASTER: nasconde/corregge voci nello storico operativo (Documenti restano intatti).
+    /// MASTER: elimina produzioni dallo storico (cancellazione reale, anche dai PDF successivi).
     case manageHistory
     case manageDocuments
     case clearCleaningHistory
@@ -177,6 +177,8 @@ struct UserPermissions: Equatable {
 
     /// Voce sidebar: accessibile di ruolo, oppure elevabile con PIN MASTER.
     func isListedInSidebar(_ item: SidebarItem) -> Bool {
+        // Etichette: solo da Tracciabilità (crea/stampa), non voce sidebar.
+        if item == .productionLabels { return false }
         if canAccessModule(item) { return true }
         switch item {
         case .documents, .users:
@@ -186,7 +188,6 @@ struct UserPermissions: Equatable {
         case .traceability, .fridges, .cleaningControl, .blastChilling,
              .expiryControl, .defrost, .oilControl, .productionLabels,
              .goodsReceiving, .checklist, .productionCatalog, .incomingFoodCatalog:
-            // Fuori ruolo (es. Cucina → ricezione): visibile con lucchetto.
             return true
         }
     }
@@ -256,13 +257,13 @@ struct UserPermissions: Equatable {
 
     private static let fullOperationalModules: Set<SidebarItem> = [
         .traceability, .fridges, .cleaningControl, .blastChilling,
-        .expiryControl, .defrost, .oilControl, .productionLabels,
+        .expiryControl, .defrost, .oilControl,
         .goodsReceiving, .checklist, .productionCatalog, .incomingFoodCatalog
     ]
 
     private static let kitchenModules: Set<SidebarItem> = [
         .traceability, .fridges, .cleaningControl, .blastChilling,
-        .expiryControl, .defrost, .oilControl, .productionLabels,
+        .expiryControl, .defrost, .oilControl,
         .checklist, .productionCatalog
     ]
 

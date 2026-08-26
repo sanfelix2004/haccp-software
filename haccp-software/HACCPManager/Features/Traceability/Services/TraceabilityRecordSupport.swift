@@ -4,10 +4,32 @@ import SwiftData
 /// Regole condivise per hub tracciabilità, controllo scadenze, storia ed etichette.
 enum TraceabilityRecordSupport {
 
+    /// Nome bozza foto etichetta prima dell’assegnazione ad Alimento Produzione.
+    static let kitchenLabelDraftName = "Etichetta"
+
     /// Giorni in cui una chiusura resta visibile in Controllo scadenze, poi sparisce.
     static let expiryClosureGraceDays = 1
 
     // MARK: - Filtri modulo
+
+    /// Foto etichetta del flusso cucina (bozza o già assegnata). Non è un alimento in ingresso da scadenze.
+    static func isKitchenLabelCapture(_ record: TraceabilityRecord) -> Bool {
+        guard record.isIncomingIngredientLot, record.lottoFotoId != nil else { return false }
+        if isUnassignedKitchenLabelDraft(record) { return true }
+        let name = record.productName
+        if name.hasPrefix("\(kitchenLabelDraftName) F-") { return true }
+        if name.hasPrefix("Etichetta lotto") { return true }
+        return false
+    }
+
+    /// Foto scattata in Tracciabilità ma non ancora collegata a una produzione.
+    /// Non deve comparire in Scadenze, giacenza PDF o hub come alimento “vero”.
+    static func isUnassignedKitchenLabelDraft(_ record: TraceabilityRecord) -> Bool {
+        guard record.isIncomingIngredientLot, !record.isArchived else { return false }
+        guard record.lottoFotoId != nil else { return false }
+        return record.productName == kitchenLabelDraftName
+            || record.productName == "Etichetta lotto" // legacy placeholder
+    }
 
     /// Chiusura operativa: terminato / usato / scartato / respinto.
     static func isOperationallyClosed(_ record: TraceabilityRecord) -> Bool {
@@ -36,9 +58,10 @@ enum TraceabilityRecordSupport {
     }
 
     /// Alimento in ingresso nel hub tracciabilità.
-    /// Esclude chiusure (terminato/scaduto/scartato) e lotti già scaduti per data.
+    /// Esclude chiusure (terminato/scaduto/scartato), lotti già scaduti per data e bozze foto non assegnate.
     static func isHubRecord(_ record: TraceabilityRecord) -> Bool {
         guard record.isIncomingIngredientLot, !record.isArchived else { return false }
+        guard !isUnassignedKitchenLabelDraft(record) else { return false }
         guard record.productStatus == .available else { return false }
         if let expiry = record.expiryDate, ProductExpiryEvaluator.isExpiredByDate(expiry) {
             return false
@@ -53,6 +76,7 @@ enum TraceabilityRecordSupport {
         now: Date = Date()
     ) -> Bool {
         guard !record.isArchived else { return false }
+        guard !isKitchenLabelCapture(record) else { return false }
         switch record.productStatus {
         case .available, .expired:
             return true

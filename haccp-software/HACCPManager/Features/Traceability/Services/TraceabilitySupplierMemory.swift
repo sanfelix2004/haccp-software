@@ -1,20 +1,22 @@
 import Foundation
 
-/// Ricorda l'ultimo fornitore usato per accelerare la registrazione lotti.
+/// Ricorda l’ultimo fornitore scelto in Tracciabilità (stesso catalogo di Ricezione merci).
 enum TraceabilitySupplierMemory {
     private static func key(restaurantId: UUID) -> String {
-        "traceability.lastSupplier.\(restaurantId.uuidString)"
+        "traceability.lastSupplierId.\(restaurantId.uuidString)"
     }
 
-    static func lastUsed(for restaurantId: UUID) -> String? {
-        let value = UserDefaults.standard.string(forKey: key(restaurantId: restaurantId))?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        return value?.isEmpty == false ? value : nil
+    static func lastUsedId(for restaurantId: UUID) -> UUID? {
+        guard let raw = UserDefaults.standard.string(forKey: key(restaurantId: restaurantId)),
+              let id = UUID(uuidString: raw) else { return nil }
+        return id
     }
 
-    static func remember(_ supplier: String, restaurantId: UUID) {
-        let trimmed = supplier.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-        UserDefaults.standard.set(trimmed, forKey: key(restaurantId: restaurantId))
+    static func remember(id: UUID, restaurantId: UUID) {
+        UserDefaults.standard.set(id.uuidString, forKey: key(restaurantId: restaurantId))
+    }
+
+    static func clear(restaurantId: UUID) {
+        UserDefaults.standard.removeObject(forKey: key(restaurantId: restaurantId))
     }
 }

@@ -20,11 +20,7 @@ struct HistoryFilterBar: View {
     }
 
     private var searchPlaceholder: String {
-        switch filter.lotSearchMode {
-        case .all: return "Cerca titolo, lotto produzione o fornitore…"
-        case .internalLot: return "Cerca lotto produzione (es. 20260718-01)…"
-        case .supplierLot: return "Cerca lotto fornitore (rintracciabilità inversa)…"
-        }
+        "Cerca titolo o lotto…"
     }
 
     var body: some View {
@@ -39,13 +35,6 @@ struct HistoryFilterBar: View {
             .padding(12)
             .background(theme.colorSurface)
             .clipShape(RoundedRectangle(cornerRadius: theme.spacing.cornerMedium, style: .continuous))
-
-            Picker("Tipo lotto", selection: $filter.lotSearchMode) {
-                ForEach(HistoryLotSearchMode.allCases) { mode in
-                    Text(mode.rawValue).tag(mode)
-                }
-            }
-            .pickerStyle(.segmented)
 
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {

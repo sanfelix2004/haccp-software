@@ -34,7 +34,13 @@ enum ProductionLabelLinkMatcher {
         if let id = draft.goodsReceiptId, label.goodsReceiptId == id { return true }
         if let id = draft.blastChillingRecordId, label.blastChillingRecordId == id { return true }
         if let id = draft.defrostRecordId, label.defrostRecordId == id { return true }
-        if let id = draft.productionId, label.productionId == id { return true }
+        if let id = draft.productionId, label.productionId == id {
+            let draftLot = draft.lotCode.trimmingCharacters(in: .whitespacesAndNewlines)
+            let labelLot = (label.lotCode ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            if !draftLot.isEmpty, draftLot.caseInsensitiveCompare(labelLot) == .orderedSame {
+                return true
+            }
+        }
         return false
     }
 

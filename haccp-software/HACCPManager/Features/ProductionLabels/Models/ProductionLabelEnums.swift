@@ -100,7 +100,7 @@ enum ProductionLabelLinkedSource: String, CaseIterable, Identifiable, Hashable {
 
     var emptyItemsMessage: String {
         switch self {
-        case .traceability: return "Non ci sono piatti preparati da etichettare. Associa i lotti in ingresso a un piatto in Tracciabilità."
+        case .traceability: return "Non ci sono produzioni da etichettare. Completa una Tracciabilità (foto → Alimento Produzione → salva)."
         case .blastChilling: return "Non ci sono abbattimenti completati."
         case .defrost: return "Non ci sono decongelamenti completati."
         }

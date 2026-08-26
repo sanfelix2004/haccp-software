@@ -4,9 +4,13 @@ struct HistoryRecordCard: View, Equatable {
     let entry: HistoryEntry
     var isLastInSection: Bool = false
     var onPendingClosure: ((UUID) -> Void)? = nil
+    var canDeleteProduction: Bool = false
+    var onDeleteProduction: (() -> Void)? = nil
 
     static func == (lhs: HistoryRecordCard, rhs: HistoryRecordCard) -> Bool {
-        lhs.entry == rhs.entry && lhs.isLastInSection == rhs.isLastInSection
+        lhs.entry == rhs.entry
+            && lhs.isLastInSection == rhs.isLastInSection
+            && lhs.canDeleteProduction == rhs.canDeleteProduction
     }
 
     @Environment(\.theme) private var theme
@@ -100,102 +104,102 @@ struct HistoryRecordCard: View, Equatable {
 
     @ViewBuilder
     private func traceabilityProductionCard(ingredients: [HistoryTraceabilityIngredient]) -> some View {
-        Button {
-            withAnimation(.spring(response: 0.28, dampingFraction: 0.86)) {
-                isExpanded.toggle()
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .center, spacing: 10) {
+                Text("Produzione — \(entry.date.formatted(date: .numeric, time: .omitted))")
+                    .font(theme.typography.subheadline.weight(.bold))
+                    .foregroundStyle(theme.colorTextPrimary)
+                Spacer(minLength: 0)
+                HACCPBadge(
+                    title: entry.status,
+                    style: entry.statusBadgeStyle,
+                    showIcon: false
+                )
+                if canDeleteProduction {
+                    Button(role: .destructive) {
+                        onDeleteProduction?()
+                    } label: {
+                        Image(systemName: "trash")
+                            .font(.body.weight(.semibold))
+                            .foregroundStyle(theme.colorError)
+                            .frame(width: 36, height: 36)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Elimina produzione")
+                }
             }
-        } label: {
-            VStack(alignment: .leading, spacing: 10) {
-                HStack(alignment: .center, spacing: 12) {
-                    if let photo = entry.photoData,
-                       let thumb = HACCPZoomablePhotoThumbnail(
-                        data: photo,
-                        size: 52,
-                        zoomTitle: entry.title
-                       ) {
-                        thumb
-                    } else {
-                        ZStack {
-                            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                .fill(accent.opacity(0.14))
-                                .frame(width: 44, height: 44)
-                            Image(systemName: "fork.knife")
-                                .font(.body.weight(.semibold))
-                                .foregroundStyle(accent)
-                        }
-                    }
 
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(entry.title)
-                            .font(theme.typography.headline)
-                            .foregroundStyle(theme.colorTextPrimary)
-                            .multilineTextAlignment(.leading)
-                        if let lot = entry.internalLotCode?.trimmingCharacters(in: .whitespacesAndNewlines), !lot.isEmpty {
-                            Text("Lotto produzione \(lot)")
-                                .font(theme.typography.caption.weight(.bold).monospaced())
-                                .foregroundStyle(theme.colorPrimary)
-                        }
-                        HStack(spacing: 8) {
-                            HACCPBadge(
-                                title: entry.status,
-                                style: entry.statusBadgeStyle,
-                                showIcon: false
-                            )
-                            if let ingredients = entry.traceabilityIngredients {
-                                Text(TraceabilityCountLabel.alimenti(ingredients.count))
-                                    .font(theme.typography.caption)
-                                    .foregroundStyle(theme.colorTextSecondary)
-                            }
-                        }
-                    }
-
-                    Spacer(minLength: 0)
-
-                    VStack(alignment: .trailing, spacing: 6) {
-                        Text(entry.date.formatted(date: .omitted, time: .shortened))
-                            .font(theme.typography.caption.weight(.semibold))
-                            .foregroundStyle(theme.colorTextSecondary)
-                        Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
-                            .font(.caption.weight(.bold))
-                            .foregroundStyle(theme.colorPrimary)
-                    }
+            HStack(alignment: .top, spacing: 12) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(accent.opacity(0.14))
+                        .frame(width: 72, height: 72)
+                    Image(systemName: "fork.knife")
+                        .font(.title3.weight(.semibold))
+                        .foregroundStyle(accent)
                 }
 
-                if isExpanded {
-                    VStack(alignment: .leading, spacing: 10) {
-                        if let lot = entry.internalLotCode?.trimmingCharacters(in: .whitespacesAndNewlines), !lot.isEmpty {
-                            ProductionInternalLotBadge(batchCode: lot, compact: true)
-                        }
-                        if let photo = entry.photoData {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("Foto produzione")
-                                    .font(theme.typography.caption.weight(.semibold))
-                                    .foregroundStyle(theme.colorTextSecondary)
-                                photoCard(photo)
-                            }
-                        }
-                        if !ingredients.isEmpty {
-                            Text("Alimenti associati")
-                                .font(theme.typography.caption.weight(.semibold))
-                                .foregroundStyle(theme.colorTextSecondary)
-                            VStack(spacing: 8) {
-                                ForEach(ingredients) { ingredient in
-                                    Button {
-                                        selectedIngredientId = IdentifiableUUID(id: ingredient.id)
-                                    } label: {
-                                        ingredientRow(ingredient)
-                                    }
-                                    .buttonStyle(.plain)
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(entry.title)
+                        .font(theme.typography.headline)
+                        .foregroundStyle(theme.colorTextPrimary)
+                    if let days = entry.shelfLifeDays {
+                        Text("Durata: \(days == 1 ? "1 giorno" : "\(days) giorni")")
+                            .font(theme.typography.subheadline)
+                            .foregroundStyle(theme.colorTextSecondary)
+                    }
+                    if let expiry = entry.expiryDate {
+                        Text("Scadenza: \(expiry.formatted(date: .abbreviated, time: .omitted))")
+                            .font(theme.typography.subheadline.weight(.semibold))
+                            .foregroundStyle(theme.colorTextPrimary)
+                    }
+                }
+            }
+
+            if isExpanded {
+                VStack(alignment: .leading, spacing: 10) {
+                    if let lot = entry.internalLotCode?.trimmingCharacters(in: .whitespacesAndNewlines), !lot.isEmpty {
+                        ProductionInternalLotBadge(batchCode: lot, compact: true)
+                    }
+                    if !ingredients.isEmpty {
+                        Text("Etichette associate")
+                            .font(theme.typography.caption.weight(.semibold))
+                            .foregroundStyle(theme.colorTextSecondary)
+                        VStack(spacing: 8) {
+                            ForEach(ingredients) { ingredient in
+                                Button {
+                                    selectedIngredientId = IdentifiableUUID(id: ingredient.id)
+                                } label: {
+                                    ingredientRow(ingredient)
                                 }
+                                .buttonStyle(.plain)
                             }
                         }
                     }
-                    .padding(.top, 4)
-                    .transition(.opacity.combined(with: .move(edge: .top)))
+                }
+                .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+
+            Button {
+                withAnimation(.spring(response: 0.28, dampingFraction: 0.86)) {
+                    isExpanded.toggle()
+                }
+            } label: {
+                Label(isExpanded ? "Nascondi dettagli" : "Dettagli etichette", systemImage: isExpanded ? "chevron.up" : "chevron.down")
+                    .font(theme.typography.caption.weight(.semibold))
+                    .foregroundStyle(theme.colorPrimary)
+            }
+            .buttonStyle(.plain)
+        }
+        .contextMenu {
+            if canDeleteProduction {
+                Button(role: .destructive) {
+                    onDeleteProduction?()
+                } label: {
+                    Label("Elimina produzione", systemImage: "trash")
                 }
             }
         }
-        .buttonStyle(.plain)
     }
 
     private func ingredientRow(_ ingredient: HistoryTraceabilityIngredient) -> some View {
@@ -221,9 +225,18 @@ struct HistoryRecordCard: View, Equatable {
                 Text(ingredient.name)
                     .font(theme.typography.subheadline.weight(.semibold))
                     .foregroundStyle(theme.colorTextPrimary)
-                Text("Lotto \(ingredient.lotCode)")
-                    .font(theme.typography.caption.weight(.bold).monospaced())
-                    .foregroundStyle(theme.colorPrimary)
+                let lot = ingredient.lotCode.trimmingCharacters(in: .whitespacesAndNewlines)
+                let photoCode = ingredient.photoCaptureCode?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                if !lot.isEmpty, lot != "—", lot.caseInsensitiveCompare(photoCode) != .orderedSame {
+                    Text("Lotto \(lot)")
+                        .font(theme.typography.caption.weight(.bold).monospaced())
+                        .foregroundStyle(theme.colorPrimary)
+                }
+                if !photoCode.isEmpty {
+                    Text("Codice foto \(photoCode)")
+                        .font(theme.typography.caption2.weight(.semibold).monospaced())
+                        .foregroundStyle(theme.colorTextSecondary)
+                }
                 if ingredient.supplier != "—" {
                     Text(ingredient.supplier)
                         .font(theme.typography.caption2)
@@ -302,7 +315,7 @@ struct HistoryRecordCard: View, Equatable {
             }
 
             if let lot = entry.internalLotCode?.trimmingCharacters(in: .whitespacesAndNewlines), !lot.isEmpty {
-                Text("Lotto produzione \(lot)")
+                Text("Lotto \(lot)")
                     .font(theme.typography.caption.weight(.bold).monospaced())
                     .foregroundStyle(theme.colorPrimary)
                     .padding(.horizontal, 8)

@@ -244,20 +244,13 @@ enum HACCPRegisterPDFContentFactory {
             tableRows.append(emptyOperationalRow(columns: headers.count))
         } else {
             for block in blocks {
-                let batchPhoto = block.dishPhotoData
-                    ?? block.batchId.flatMap { batchId in
-                        ProductImageBytesResolver.productionDishPhoto(
-                            batchId: batchId,
-                            images: operational.productImages,
-                            records: traceability
-                        )
-                    }
+                // Produzione: nessuna foto. Gli alimenti associati sì.
                 tableRows.append([
                     .text(block.dateOperator),
                     .text(block.productionDetail),
                     .text(block.lotDetail),
                     .text(block.expiryDetail),
-                    .image(batchPhoto.flatMap { HACCPPDFImageCompression.compressedJPEGData(from: $0) })
+                    .text("—")
                 ])
                 if block.ingredients.isEmpty {
                     tableRows.append([
@@ -301,7 +294,7 @@ enum HACCPRegisterPDFContentFactory {
         var sections: [HACCPPDFSection] = [
             .dataTable(
                 title: "Registro produzioni e tracciabilità",
-                subtitle: "Piatto finito con lotto, foto, ingredienti, scadenze e operatori — ciclo leggibile per ASL",
+                subtitle: "Produzione senza foto; alimenti/etichette associate con foto, lotto, scadenze e operatori",
                 headers: headers,
                 rows: tableRows
             )
@@ -373,7 +366,7 @@ enum HACCPRegisterPDFContentFactory {
         return [
             .dataTable(
                 title: "Produzioni e ingredienti associati",
-                subtitle: "Catalogo piatti, ricetta configurata e lotti collegati nel periodo",
+                subtitle: "Alimenti Produzione, ricetta configurata e lotti collegati nel periodo",
                 headers: ["Produzione", "Categoria", "Ingredienti in ricetta", "Lotti usati nel periodo", "Ultimo collegamento"],
                 rows: body
             )

@@ -9,7 +9,7 @@ struct ProductionInternalLotBadge: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: compact ? 2 : 6) {
-            Text("LOTTO PRODUZIONE")
+            Text("LOTTO")
                 .font(theme.typography.caption2.weight(.bold))
                 .foregroundStyle(theme.colorTextSecondary)
                 .tracking(0.6)
@@ -18,7 +18,7 @@ struct ProductionInternalLotBadge: View {
                       ? theme.typography.title3.weight(.bold).monospaced()
                       : theme.typography.title2.weight(.bold).monospaced())
                 .foregroundStyle(theme.colorTextPrimary)
-                .accessibilityLabel("Lotto produzione \(displayCode)")
+                .accessibilityLabel("Lotto \(displayCode)")
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(compact ? 10 : 14)

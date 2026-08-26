@@ -208,7 +208,7 @@ struct BlastChillingView: View {
                     }
                 }
 
-                SecondaryButton(title: "Gestisci catalogo piatti", icon: "fork.knife") {
+                SecondaryButton(title: "Gestisci Alimenti Produzione", icon: "fork.knife") {
                     appState.pendingSidebarNavigation = .productionCatalog
                 }
 

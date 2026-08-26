@@ -11,7 +11,6 @@ struct HACCPSettingsView: View {
             HACCPOilSection(storage: storage)
             HACCPDefrostSection(storage: storage)
             HACCPOperativitySection(storage: storage)
-            HACCPGroqSection(storage: storage)
         }
     }
 }
@@ -144,38 +143,5 @@ private struct HACCPOperativitySection: View {
         }
         .onChange(of: storage.haccp.productExpiryThreshold) { storage.saveAll() }
         .onChange(of: storage.haccp.storageDurationYears) { storage.saveAll() }
-    }
-}
-
-private struct HACCPGroqSection: View {
-    @Bindable var storage: SettingsStorageService
-    @Environment(\.theme) private var theme
-
-    private var groqKeyBinding: Binding<String> {
-        Binding(
-            get: { storage.haccp.groqApiKey ?? "" },
-            set: {
-                let trimmed = $0.trimmingCharacters(in: .whitespacesAndNewlines)
-                storage.haccp.groqApiKey = trimmed.isEmpty ? nil : trimmed
-            }
-        )
-    }
-
-    var body: some View {
-        SettingsExpandableCard(title: "Lettura lotti AI", caption: "Chiave Groq opzionale per OCR etichette") {
-            VStack(alignment: .leading, spacing: 12) {
-                if GroqApiKeyService.bundledFallbackKey() != nil {
-                    Label("Chiave di riserva attiva", systemImage: "checkmark.shield.fill")
-                        .font(theme.typography.caption)
-                        .foregroundStyle(theme.colorSuccess)
-                }
-                Text("Crea o aggiorna la chiave su console.groq.com.")
-                    .font(theme.typography.caption)
-                    .foregroundStyle(theme.colorTextSecondary)
-                SecureField("Chiave API Groq", text: groqKeyBinding)
-                    .textFieldStyle(.roundedBorder)
-            }
-        }
-        .onChange(of: storage.haccp.groqApiKey) { storage.saveAll() }
     }
 }

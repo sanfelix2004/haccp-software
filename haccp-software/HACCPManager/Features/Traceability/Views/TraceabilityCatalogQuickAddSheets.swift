@@ -205,8 +205,8 @@ struct TraceabilityQuickAddProductionSheet: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("Nuovo piatto di produzione") {
-                    TextField("Nome piatto", text: $name)
+                Section("Nuovo alimento produzione") {
+                    TextField("Nome alimento", text: $name)
                     Picker("Categoria", selection: $categoryId) {
                         ForEach(localCategories.filter { $0.name != "Tutti" }) { category in
                             Text(category.name).tag(category.id)
@@ -225,7 +225,7 @@ struct TraceabilityQuickAddProductionSheet: View {
                     }
                 }
 
-                Section("Durata conservazione piatto finito") {
+                Section("Durata conservazione") {
                     HStack {
                         Text("Suggerita")
                         Spacer()
@@ -235,7 +235,7 @@ struct TraceabilityQuickAddProductionSheet: View {
                     ShelfLifeDaysNumberField(days: $shelfLifeDays, label: "Durata")
                 }
             }
-            .navigationTitle("Aggiungi piatto")
+            .navigationTitle("Aggiungi alimento")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {

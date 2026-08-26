@@ -6,10 +6,15 @@
 	objectVersion = 77;
 	objects = {
 
-/* Begin PBXBuildFile section */
-		A11C0A012F9F700100F52708 /* LabelScanningContract in Frameworks */ = {isa = PBXBuildFile; productRef = A11C0A032F9F700100F52708 /* LabelScanningContract */; };
-		A11C0A022F9F700100F52708 /* LabelScannerV2 in Frameworks */ = {isa = PBXBuildFile; productRef = A11C0A042F9F700100F52708 /* LabelScannerV2 */; };
-/* End PBXBuildFile section */
+/* Begin PBXContainerItemProxy section */
+		B21C0A082F9F700100F52708 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 7CB6B6562F9F6DB800F52708 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 7CB6B65D2F9F6DB800F52708;
+			remoteInfo = "HACCP Manager";
+		};
+/* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
 		7CB6B65E2F9F6DB800F52708 /* HACCP Manager.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "HACCP Manager.app"; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -34,8 +39,6 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				A11C0A012F9F700100F52708 /* LabelScanningContract in Frameworks */,
-				A11C0A022F9F700100F52708 /* LabelScannerV2 in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -88,8 +91,6 @@
 			);
 			name = "HACCP Manager";
 			packageProductDependencies = (
-				A11C0A032F9F700100F52708 /* LabelScanningContract */,
-				A11C0A042F9F700100F52708 /* LabelScannerV2 */,
 			);
 			productName = "HACCP Manager";
 			productReference = 7CB6B65E2F9F6DB800F52708 /* HACCP Manager.app */;
@@ -119,24 +120,6 @@
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
 /* End PBXNativeTarget section */
-
-/* Begin PBXContainerItemProxy section */
-		B21C0A082F9F700100F52708 /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = 7CB6B6562F9F6DB800F52708 /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = 7CB6B65D2F9F6DB800F52708;
-			remoteInfo = "HACCP Manager";
-		};
-/* End PBXContainerItemProxy section */
-
-/* Begin PBXTargetDependency section */
-		B21C0A072F9F700100F52708 /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = 7CB6B65D2F9F6DB800F52708 /* HACCP Manager */;
-			targetProxy = B21C0A082F9F700100F52708 /* PBXContainerItemProxy */;
-		};
-/* End PBXTargetDependency section */
 
 /* Begin PBXProject section */
 		7CB6B6562F9F6DB800F52708 /* Project object */ = {
@@ -168,7 +151,6 @@
 			mainGroup = 7CB6B6552F9F6DB800F52708;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
-				A11C0A052F9F700100F52708 /* XCLocalSwiftPackageReference "Packages/LabelScanning" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 7CB6B65F2F9F6DB800F52708 /* Products */;
@@ -234,6 +216,14 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		B21C0A072F9F700100F52708 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 7CB6B65D2F9F6DB800F52708 /* HACCP Manager */;
+			targetProxy = B21C0A082F9F700100F52708 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		7CB6B6672F9F6DB900F52708 /* Debug */ = {
@@ -504,26 +494,6 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
-
-/* Begin XCLocalSwiftPackageReference section */
-		A11C0A052F9F700100F52708 /* XCLocalSwiftPackageReference "Packages/LabelScanning" */ = {
-			isa = XCLocalSwiftPackageReference;
-			relativePath = Packages/LabelScanning;
-		};
-/* End XCLocalSwiftPackageReference section */
-
-/* Begin XCSwiftPackageProductDependency section */
-		A11C0A032F9F700100F52708 /* LabelScanningContract */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = A11C0A052F9F700100F52708 /* XCLocalSwiftPackageReference "Packages/LabelScanning" */;
-			productName = LabelScanningContract;
-		};
-		A11C0A042F9F700100F52708 /* LabelScannerV2 */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = A11C0A052F9F700100F52708 /* XCLocalSwiftPackageReference "Packages/LabelScanning" */;
-			productName = LabelScannerV2;
-		};
-/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 7CB6B6562F9F6DB800F52708 /* Project object */;
 }

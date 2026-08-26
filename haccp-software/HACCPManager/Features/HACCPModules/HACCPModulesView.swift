@@ -3,13 +3,12 @@ import SwiftUI
 struct HACCPModulesView: View {
     private let columns = [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())]
     private let modules: [DashboardModule] = [
-        .init(name: "Tracciabilita", description: "Prodotti, lotti e fornitori", icon: "archivebox.fill", state: .open, isEnabled: true),
+        .init(name: "Tracciabilita", description: "Fotocamera, Alimenti Produzione, stampa etichetta", icon: "archivebox.fill", state: .open, isEnabled: true),
         .init(name: "Frigoriferi", description: "Controllo temperature frigo/freezer", icon: "thermometer.medium", state: .open, isEnabled: true),
         .init(name: "Controllo pulizia", description: "Piani pulizia e firme operatore", icon: "sparkles", state: .open, isEnabled: true),
         .init(name: "Abbattimento", description: "Abbattimento in negativo", icon: "wind.snow", state: .open, isEnabled: true),
         .init(name: "Decongelamento", description: "Procedure di decongelamento", icon: "snowflake", state: .open, isEnabled: true),
         .init(name: "Controllo olio", description: "Stato olio frittura e azioni", icon: "drop.fill", state: .open, isEnabled: true),
-        .init(name: "Etichette", description: "Etichette di produzione", icon: "tag.fill", state: .open, isEnabled: true),
         .init(name: "Ricezione merci", description: "Controllo conformita in ingresso", icon: "shippingbox.fill", state: .open, isEnabled: true),
         .init(name: "Storia", description: "Archivio registrazioni centralizzato", icon: "clock.arrow.circlepath", state: .open, isEnabled: true)
     ]
@@ -69,13 +68,6 @@ struct HACCPModulesView: View {
         } else if module.name == "Controllo olio" {
             NavigationLink {
                 OilControlView()
-            } label: {
-                cardBody(module)
-            }
-            .buttonStyle(.plain)
-        } else if module.name == "Etichette" {
-            NavigationLink {
-                ProductionLabelsView()
             } label: {
                 cardBody(module)
             }

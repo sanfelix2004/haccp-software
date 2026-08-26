@@ -131,7 +131,7 @@ struct TraceabilityService {
         }
 
         let auditDetail = trimmedNote.isEmpty ? kind.label : "\(kind.label) — \(trimmedNote)"
-        record.productStatus = .used
+        record.productStatus = kind.closedProductStatus
         record.operationalClosedAt = Date()
         modelContext.insert(
             TraceabilityLog(
@@ -142,22 +142,26 @@ struct TraceabilityService {
             )
         )
 
-        DocumentMovementRecorder.recordLotClosedFromExpiryControl(
-            record: record,
-            outcomeLabel: kind.label,
-            note: trimmedNote.isEmpty ? nil : trimmedNote,
-            user: user,
-            modelContext: modelContext
-        )
+        if kind.recordsInDocuments {
+            DocumentMovementRecorder.recordLotClosedFromExpiryControl(
+                record: record,
+                outcomeLabel: kind.label,
+                note: trimmedNote.isEmpty ? nil : trimmedNote,
+                user: user,
+                modelContext: modelContext
+            )
+        }
 
         // Non soft-archiviare il batch: chiusura operativa ≠ nascondi dallo storico.
 
         try modelContext.save()
-        HACCPArchiveSyncCoordinator.requestDeferredSync(
-            restaurantId: record.restaurantId,
-            user: user,
-            modelContext: modelContext
-        )
+        if kind.recordsInDocuments {
+            HACCPArchiveSyncCoordinator.requestDeferredSync(
+                restaurantId: record.restaurantId,
+                user: user,
+                modelContext: modelContext
+            )
+        }
     }
 
     /// Soft-delete: nasconde dalla UI operativa (uso Storia / nascondi MASTER).

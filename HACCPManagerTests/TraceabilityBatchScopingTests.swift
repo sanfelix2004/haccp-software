@@ -208,7 +208,7 @@ final class TraceabilityBatchScopingTests: XCTestCase {
             restaurantId: restaurantId
         )
 
-        let productionEntry = entries.first { $0.category == "Produzione registrata" }
+        let productionEntry = entries.first { $0.category == "Produzione" }
         XCTAssertNotNil(productionEntry)
         XCTAssertEqual(productionEntry?.status, "Terminato")
         XCTAssertEqual(productionEntry?.title, "Astice")

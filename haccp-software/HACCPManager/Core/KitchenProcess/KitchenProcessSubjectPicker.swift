@@ -154,12 +154,12 @@ struct KitchenProcessSubjectPicker: View {
 
     private var productionSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Piatti e preparazioni del menu. Gestisci il catalogo da Catalogo piatti.")
+            Text("Piatti e preparazioni del menu. Gestisci il catalogo da Alimenti Produzione.")
                 .font(theme.typography.caption)
                 .foregroundStyle(theme.colorTextSecondary)
             productionCategoryTabs
             if filteredProductions.isEmpty {
-                Text("Nessun piatto in questa categoria. Aggiungilo da Catalogo piatti.")
+                Text("Nessun piatto in questa categoria. Aggiungilo da Alimenti Produzione.")
                     .font(theme.typography.caption)
                     .foregroundStyle(theme.colorTextSecondary)
             } else {

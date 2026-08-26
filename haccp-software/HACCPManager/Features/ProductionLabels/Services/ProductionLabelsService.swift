@@ -175,7 +175,9 @@ struct ProductionLabelsService {
         d.productName = batch.productionNameSnapshot
         d.lotCode = batch.batchCode
         d.productionDate = batch.producedAt
-        let shelfDays = production.map { ScadenzaCalculator.shelfLifeDays(for: $0) } ?? 3
+        let shelfDays = batch.shelfLifeDaysSnapshot
+            ?? production.map { ScadenzaCalculator.shelfLifeDays(for: $0) }
+            ?? 3
         d.expiryDate = batch.internalExpiryAt
             ?? ScadenzaCalculator.productionExpiryDate(fromDays: shelfDays, referenceDate: batch.producedAt)
         d.allergens = production?.allergens ?? ""

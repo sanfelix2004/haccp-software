@@ -41,6 +41,40 @@ final class TraceabilityCoreLogicTests: XCTestCase {
         XCTAssertFalse(TraceabilityRecordSupport.isHubRecord(production))
     }
 
+    func testUnassignedKitchenLabelDraftHiddenFromHubAndExpiry() {
+        let draft = makeIncoming(name: TraceabilityRecordSupport.kitchenLabelDraftName, status: .available)
+        draft.lottoFotoId = UUID()
+        draft.lotCode = ""
+        draft.supplier = ""
+
+        XCTAssertTrue(TraceabilityRecordSupport.isUnassignedKitchenLabelDraft(draft))
+        XCTAssertTrue(TraceabilityRecordSupport.isKitchenLabelCapture(draft))
+        XCTAssertFalse(TraceabilityRecordSupport.isHubRecord(draft))
+        XCTAssertFalse(TraceabilityRecordSupport.isIncomingExpiryRecord(draft))
+        XCTAssertFalse(TraceabilityRecordSupport.isExpiryMonitored(draft))
+    }
+
+    func testAssignedKitchenLabelStillExcludedFromExpiry() {
+        let assigned = makeIncoming(name: "Etichetta F-20260826-112345", status: .available)
+        assigned.lottoFotoId = UUID()
+        assigned.lotCode = "F-20260826-112345"
+
+        XCTAssertFalse(TraceabilityRecordSupport.isUnassignedKitchenLabelDraft(assigned))
+        XCTAssertTrue(TraceabilityRecordSupport.isKitchenLabelCapture(assigned))
+        XCTAssertTrue(TraceabilityRecordSupport.isHubRecord(assigned))
+        XCTAssertFalse(TraceabilityRecordSupport.isIncomingExpiryRecord(assigned))
+    }
+
+    func testLabelPhotoRefCodeFormat() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = .current
+        let date = calendar.date(from: DateComponents(year: 2026, month: 8, day: 26, hour: 11, minute: 23, second: 45))!
+        let code = LabelPhotoRefCode.make(from: date)
+        XCTAssertEqual(code, "F-20260826-112345")
+        XCTAssertTrue(code.hasPrefix("F-"))
+        XCTAssertEqual(code.count, 17)
+    }
+
     func testOperationallyClosedDetectsUsedAndRejected() {
         let used = makeIncoming(name: "X", status: .used)
         let rejected = makeIncoming(name: "Y", status: .rejected)
@@ -111,6 +145,26 @@ final class TraceabilityCoreLogicTests: XCTestCase {
         let past = makeIncoming(name: "Latte", status: .expired)
         past.expiryDate = Calendar.current.date(byAdding: .day, value: -1, to: Date())
         XCTAssertTrue(ExpiryLotClosureKind.expired.isSelectable(for: past))
+    }
+
+    func testExpiryLotClosureKindHistoryVsDocuments() {
+        XCTAssertFalse(ExpiryLotClosureKind.finished.requiresNote)
+        XCTAssertFalse(ExpiryLotClosureKind.finished.recordsInDocuments)
+        XCTAssertEqual(ExpiryLotClosureKind.finished.closedProductStatus, .used)
+
+        XCTAssertTrue(ExpiryLotClosureKind.discarded.requiresNote)
+        XCTAssertTrue(ExpiryLotClosureKind.discarded.recordsInDocuments)
+        XCTAssertEqual(ExpiryLotClosureKind.discarded.closedProductStatus, .rejected)
+
+        XCTAssertFalse(ExpiryLotClosureKind.expired.requiresNote)
+        XCTAssertTrue(ExpiryLotClosureKind.expired.recordsInDocuments)
+    }
+
+    func testWithdrawalKindHistoryVsDocuments() {
+        XCTAssertFalse(TraceabilityWithdrawalKind.ritirato.recordsInDocuments)
+        XCTAssertTrue(TraceabilityWithdrawalKind.scartato.requiresNote)
+        XCTAssertTrue(TraceabilityWithdrawalKind.scartato.recordsInDocuments)
+        XCTAssertEqual(TraceabilityWithdrawalKind.scartato.closedProductStatus, .rejected)
     }
 
     // MARK: - Scadenza FEFO

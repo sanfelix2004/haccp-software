@@ -1,8 +1,8 @@
 import SwiftUI
 import SwiftData
 
-/// Gestione centralizzata del catalogo piatti (Alici, Baccalà, …) usato da
-/// Abbattimento, Decongelamento e Tracciabilità.
+/// Gestione centralizzata degli Alimenti Produzione usati da
+/// Tracciabilità, Abbattimento e Decongelamento.
 struct ProductionCatalogManagementView: View {
     /// Se `true`, nasconde l'header schermata (es. dentro Impostazioni).
     var embeddedInSettings: Bool = false
@@ -52,7 +52,7 @@ struct ProductionCatalogManagementView: View {
             if appState.activeRestaurantId == nil {
                 DashboardEmptyStateView(state: .init(
                     title: "Seleziona un ristorante",
-                    message: "Il catalogo piatti è legato al ristorante attivo.",
+                    message: "Gli Alimenti Produzione sono legati al ristorante attivo.",
                     actionTitle: nil
                 ))
                 .padding(theme.spacing.screenPadding)
@@ -64,7 +64,7 @@ struct ProductionCatalogManagementView: View {
             }
         }
         .background(theme.colorBackground.ignoresSafeArea())
-        .navigationTitle(embeddedInSettings ? "" : "Catalogo piatti")
+        .navigationTitle(embeddedInSettings ? "" : "Alimenti Produzione")
         .haccpControlTint()
         .moduleScreenLoad(restaurantId: appState.activeRestaurantId) {
             guard let rid = appState.activeRestaurantId else { return }
@@ -80,11 +80,11 @@ struct ProductionCatalogManagementView: View {
             rebuildPresentation()
         }
         .sheet(isPresented: $showAddSheet) {
-            productionEditor(title: "Nuovo piatto", production: nil)
+            productionEditor(title: "Nuovo alimento produzione", production: nil)
         }
         .sheet(isPresented: $showEditSheet) {
             if let production = productionToEdit {
-                productionEditor(title: "Modifica piatto", production: production)
+                productionEditor(title: "Modifica alimento produzione", production: production)
             }
         }
         .sheet(isPresented: $showAddCategorySheet) {
@@ -99,7 +99,7 @@ struct ProductionCatalogManagementView: View {
             )
         }
         .masterAuthCover(coordinator: masterAuth, master: session.masterUser)
-        .alert("Catalogo piatti", isPresented: Binding(get: { errorMessage != nil }, set: { _ in errorMessage = nil })) {
+        .alert("Alimenti Produzione", isPresented: Binding(get: { errorMessage != nil }, set: { _ in errorMessage = nil })) {
             Button("OK", role: .cancel) {}
         } message: {
             Text(errorMessage ?? "")
@@ -111,16 +111,16 @@ struct ProductionCatalogManagementView: View {
             VStack(spacing: theme.spacing.sectionSpacing) {
                 if !embeddedInSettings {
                     ModuleScreenHeader(
-                        title: "Catalogo piatti",
-                        subtitle: "Menu per Abbattimento e Tracciabilità · durata indicativa in frigo su ogni piatto",
+                        title: "Alimenti Produzione",
+                        subtitle: "Preparazioni per Tracciabilità e Abbattimento · durata in frigo su ogni alimento",
                         systemImage: "fork.knife",
                         help: ModuleHelpLibrary.sidebar(.productionCatalog)
                     )
                 }
 
                 DashboardCardView(
-                    title: "Gestione piatti",
-                    subtitle: "Aggiungi, modifica o elimina le voci del menu · PIN MASTER per l'operatore"
+                    title: "Gestione alimenti",
+                    subtitle: "Aggiungi, modifica o elimina · PIN MASTER per l'operatore"
                 ) {
                     VStack(alignment: .leading, spacing: 14) {
                         actionBar
@@ -130,15 +130,15 @@ struct ProductionCatalogManagementView: View {
                             selectedBanner(selected)
                         }
 
-                        Text("\(visibleProductions.count) piatti")
+                        Text("\(visibleProductions.count) alimenti")
                             .font(theme.typography.caption)
                             .foregroundStyle(theme.colorTextSecondary)
 
                         if visibleProductions.isEmpty {
                             DashboardEmptyStateView(state: .init(
                                 title: "Catalogo vuoto",
-                                message: "Aggiungi il primo piatto per questa categoria.",
-                                actionTitle: "Aggiungi piatto"
+                                message: "Aggiungi il primo alimento per questa categoria.",
+                                actionTitle: "Aggiungi alimento"
                             )) {
                                 requestAdd()
                             }
@@ -146,6 +146,7 @@ struct ProductionCatalogManagementView: View {
                             ProductionSelectionGridView(
                                 layout: presentation,
                                 selectedProductionId: selectedProduction?.id,
+                                showsShelfLife: true,
                                 onSelect: { selectedProduction = $0 }
                             )
                         }
@@ -158,7 +159,7 @@ struct ProductionCatalogManagementView: View {
 
     private var actionBar: some View {
         HStack(spacing: 10) {
-            PrimaryButton(title: "Aggiungi piatto", icon: "plus.circle.fill") {
+            PrimaryButton(title: "Aggiungi alimento", icon: "plus.circle.fill") {
                 requestAdd()
             }
             SecondaryButton(title: "Categoria", icon: "folder.badge.plus") {
@@ -237,7 +238,7 @@ struct ProductionCatalogManagementView: View {
         NavigationStack {
             Form {
                 Section(title) {
-                    TextField("Nome piatto", text: $newProductionName)
+                    TextField("Nome alimento", text: $newProductionName)
                     Picker("Categoria", selection: Binding(
                         get: { newProductionCategoryId ?? scopedCategories.first?.id ?? UUID() },
                         set: { newProductionCategoryId = $0 }
@@ -247,7 +248,7 @@ struct ProductionCatalogManagementView: View {
                         }
                     }
                 }
-                Section("Durata conservazione (indicativa)") {
+                Section("Durata conservazione") {
                     let categoryName = scopedCategories.first(where: { $0.id == newProductionCategoryId })?.name ?? ""
                     let suggested = ProductionShelfLifeDefaults.days(
                         forName: newProductionName.isEmpty ? " " : newProductionName,

@@ -45,7 +45,7 @@ struct TraceabilityRecordDetailSheet: View {
                 VStack(alignment: .leading, spacing: theme.spacing.sectionSpacing) {
                     headerBlock
                     openingCard
-                    if !photoBytes.isEmpty {
+                    if !display.isProductionLot, !photoBytes.isEmpty {
                         photosCard
                     }
                     associationsCard
@@ -171,9 +171,7 @@ struct TraceabilityRecordDetailSheet: View {
     private var photosCard: some View {
         DashboardCardView(
             title: "2. Foto",
-            subtitle: display.isProductionLot
-                ? (photoBytes.count == 1 ? "Foto del piatto" : "\(photoBytes.count) foto del piatto")
-                : (photoBytes.count == 1 ? "Foto etichetta / prodotto" : "\(photoBytes.count) foto")
+            subtitle: photoBytes.count == 1 ? "Foto etichetta / prodotto" : "\(photoBytes.count) foto"
         ) {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 12) {
@@ -276,7 +274,7 @@ struct TraceabilityRecordDetailSheet: View {
                     .font(theme.typography.caption)
                     .foregroundStyle(theme.colorTextSecondary)
             } else {
-                Text("Non ancora terminato / scartato / scaduto. La chiusura si registra da Controllo scadenze e quantità.")
+                Text("Non ancora terminato / scartato / scaduto. La chiusura si registra da Controllo scadenze.")
                     .font(theme.typography.caption)
                     .foregroundStyle(theme.colorTextSecondary)
             }

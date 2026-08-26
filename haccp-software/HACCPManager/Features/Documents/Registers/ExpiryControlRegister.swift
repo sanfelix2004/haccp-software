@@ -23,10 +23,17 @@ enum ExpiryControlRegister {
         return records
             .filter { !$0.isArchived && $0.isProductionBatchOutput }
             .filter { record in
+                let recordLogs = logsByRecord[record.id] ?? []
+                let status = TraceabilityLotOperationalStatus.present(
+                    record: record,
+                    logs: recordLogs
+                ).label
+                // Terminato: solo Storia — escluso dal PDF Documenti.
+                if status == "Terminato" { return false }
+
                 if interval.contains(record.receivedAt) { return true }
                 if let expiry = record.expiryDate, interval.contains(expiry) { return true }
-                // Chiusure nel periodo (Terminato / Scartato / …) anche se create prima.
-                let recordLogs = logsByRecord[record.id] ?? []
+                // Chiusure nel periodo (Scartato / Scaduto / …) anche se create prima.
                 return recordLogs.contains {
                     ($0.actionType == .withdrawn || $0.actionType == .archivedFromExpiryControl)
                         && interval.contains($0.timestamp)

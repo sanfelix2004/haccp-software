@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 // MARK: - Step del flusso
 
@@ -92,6 +93,7 @@ struct TraceabilityCaptureStepBar: View {
 struct TraceabilitySessionDock: View {
     let items: [LottoFoto]
     let onFinish: () -> Void
+    var onDelete: ((LottoFoto) -> Void)? = nil
 
     @Environment(\.theme) private var theme
 
@@ -102,9 +104,9 @@ struct TraceabilitySessionDock: View {
                     Image(systemName: "checkmark.circle.fill")
                         .font(.title3)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Ho finito le foto")
+                        Text("Assegna alimento")
                             .font(.subheadline.weight(.bold))
-                        Text("Collega tutto a un piatto")
+                        Text("Collega le etichette a un Alimento Produzione")
                             .font(.caption2)
                             .opacity(0.9)
                     }
@@ -127,7 +129,7 @@ struct TraceabilitySessionDock: View {
             .buttonStyle(.plain)
 
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
+                HStack(spacing: 10) {
                     ForEach(items, id: \.id) { item in
                         dockThumbnail(item)
                     }
@@ -143,30 +145,41 @@ struct TraceabilitySessionDock: View {
     }
 
     private func dockThumbnail(_ item: LottoFoto) -> some View {
-        VStack(spacing: 4) {
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(theme.colorPrimary.opacity(0.15))
-                .frame(width: 48, height: 48)
-                .overlay {
-                    Image(systemName: "shippingbox.fill")
-                        .font(.caption)
-                        .foregroundStyle(theme.colorPrimary)
+        ZStack(alignment: .topTrailing) {
+            Group {
+                if let image = LottoFotoImageStorage.loadImage(at: item.thumbnailPath)
+                    ?? LottoFotoImageStorage.loadImage(at: item.localPath) {
+                    Image(uiImage: image)
+                        .resizable()
+                        .scaledToFill()
+                } else {
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(theme.colorPrimary.opacity(0.15))
+                        .overlay {
+                            Image(systemName: "photo")
+                                .font(.caption)
+                                .foregroundStyle(theme.colorPrimary)
+                        }
                 }
+            }
+            .frame(width: 56, height: 56)
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
 
-            Text(item.alimentoIngressoNameSnapshot ?? "—")
-                .font(.system(size: 9, weight: .semibold))
-                .foregroundStyle(.primary)
-                .lineLimit(1)
-                .frame(width: 54)
-
-            if let lot = item.lotCode {
-                Text(lot)
-                    .font(.system(size: 8, weight: .bold).monospaced())
-                    .foregroundStyle(theme.colorTextSecondary)
-                    .lineLimit(1)
-                    .frame(width: 54)
+            if let onDelete {
+                Button {
+                    onDelete(item)
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 16))
+                        .symbolRenderingMode(.palette)
+                        .foregroundStyle(.white, .black.opacity(0.75))
+                }
+                .buttonStyle(.plain)
+                .offset(x: 4, y: -4)
+                .accessibilityLabel("Elimina foto")
             }
         }
+        .frame(width: 56, height: 56)
     }
 }
 
@@ -179,7 +192,7 @@ struct TraceabilitySessionSummaryStrip: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Label("\(items.count) etichette in questa sessione", systemImage: "shippingbox.fill")
+            Label("\(items.count) etichette in questa sessione", systemImage: "camera.fill")
                 .font(theme.typography.caption.weight(.semibold))
                 .foregroundStyle(theme.colorTextSecondary)
 
@@ -200,24 +213,28 @@ struct TraceabilitySessionSummaryStrip: View {
 
     private func summaryChip(_ item: LottoFoto) -> some View {
         HStack(spacing: 8) {
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(theme.colorPrimary.opacity(0.1))
-                .frame(width: 36, height: 36)
-                .overlay {
-                    Image(systemName: "shippingbox.fill")
-                        .font(.caption)
-                        .foregroundStyle(theme.colorPrimary)
+            Group {
+                if let image = LottoFotoImageStorage.loadImage(at: item.thumbnailPath)
+                    ?? LottoFotoImageStorage.loadImage(at: item.localPath) {
+                    Image(uiImage: image)
+                        .resizable()
+                        .scaledToFill()
+                } else {
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(theme.colorPrimary.opacity(0.1))
+                        .overlay {
+                            Image(systemName: "photo")
+                                .font(.caption)
+                                .foregroundStyle(theme.colorPrimary)
+                        }
                 }
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(item.alimentoIngressoNameSnapshot ?? "Alimento")
-                    .font(theme.typography.caption.weight(.semibold))
-                    .lineLimit(1)
-                Text(item.lotCode ?? "—")
-                    .font(theme.typography.caption2.monospaced())
-                    .foregroundStyle(theme.colorTextSecondary)
-                    .lineLimit(1)
             }
+            .frame(width: 36, height: 36)
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+
+            Text("Etichetta")
+                .font(theme.typography.caption.weight(.semibold))
+                .lineLimit(1)
         }
         .padding(8)
         .background(theme.colorBackground)
@@ -232,11 +249,11 @@ struct TraceabilityWorkflowGuideCard: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            workflowStep(number: 1, icon: "camera.fill", title: "Scatta", subtitle: "Etichetta o fattura")
+            workflowStep(number: 1, icon: "camera.fill", title: "Foto lotti", subtitle: "Più scatti")
             arrow
-            workflowStep(number: 2, icon: "shippingbox.fill", title: "Alimento", subtitle: "Catalogo ingresso")
+            workflowStep(number: 2, icon: "fork.knife", title: "Produzione", subtitle: "Piatto interno")
             arrow
-            workflowStep(number: 3, icon: "fork.knife", title: "Piatto", subtitle: "Catalogo produzione")
+            workflowStep(number: 3, icon: "printer.fill", title: "Etichetta", subtitle: "Stampa qui")
         }
         .padding(14)
         .background(theme.colorSurface)
